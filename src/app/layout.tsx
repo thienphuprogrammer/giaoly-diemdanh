@@ -15,6 +15,7 @@ const display = Fraunces({
 export const metadata: Metadata = {
   title: "Điểm danh Giáo lý",
   description: "Điểm danh lớp giáo lý theo sơ đồ chỗ ngồi",
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };
 
 export const viewport: Viewport = {
