@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db/client";
 import { requireUser } from "@/lib/auth/dal";
 import { toFormState, type FormState } from "@/server/form-state";
-import { assignCatechist, createCatechist, createClass, unassignCatechist } from "@/server/services/admin";
+import { assignCatechist, createCatechist, createClass, resetPassword, unassignCatechist } from "@/server/services/admin";
 import type { AppUser } from "@/lib/access/can-access";
 import type { ActionResult } from "@/server/result";
 import type { Db } from "@/db/types";
@@ -20,3 +20,4 @@ export async function createClassAction(_: FormState, fd: FormData) { return run
 export async function createCatechistAction(_: FormState, fd: FormData) { return run(createCatechist, fd); }
 export async function assignAction(_: FormState, fd: FormData) { return run(assignCatechist, fd); }
 export async function unassignAction(_: FormState, fd: FormData) { return run(unassignCatechist, fd); }
+export async function resetPasswordAction(_: FormState, fd: FormData) { return run(resetPassword, fd); }

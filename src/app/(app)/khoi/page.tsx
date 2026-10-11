@@ -7,7 +7,7 @@ import { resolveTerm } from "@/db/queries/stats";
 import { requireUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
 import { gradeOverview } from "@/server/services/stats";
-import { assignAction, createCatechistAction, createClassAction, unassignAction } from "./actions";
+import { assignAction, createCatechistAction, createClassAction, resetPasswordAction, unassignAction } from "./actions";
 import { SimpleForm } from "@/components/forms/SimpleForm";
 
 export default async function GradePage() {
@@ -24,6 +24,7 @@ export default async function GradePage() {
   const classOptions = classList.map((c) => ({ value: c.id, label: c.name }));
   // Trưởng khối cũng nằm trong danh sách để tự gán mình vào lớp khi cần ghi điểm danh thay GLV.
   const glvOptions = catechists.map((u) => ({ value: u.id, label: u.name }));
+  const resetOptions = catechists.filter((u) => !u.isGradeHead).map((u) => ({ value: u.id, label: u.name }));
   const namesOf = (classId: string) =>
     links.filter((l) => l.classId === classId).map((l) => catechists.find((u) => u.id === l.userId)?.name).filter(Boolean).join(", ");
   return (
@@ -65,6 +66,13 @@ export default async function GradePage() {
         fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
       <SimpleForm title="Gỡ GLV khỏi lớp" action={unassignAction}
         fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
+      {resetOptions.length > 0 && (
+        <SimpleForm title="Đặt lại mật khẩu" action={resetPasswordAction}
+          fields={[
+            { name: "userId", label: "Giáo lý viên", options: resetOptions },
+            { name: "password", label: "Mật khẩu mới (10–72 ký tự)", type: "password", autoComplete: "new-password", minLength: 10, maxLength: 72 },
+          ]} />
+      )}
     </section>
   );
 }

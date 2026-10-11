@@ -2,7 +2,7 @@
 import { useActionState } from "react";
 import type { FormState } from "@/server/form-state";
 
-interface Field { name: string; label: string; type?: string; options?: { value: string; label: string }[] }
+interface Field { name: string; label: string; type?: string; autoComplete?: string; minLength?: number; maxLength?: number; options?: { value: string; label: string }[] }
 
 export function SimpleForm({ title, fields, action }: { title: string; fields: Field[]; action: (prev: FormState, fd: FormData) => Promise<FormState> }) {
   const [state, run, pending] = useActionState(action, undefined);
@@ -15,7 +15,7 @@ export function SimpleForm({ title, fields, action }: { title: string; fields: F
           {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : (
-        <input key={f.name} name={f.name} type={f.type ?? "text"} placeholder={f.label} aria-label={f.label} required className={cls} />
+        <input key={f.name} name={f.name} type={f.type ?? "text"} placeholder={f.label} aria-label={f.label} autoComplete={f.autoComplete} minLength={f.minLength} maxLength={f.maxLength} required className={cls} />
       ))}
       {state?.error && <p role="alert" className="text-sm text-warn-alert">{state.error}</p>}
       {state?.ok && <p role="status" className="text-sm text-brand">Đã lưu</p>}
