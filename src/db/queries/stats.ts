@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { attendance, classes, sessions, students, terms } from "../schema";
 import type { Db } from "../types";
+import { studentColumns } from "./students";
 
 export const listTerms = (db: Db) => db.select().from(terms).orderBy(desc(terms.startsOn));
 
@@ -11,7 +12,7 @@ export async function resolveTerm(db: Db, termId: string | undefined, today: str
 
 export async function rosterOf(db: Db, classIds: string[]) {
   if (classIds.length === 0) return [];
-  return db.select().from(students)
+  return db.select(studentColumns).from(students)
     .where(and(inArray(students.classId, classIds), eq(students.active, true)))
     .orderBy(asc(students.fullName));
 }

@@ -69,7 +69,7 @@ export async function importStudents(
   const unique = [...new Map(rows.map((r) => [key(r), r] as const).reverse()).values()].reverse();
   const inserted = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${classId}))`);
-    const existing = new Set((await tx.select().from(students).where(eq(students.classId, classId))).map(key));
+    const existing = new Set((await tx.select({ fullName: students.fullName, birthDate: students.birthDate }).from(students).where(eq(students.classId, classId))).map(key));
     const fresh = unique.filter((r) => !existing.has(key(r)));
     if (fresh.length > 0) await tx.insert(students).values(fresh.map((r) => ({ classId, ...r })));
     return fresh.length;

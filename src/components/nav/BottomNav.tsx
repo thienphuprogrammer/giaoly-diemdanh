@@ -14,7 +14,7 @@ export function BottomNav({ isGradeHead }: { isGradeHead: boolean }) {
   const path = usePathname();
   return (
     <nav aria-label="Điều hướng chính"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] shadow-bar">
+      className="fixed inset-x-0 bottom-0 z-30 print:hidden border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] shadow-bar">
       <ul className="mx-auto flex max-w-3xl">
         {ITEMS.filter((i) => !i.headOnly || isGradeHead).map((i) => {
           const active = i.href === "/" ? path === "/" || path.startsWith("/lop") : path.startsWith(i.href);

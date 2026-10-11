@@ -1,4 +1,5 @@
-import { UsersRound } from "lucide-react";
+import { QrCode, UsersRound } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { db } from "@/db/client";
@@ -24,6 +25,11 @@ export default async function StudentsPage({ params }: { params: Promise<{ class
         </p>
       </div>
       {perms.canWrite && <RosterTools classId={classId} />}
+      {perms.canWrite && (
+        <Link href={`/lop/${classId}/thieu-nhi/the-qr`} className="btn btn-secondary">
+          <QrCode aria-hidden size={20} /> In thẻ QR
+        </Link>
+      )}
       {list.length === 0 ? (
         <EmptyState icon={UsersRound} title="Lớp chưa có thiếu nhi">
           {perms.canWrite ? "Bấm \"Thêm em\" để nhập từng em, hoặc \"Nhập CSV\" để thêm cả lớp một lần." : "Giáo lý viên phụ trách lớp sẽ thêm danh sách."}

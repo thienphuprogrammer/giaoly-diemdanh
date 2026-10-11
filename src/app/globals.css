@@ -231,3 +231,16 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Thẻ QR in được: lưới thích ứng trên màn hình, A4 hai cột 90x55mm khi in. */
+.qr-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.qr-card { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px dashed var(--border-strong); border-radius: 10px; background: #fff; break-inside: avoid; }
+.qr-img { width: 112px; height: 112px; flex: none; }
+
+@media print {
+  @page { size: A4; margin: 10mm; }
+  body { background: #fff; }
+  .qr-sheet { grid-template-columns: repeat(2, 90mm); gap: 4mm; justify-content: center; }
+  .qr-card { width: 90mm; height: 55mm; border: 0.3mm dashed #94a3b8; border-radius: 0; padding: 4mm; }
+  .qr-img { width: 34mm; height: 34mm; }
+}

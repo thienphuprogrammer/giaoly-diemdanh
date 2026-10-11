@@ -4,6 +4,7 @@ import type { Assignment, Layout } from "@/lib/seating/types";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { attendance, seatAssignments, seatingPlans, sessions, students, terms } from "../schema";
 import type { Db } from "../types";
+import { studentColumns } from "./students";
 
 export async function findTermFor(db: Db, date: string) {
   const [row] = await db
@@ -65,7 +66,7 @@ export interface BoardStudent {
 }
 
 export async function loadBoardData(db: Db, session: typeof sessions.$inferSelect) {
-  const roster = await db.select().from(students)
+  const roster = await db.select(studentColumns).from(students)
     .where(and(eq(students.classId, session.classId), eq(students.active, true)))
     .orderBy(asc(students.fullName));
   const marks = await db.select().from(attendance).where(eq(attendance.sessionId, session.id));
