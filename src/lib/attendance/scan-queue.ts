@@ -89,8 +89,24 @@ export function sendable(s: ScanQueueState, now: number = Date.now()): QueuedEve
   return out;
 }
 
+/** Lượt chưa lưu được: đang gửi, hoặc đã thử hết lần mà chưa gửi được (người dùng chưa bỏ qua). */
+export function unsavedSummary(s: ScanQueueState): { sending: number; failed: number; total: number } {
+  const sending = s.events.filter((e) => e.state === "sending").length;
+  const failed = s.events.filter((e) => e.state === "failed").length;
+  return { sending, failed, total: sending + failed };
+}
+
+/** Số việc còn dở: lượt chưa lưu (đang gửi hoặc gửi hỏng) và hoàn tác đang chạy. Dùng để cảnh báo khi rời trang. */
 export const pendingCount = (s: ScanQueueState): number =>
-  s.events.filter((e) => e.state === "sending" || e.undoBusy).length;
+  s.events.filter((e) => e.state === "sending" || e.state === "failed" || e.undoBusy).length;
+
+/** Mốc sớm nhất (sau `now`) mà một lượt đang chờ thử lại được gửi tiếp; null nếu không có. */
+export function nextWakeAt(s: ScanQueueState, now: number): number | null {
+  const waits = s.events
+    .filter((e) => e.state === "sending" && !e.inFlight && e.notBefore !== undefined && e.notBefore > now)
+    .map((e) => e.notBefore as number);
+  return waits.length ? Math.min(...waits) : null;
+}
 
 export const canEnqueue = (s: ScanQueueState, limit = 50): boolean =>
   s.events.filter((e) => e.state === "sending").length < limit;
@@ -98,4 +114,6 @@ export const canEnqueue = (s: ScanQueueState, limit = 50): boolean =>
 export const recentEvents = (s: ScanQueueState, n: number): QueuedEvent[] => [...s.events].reverse().slice(0, n);
 
 const BACKOFF = [500, 1500, 4000];
+/** Lần gửi đầu + 3 lần thử lại theo lịch 0,5s / 1,5s / 4s, rồi mới coi là "chưa gửi được". */
+export const MAX_SEND_ATTEMPTS = BACKOFF.length + 1;
 export const backoffMs = (attempt: number): number | null => BACKOFF[attempt - 1] ?? null;

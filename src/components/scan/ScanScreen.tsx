@@ -1,5 +1,5 @@
 "use client";
-import { ArrowLeft, CircleAlert, Clock, Search, Undo2, UserCheck, VideoOff } from "lucide-react";
+import { ArrowLeft, CircleAlert, Clock, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -7,11 +7,13 @@ import { Notice } from "@/components/ui/Notice";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { QrCamera, type CameraState } from "./QrCamera";
+import { useScanFeedbackSetting } from "./feedback";
 import { useScanSession } from "./useScanSession";
 import { dateLabel } from "@/lib/date-label";
 
 export function ScanScreen({ sessionId, classId, className, heldOn }: { sessionId: string; classId: string; className: string; heldOn: string }) {
   const s = useScanSession({ sessionId });
+  const [storedFeedback, saveFeedback] = useScanFeedbackSetting();
   const [camera, setCamera] = useState<CameraState>("starting");
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
@@ -37,7 +39,12 @@ export function ScanScreen({ sessionId, classId, className, heldOn }: { sessionI
         {s.pending > 0
           ? <button type="button" onClick={() => setLeave(true)} className="btn btn-secondary"><ArrowLeft aria-hidden size={18} /> Xong</button>
           : <Link href={boardHref} className="btn btn-secondary"><ArrowLeft aria-hidden size={18} /> Xong</Link>}
-        <div className="min-w-0 text-right">
+        <button type="button" onClick={() => saveFeedback(!storedFeedback)} aria-pressed={storedFeedback}
+          aria-label="Rung và tiếng bíp khi quét" title={storedFeedback ? "Đang bật rung/tiếng bíp" : "Đang tắt rung/tiếng bíp"}
+          className="btn btn-ghost btn-icon shrink-0">
+          {storedFeedback ? <Volume2 aria-hidden size={20} /> : <VolumeX aria-hidden size={20} />}
+        </button>
+        <div className="ml-auto min-w-0 text-right">
           <h2 className="font-display text-lg font-semibold leading-tight">Quét thẻ QR</h2>
           <p className="truncate font-display text-sm text-ink-soft">{className} · {dateLabel(heldOn)}</p>
         </div>
@@ -172,11 +179,25 @@ export function ScanScreen({ sessionId, classId, className, heldOn }: { sessionI
       )}
 
       {leave && (
-        <Sheet label="Còn lượt chưa lưu" onClose={closeLeave}>
-          <p className="font-display text-lg font-semibold">Còn {s.pending} lượt đang gửi</p>
-          <p className="text-ink-soft">Thoát bây giờ có thể làm mất các lượt chưa gửi xong. Nên ở lại vài giây.</p>
-          <button type="button" className="btn btn-primary btn-lg" onClick={() => setLeave(false)}>Ở lại</button>
-          <Link href={boardHref} className="btn btn-secondary">Vẫn thoát</Link>
+        <Sheet label={s.pending > 0 ? "Còn lượt chưa lưu" : "Đã lưu hết"} onClose={closeLeave}>
+          {s.pending > 0 ? (
+            <>
+              <p className="font-display text-lg font-semibold">Còn {s.unsaved.total} lượt chưa lưu</p>
+              <ul className="text-ink-soft" role="status">
+                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây để gửi xong.</li>}
+                {s.unsaved.failed > 0 && <li>{s.unsaved.failed} lượt chưa gửi được: thử gửi lại, hoặc ghi tay trên bảng điểm danh.</li>}
+              </ul>
+              <p className="text-sm text-ink-soft">Thoát bây giờ sẽ mất các lượt này.</p>
+              {s.unsaved.failed > 0 && <button type="button" className="btn btn-primary btn-lg" onClick={s.retryAllFailed}>Thử gửi lại {s.unsaved.failed} lượt</button>}
+              <button type="button" className={`btn btn-lg ${s.unsaved.failed > 0 ? "btn-secondary" : "btn-primary"}`} onClick={closeLeave}>Ở lại</button>
+              <Link href={boardHref} className="btn btn-danger">Vẫn thoát</Link>
+            </>
+          ) : (
+            <>
+              <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét</p>
+              <Link href={boardHref} className="btn btn-primary btn-lg">Về bảng điểm danh</Link>
+            </>
+          )}
         </Sheet>
       )}
     </section>

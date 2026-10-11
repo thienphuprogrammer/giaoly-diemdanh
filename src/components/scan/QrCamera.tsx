@@ -28,6 +28,8 @@ export function QrCamera({ onCode, onState, paused }: {
     let timer: number | undefined;
     let stream: MediaStream | null = null;
     const deduper = createFrameDeduper();
+    // Nạp bộ giải mã (WASM) song song với việc xin quyền camera.
+    const decoderReady = createQrDecoder().catch(() => null);
 
     (async () => {
       try {
@@ -47,7 +49,7 @@ export function QrCamera({ onCode, onState, paused }: {
       const caps = (track.current?.getCapabilities?.() ?? {}) as { torch?: boolean };
       setTorch({ supported: !!caps.torch, on: false });
       await video.play().catch(() => undefined);
-      const decoder = await createQrDecoder().catch(() => null);
+      const decoder = await decoderReady;
       if (!decoder) { emitState("unavailable"); return; }
       if (stopped) return;
       emitState("on");

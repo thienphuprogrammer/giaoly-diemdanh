@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backoffMs, canEnqueue, initialQueue, pendingCount, queueReducer, recentEvents, sendable, summarizeQueue, type QueuedEvent, type ScanQueueState } from "./scan-queue";
+import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pendingCount, unsavedSummary, queueReducer, recentEvents, sendable, summarizeQueue, type QueuedEvent, type ScanQueueState } from "./scan-queue";
 
 const ev = (id: string, studentId = "s1", extra: Partial<QueuedEvent> = {}) => ({
   eventId: id, kind: "scan" as const, studentId, fullName: "An", saintName: null, mode: "present" as const,
@@ -100,6 +100,71 @@ describe("queueReducer", () => {
   it("lists recent events newest first", () => {
     const s = enqueue(initialQueue, ev("e1", "A"), ev("e2", "B"), ev("e3", "C"));
     expect(recentEvents(s, 2).map((e) => e.eventId)).toEqual(["e3", "e2"]);
+  });
+});
+
+describe("failed and rejected events", () => {
+  const fail = (s: ScanQueueState, id: string, now = 0) => {
+    let out = s;
+    for (let i = 0; i < MAX_SEND_ATTEMPTS; i++) {
+      const attempt = i + 1;
+      out = queueReducer(queueReducer(out, { type: "started", eventId: id }), { type: "network_error", eventId: id, maxAttempts: MAX_SEND_ATTEMPTS, now, waitMs: attempt >= MAX_SEND_ATTEMPTS ? null : backoffMs(attempt) });
+    }
+    return out;
+  };
+
+  it("uses every step of the 0.5s / 1.5s / 4s schedule before giving up", () => {
+    expect(MAX_SEND_ATTEMPTS).toBe(4);
+    expect(Array.from({ length: MAX_SEND_ATTEMPTS - 1 }, (_, i) => backoffMs(i + 1))).toEqual([500, 1500, 4000]);
+    const s = fail(enqueue(initialQueue, ev("e1")), "e1");
+    expect(s.events[0]).toMatchObject({ state: "failed", attempts: 4 });
+  });
+
+  it("dismisses failed and rejected events", () => {
+    let s = fail(enqueue(initialQueue, ev("e1", "A"), ev("e2", "B")), "e1");
+    s = queueReducer(s, { type: "rejected", eventId: "e2", message: "Bị từ chối" });
+    s = queueReducer(queueReducer(s, { type: "dismiss", eventId: "e1" }), { type: "dismiss", eventId: "e2" });
+    expect(s.events).toEqual([]);
+    expect(summarizeQueue(s).needsAction).toBe(0);
+  });
+
+  it("makes a failed event sendable again right away after retry", () => {
+    let s = fail(enqueue(initialQueue, ev("e1")), "e1", 1000);
+    expect(sendable(s, 1_000_000)).toEqual([]);
+    s = queueReducer(s, { type: "retry", eventId: "e1" });
+    expect(sendable(s, 0).map((e) => e.eventId)).toEqual(["e1"]);
+  });
+
+  it("holds back a later event of the same student while an earlier one waits out its back-off", () => {
+    let s = enqueue(initialQueue, ev("a1", "A"), ev("a2", "A"), ev("b1", "B"));
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "a1" }), { type: "network_error", eventId: "a1", maxAttempts: 4, now: 1000, waitMs: 1500 });
+    expect(sendable(s, 1200).map((e) => e.eventId)).toEqual(["b1"]);
+    expect(sendable(s, 2500).map((e) => e.eventId)).toEqual(["a1", "b1"]);
+  });
+
+  it("counts failed events as unsaved, separately from those still sending", () => {
+    let s = fail(enqueue(initialQueue, ev("e1", "A"), ev("e2", "B")), "e1");
+    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 1, total: 2 });
+    expect(pendingCount(s)).toBe(2);
+    s = queueReducer(s, { type: "dismiss", eventId: "e1" });
+    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 0, total: 1 });
+  });
+});
+
+describe("nextWakeAt", () => {
+  it("returns the earliest future back-off deadline among waiting events", () => {
+    let s = enqueue(initialQueue, ev("a1", "A"), ev("b1", "B"), ev("c1", "C"));
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "a1" }), { type: "network_error", eventId: "a1", maxAttempts: 4, now: 1000, waitMs: 1500 });
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "b1" }), { type: "network_error", eventId: "b1", maxAttempts: 4, now: 1000, waitMs: 500 });
+    expect(nextWakeAt(s, 1200)).toBe(1500);
+    expect(nextWakeAt(s, 1600)).toBe(2500);
+    expect(nextWakeAt(s, 3000)).toBeNull();
+  });
+
+  it("ignores events that are not waiting to be sent", () => {
+    let s = enqueue(initialQueue, ev("a1"));
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "a1" }), { type: "network_error", eventId: "a1", maxAttempts: 1, now: 1000, waitMs: null });
+    expect(nextWakeAt(s, 0)).toBeNull();
   });
 });
 
