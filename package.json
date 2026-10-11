@@ -2,7 +2,7 @@
   "name": "diemdanh-giaoly",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.9" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

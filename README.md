@@ -6,7 +6,7 @@ Công nghệ: Next.js 16 (App Router), React 19, Postgres (Drizzle ORM), Tailwin
 
 ## Yêu cầu
 
-- Node.js >= 22 (mã dùng `Map.groupBy`)
+- Node.js >= 22.9 (mã dùng `Map.groupBy`; script `seed` và `db:migrate` dùng `--env-file-if-exists`)
 - pnpm 10
 - Một database Postgres 16 (Neon, Supabase hoặc tự dựng)
 
@@ -90,7 +90,7 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 - **Phiên đăng nhập không thu hồi được từ máy chủ.** Đăng xuất hoặc đặt lại mật khẩu không vô hiệu hóa cookie đã cấp, cookie vẫn dùng được tối đa 7 ngày. Cần thêm cột phiên bản phiên (session version) để khắc phục.
 - **Khóa đăng nhập theo email**, không giới hạn theo IP. Tài khoản bị khóa tạm khi sai quá 5 lần; vẫn thử tiếp thì thời gian khóa kéo dài. Kẻ tấn công biết email của một GLV có thể khóa tài khoản đó.
 - **Chưa hỗ trợ chế độ ngoại tuyến** (ngoài phạm vi bản này).
-- **Cần Node >= 22** do dùng `Map.groupBy`.
+- **Cần Node >= 22.9** do dùng `Map.groupBy` và cờ `--env-file-if-exists`.
 - Nút tùy chọn trên ô chỗ ngồi là một điều khiển phụ, khá nhỏ.
 - **Đảm bảo đồng thời** (advisory lock, `FOR UPDATE`) mới chỉ được kiểm thử trên PGlite và lượt E2E một tiến trình, chưa thử tải nhiều tiến trình trên Postgres thật.
 # giaoly-diemdanh
