@@ -43,9 +43,6 @@ next-env.d.ts
 /.superpowers/
 /test-results/
 /playwright-report/
-/coverage/
 
 # e2e
 /e2e/.state.json
-/test-results/
-/playwright-report/

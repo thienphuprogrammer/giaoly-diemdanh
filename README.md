@@ -48,7 +48,7 @@ Mở http://localhost:3000 và đăng nhập bằng tài khoản vừa tạo.
 
 1. Trưởng khối đăng nhập, vào mục **Khối**.
 2. Tạo **lớp**.
-3. Tạo **tài khoản GLV** (đặt mật khẩu tạm thời cho họ).
+3. Tạo **tài khoản GLV** (đặt mật khẩu tạm thời cho họ). Khi GLV quên mật khẩu, trưởng khối vào trang **Khối**, mục **Đặt lại mật khẩu**, chọn GLV rồi nhập mật khẩu tạm mới (10–72 ký tự) và gửi cho họ.
 4. **Gán GLV vào lớp** (hoặc gán chính mình để điểm danh thay).
 5. GLV nhập hoặc nhập CSV danh sách thiếu nhi, tạo sơ đồ chỗ ngồi, rồi điểm danh từng buổi bằng sơ đồ hoặc checklist.
 
@@ -77,18 +77,18 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 
 ## Biểu tượng PWA
 
-`public/icon-192.png` và `public/icon-512.png` được sinh bằng `node --import tsx scripts/make-icons.ts` (cần Playwright Chromium: `pnpm exec playwright install chromium`). Manifest nằm ở `src/app/manifest.ts`.
+`public/icon-192.png`, `public/icon-512.png` và `public/icon-maskable-512.png` (biểu tượng có vùng đệm cho Android) được sinh bằng `node --import tsx scripts/make-icons.ts` (cần Playwright Chromium: `pnpm exec playwright install chromium`). Manifest nằm ở `src/app/manifest.ts`.
 
 ## Triển khai lên Vercel
 
-1. Đặt `DATABASE_URL` và `AUTH_SECRET` trong Project Settings, mục Environment Variables.
+1. Đặt `DATABASE_URL` và `AUTH_SECRET` trong Project Settings, mục Environment Variables, cho cả môi trường Production và Preview. `DATABASE_URL` phải có cả lúc **build** vì `src/db/client.ts` báo lỗi ngay khi import nếu thiếu (build không kết nối database).
 2. Trước mỗi lần deploy có migration mới, chạy `pnpm db:migrate` với `DATABASE_URL` trỏ tới database production.
 3. Không commit `.env*` vào git.
 
 ## Giới hạn đã biết
 
 - **Phiên đăng nhập không thu hồi được từ máy chủ.** Đăng xuất hoặc đặt lại mật khẩu không vô hiệu hóa cookie đã cấp, cookie vẫn dùng được tối đa 7 ngày. Cần thêm cột phiên bản phiên (session version) để khắc phục.
-- **Khóa đăng nhập theo email**, không giới hạn theo IP. Kẻ tấn công biết email của một GLV có thể khóa tài khoản đó 15 phút.
+- **Khóa đăng nhập theo email**, không giới hạn theo IP. Tài khoản bị khóa tạm khi sai quá 5 lần; vẫn thử tiếp thì thời gian khóa kéo dài. Kẻ tấn công biết email của một GLV có thể khóa tài khoản đó.
 - **Chưa hỗ trợ chế độ ngoại tuyến** (ngoài phạm vi bản này).
 - **Cần Node >= 22** do dùng `Map.groupBy`.
 - Nút tùy chọn trên ô chỗ ngồi là một điều khiển phụ, khá nhỏ.

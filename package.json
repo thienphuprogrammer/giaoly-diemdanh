@@ -2,6 +2,7 @@
   "name": "diemdanh-giaoly",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=22" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,8 +12,8 @@
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "seed": "node --env-file=.env.local --import tsx scripts/seed.ts",
-    "db:migrate": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs migrate"
+    "seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
+    "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

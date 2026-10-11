@@ -97,7 +97,7 @@ Kiểm tra ở server qua một hàm duy nhất `canAccess(user, classId, "read"
   tự gán mình vào lớp đó). Quản lý lớp, tài khoản GLV, việc gán GLV, đặt lại mật khẩu
   trong khối của mình.
 - Tài khoản trưởng khối đầu tiên, năm học, học kỳ: tạo bằng script seed một lần.
-- Không đủ quyền → 403, không tiết lộ lớp có tồn tại hay không.
+- Không đủ quyền và lớp không tồn tại cùng trả 404 / cùng một thông báo "không tìm thấy" (không tiết lộ lớp có tồn tại hay không).
 
 ## 7. Kiến trúc
 
