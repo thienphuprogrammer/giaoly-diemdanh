@@ -93,3 +93,4 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 - **Cần Node >= 22** do dùng `Map.groupBy`.
 - Nút tùy chọn trên ô chỗ ngồi là một điều khiển phụ, khá nhỏ.
 - **Đảm bảo đồng thời** (advisory lock, `FOR UPDATE`) mới chỉ được kiểm thử trên PGlite và lượt E2E một tiến trình, chưa thử tải nhiều tiến trình trên Postgres thật.
+# giaoly-diemdanh
