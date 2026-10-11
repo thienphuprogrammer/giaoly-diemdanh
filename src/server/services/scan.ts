@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getSession, loadBoardData } from "@/db/queries/attendance";
-import { findScanTarget, getScanEvent, listClassTokens, listScanEvents, loadScanContext } from "@/db/queries/scan";
+import { findScanTarget, getScanEvent, updateMarkIfUnchanged, listClassTokens, listScanEvents, loadScanContext } from "@/db/queries/scan";
 import { attendance, attendanceScans, students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
@@ -54,7 +54,7 @@ function uniqueViolation(e: unknown): boolean {
 }
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-interface Target { id: string; fullName: string; saintName: string | null }
+interface Target { id: string; fullName: string; saintName: string | null; lastEventId: string | null }
 
 async function replay(db: Db, event: typeof attendanceScans.$inferSelect): Promise<ScanResponse<ScanOutcome>> {
   const [student] = event.studentId
@@ -83,11 +83,9 @@ async function writeScan(tx: Tx, ctx: { sessionId: string }, input: ScanInput, u
 
   const values = { status: decision.status, reason: null, updatedBy: user.id, updatedAt: new Date(), lastEventId: input.eventId };
   const written = current === null
-    ? await tx.insert(attendance).values({ sessionId: ctx.sessionId, studentId: target.id, ...values }).onConflictDoNothing().returning({ s: attendance.status })
-    : await tx.update(attendance).set(values)
-        .where(and(eq(attendance.sessionId, ctx.sessionId), eq(attendance.studentId, target.id), eq(attendance.status, current.status)))
-        .returning({ s: attendance.status });
-  if (written.length === 0) return null; // người khác vừa đổi bản ghi: đọc lại và quyết định lại
+    ? (await tx.insert(attendance).values({ sessionId: ctx.sessionId, studentId: target.id, ...values }).onConflictDoNothing().returning({ s: attendance.status })).length > 0
+    : await updateMarkIfUnchanged(tx, { sessionId: ctx.sessionId, studentId: target.id }, { ...current, lastEventId: target.lastEventId }, values);
+  if (!written) return null; // người khác vừa đổi bản ghi: đọc lại và quyết định lại
   await tx.insert(attendanceScans).values({ ...log, newStatus: decision.status, result: "applied" });
   return { ...base, result: "applied", status: decision.status };
 }

@@ -35,6 +35,7 @@ export async function findScanTarget(
       saintName: students.saintName,
       status: attendance.status,
       reason: attendance.reason,
+      lastEventId: attendance.lastEventId,
     })
     .from(students)
     .leftJoin(attendance, and(eq(attendance.studentId, students.id), eq(attendance.sessionId, ctx.sessionId)))
@@ -52,3 +53,29 @@ export const listScanEvents = (db: Reader, sessionId: string, eventIds: string[]
 
 export const listClassTokens = (db: Reader, classId: string) =>
   db.select({ id: students.id, token: students.qrToken }).from(students).where(and(eq(students.classId, classId), eq(students.active, true)));
+
+type Writer = Pick<Db, "update">;
+type MarkValues = Partial<typeof attendance.$inferInsert>;
+
+/**
+ * Compare-and-set: chỉ ghi khi dòng vẫn đúng như lúc đọc (trạng thái, lý do, lượt quét gần nhất).
+ * Không so `updatedAt`: giá trị mặc định có độ chính xác micro giây, đi qua Date của JS sẽ bị cắt.
+ */
+export async function updateMarkIfUnchanged(
+  db: Writer,
+  key: { sessionId: string; studentId: string },
+  seen: { status: (typeof attendance.$inferSelect)["status"] | null; reason: string | null; lastEventId: string | null },
+  values: MarkValues,
+): Promise<boolean> {
+  if (seen.status === null) return false;
+  const written = await db.update(attendance).set(values)
+    .where(and(
+      eq(attendance.sessionId, key.sessionId),
+      eq(attendance.studentId, key.studentId),
+      eq(attendance.status, seen.status),
+      sql`${attendance.reason} is not distinct from ${seen.reason}`,
+      sql`${attendance.lastEventId} is not distinct from ${seen.lastEventId}`,
+    ))
+    .returning({ s: attendance.status });
+  return written.length > 0;
+}

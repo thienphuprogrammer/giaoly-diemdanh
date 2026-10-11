@@ -73,6 +73,15 @@ describe("applyScan: recording", () => {
     expect(log).toMatchObject({ prevStatus: "absent_unexcused", prevReason: "ốm", newStatus: "present" });
   });
 
+  it("confirmStatus overrides the scan mode for an absent student", async () => {
+    const { db, b, session, kid, scan, rows } = await setup();
+    const an = await kid("An");
+    await setStatus(db, b.glv, { sessionId: session.id, studentId: an.id, status: "absent_excused", reason: null });
+    const r = await scan(b.glv, an.qrToken, { mode: "present", confirmStatus: "late" });
+    expect(r.ok && r.data).toMatchObject({ result: "applied", status: "late" });
+    expect((await rows(an.id))[0].status).toBe("late");
+  });
+
   it("manual (find by name) uses the same rules with a studentId", async () => {
     const { b, kid, eid, session, db, rows } = await setup();
     const an = await kid("An");

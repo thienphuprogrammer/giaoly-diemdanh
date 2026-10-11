@@ -8,12 +8,12 @@ import { handleScanApi, isSameOrigin } from "./scan-api";
 const HOST = "app.example.com";
 const goodHeaders = { "content-type": "application/json", origin: `https://${HOST}`, host: HOST };
 
-async function setup(max = 1000) {
+async function setup(max = 1000, rosterMax = 1000) {
   const db = await createTestDb();
   const b = await seedBasics(db);
   const [session] = await db.insert(sessions).values({ classId: b.classId, termId: b.termId, heldOn: "2026-10-11" }).returning();
   const [an] = await db.insert(students).values({ classId: b.classId, fullName: "An" }).returning();
-  const deps = (user: typeof b.glv | null) => ({ db, getUser: async () => user, limiter: createRateLimiter({ max, windowMs: 60_000 }) });
+  const deps = (user: typeof b.glv | null) => ({ db, getUser: async () => user, limiter: createRateLimiter({ max, windowMs: 60_000 }), rosterLimiter: createRateLimiter({ max: rosterMax, windowMs: 60_000 }) });
   const post = (body: unknown, headers: Record<string, string> = goodHeaders) =>
     new Request(`https://${HOST}/api/diem-danh/quet`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
   const scanBody = (token = an.qrToken) => ({ eventId: crypto.randomUUID(), sessionId: session.id, kind: "scan", token, mode: "present" });
@@ -27,6 +27,12 @@ describe("isSameOrigin", () => {
     expect(isSameOrigin(new Headers({ host: HOST }))).toBe(false);
     expect(isSameOrigin(new Headers({ origin: "not a url", host: HOST }))).toBe(false);
     expect(isSameOrigin(new Headers({ origin: `https://${HOST}`, "x-forwarded-host": HOST, host: "internal:3000" }))).toBe(true);
+  });
+
+  it("uses only the first entry of a comma-separated X-Forwarded-Host", () => {
+    expect(isSameOrigin(new Headers({ origin: `https://${HOST}`, "x-forwarded-host": `${HOST}, proxy.internal`, host: "internal:3000" }))).toBe(true);
+    expect(isSameOrigin(new Headers({ origin: "https://evil.example", "x-forwarded-host": `${HOST}, evil.example`, host: "internal:3000" }))).toBe(false);
+    expect(isSameOrigin(new Headers({ origin: "https://evil.example", "x-forwarded-host": `evil.example,${HOST}`, host: HOST }))).toBe(true);
   });
 });
 
@@ -63,7 +69,7 @@ describe("handleScanApi POST", () => {
 
   it("rate limits per user with 429 and Retry-After", async () => {
     const { b, post, scanBody, db } = await setup();
-    const d = { db, getUser: async () => b.glv, limiter: createRateLimiter({ max: 2, windowMs: 60_000 }) };
+    const d = { db, getUser: async () => b.glv, limiter: createRateLimiter({ max: 2, windowMs: 60_000 }), rosterLimiter: createRateLimiter({ max: 1000, windowMs: 60_000 }) };
     await handleScanApi("scan", post(scanBody()), d);
     await handleScanApi("scan", post(scanBody()), d);
     const res = await handleScanApi("scan", post(scanBody()), d);
@@ -116,7 +122,7 @@ describe("handleScanApi hardening", () => {
     } as RequestInit);
     const res = await handleScanApi("scan", req, deps(b.glv));
     expect(res.status).toBe(413);
-    expect(pulled).toBeLessThan(10);
+    expect(pulled).toBeLessThanOrEqual(1);
   });
 
   it("stops reading a streamed body once it passes the limit", async () => {
@@ -138,7 +144,7 @@ describe("handleScanApi hardening", () => {
     const logged: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => { logged.push(...args); });
     try {
-      const res = await handleScanApi("scan", post(scanBody()), { db: brokenDb, getUser: async () => b.glv, limiter: createRateLimiter({ max: 10, windowMs: 1000 }) });
+      const res = await handleScanApi("scan", post(scanBody()), { db: brokenDb, getUser: async () => b.glv, limiter: createRateLimiter({ max: 10, windowMs: 1000 }), rosterLimiter: createRateLimiter({ max: 10, windowMs: 1000 }) });
       expect(res.status).toBe(500);
       expect(res.headers.get("cache-control")).toBe("private, no-store");
       const text = await res.text();
@@ -148,5 +154,50 @@ describe("handleScanApi hardening", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("handleScanApi fix round 1", () => {
+  it("requires exactly the application/json media type", async () => {
+    const { b, deps, post, scanBody } = await setup();
+    for (const ct of ["text/plain; foo=application/json", "application/json-patch+json", "text/application/json"]) {
+      expect((await handleScanApi("scan", post(scanBody(), { ...goodHeaders, "content-type": ct }), deps(b.glv))).status).toBe(415);
+    }
+    for (const ct of ["application/json; charset=utf-8", "Application/JSON"]) {
+      expect((await handleScanApi("scan", post(scanBody(), { ...goodHeaders, "content-type": ct }), deps(b.glv))).status).toBe(200);
+    }
+  });
+
+  it("rate limits the roster per user with its own limiter (429, no-store, Retry-After)", async () => {
+    const { b, session, deps } = await setup(1000, 2);
+    const d = deps(b.glv);
+    const get = () => new Request(`https://${HOST}/api/diem-danh/bang-tra?sessionId=${session.id}`, { headers: { host: HOST } });
+    expect((await handleScanApi("roster", get(), d)).status).toBe(200);
+    expect((await handleScanApi("roster", get(), d)).status).toBe(200);
+    const res = await handleScanApi("roster", get(), d);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
+  it("serves the results route through the same guards", async () => {
+    const { b, session, deps, post, scanBody } = await setup();
+    const body = scanBody();
+    await handleScanApi("scan", post(body), deps(b.glv));
+    const res = await handleScanApi("results", post({ sessionId: session.id, eventIds: [body.eventId] }), deps(b.glv));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(await res.json()).toMatchObject({ ok: true, data: { results: [{ eventId: body.eventId, kind: "scan", result: "applied", status: "present" }] } });
+    expect((await handleScanApi("results", post({ sessionId: session.id, eventIds: [] }), deps(b.head))).status).toBe(404);
+    expect((await handleScanApi("results", post({ sessionId: session.id, eventIds: [] }, { ...goodHeaders, origin: "https://evil.example" }), deps(b.glv))).status).toBe(403);
+    expect((await handleScanApi("results", post({}), deps(null))).status).toBe(401);
+  });
+
+  it("lets Next.js control-flow errors propagate instead of turning them into a 500", async () => {
+    const { b, post, scanBody } = await setup();
+    const { notFound } = await import("next/navigation");
+    const getUser = async () => { notFound(); return b.glv; };
+    const limiter = createRateLimiter({ max: 10, windowMs: 1000 });
+    await expect(handleScanApi("scan", post(scanBody()), { db: {} as never, getUser, limiter, rosterLimiter: limiter })).rejects.toMatchObject({ digest: expect.stringContaining("NEXT_HTTP_ERROR_FALLBACK") });
   });
 });
