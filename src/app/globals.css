@@ -1,26 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f7f1e6;
+  --card: #fffdf8;
+  --ink: #2b2118;
+  --ink-soft: #6b5d4f;
+  --line: #e3d8c4;
+  --brand: #2f5d46;
+  --st-present: #3f7d4e;
+  --st-excused: #3b6ea5;
+  --st-unexcused: #b3392f;
+  --st-late: #c98a1b;
+  --st-none: #b9ad99;
+  --warn-watch: #c98a1b;
+  --warn-alert: #b3392f;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-st-present: var(--st-present);
+  --color-st-excused: var(--st-excused);
+  --color-st-unexcused: var(--st-unexcused);
+  --color-st-late: var(--st-late);
+  --color-st-none: var(--st-none);
+  --color-warn-watch: var(--warn-watch);
+  --color-warn-alert: var(--warn-alert);
+  --font-body: var(--font-body-face), system-ui, sans-serif;
+  --font-display: var(--font-display-face), Georgia, serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+html { background: var(--paper); color: var(--ink); }
+body { font-family: var(--font-body); -webkit-tap-highlight-color: transparent; }
+h1, h2, h3 { font-family: var(--font-display); }
