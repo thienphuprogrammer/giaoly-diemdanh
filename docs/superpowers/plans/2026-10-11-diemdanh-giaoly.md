@@ -1410,6 +1410,7 @@ describe("updateStudent / setStudentActive", () => {
     expect((await updateStudent(db, b.otherGlv, { studentId: "not-a-uuid", fullName: "X" })).ok).toBe(false);
   });
 });
+```
 
 `src/server/services/admin.test.ts`
 
