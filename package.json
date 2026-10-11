@@ -15,9 +15,11 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
-    "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate"
+    "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
+    "qr:wasm": "node scripts/copy-qr-wasm.mjs"
   },
   "dependencies": {
+    "barcode-detector": "^3.2.2",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
@@ -25,10 +27,12 @@
     "lucide-react": "^1.55.0",
     "next": "16.4.0",
     "postgres": "^3.4.9",
+    "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "zxing-wasm": "3.1.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
@@ -36,6 +40,7 @@
     "@tailwindcss/turbopack": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^22.20.5",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^5.0.3",
