@@ -137,7 +137,14 @@ export function AttendanceBoard({ board }: { board: Board }) {
         <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-card">
           {board.students.map((s) => (
             <li key={s.id} className="flex min-h-14 flex-wrap items-center justify-between gap-2 px-3 py-2">
-              <span className="min-w-0 flex-1 truncate font-medium">{s.saintName ? `${s.saintName} ` : ""}{s.fullName}</span>
+              <div className="flex min-w-0 flex-1 basis-40 flex-col items-start gap-1">
+                <span className="break-words font-medium">{s.saintName ? `${s.saintName} ` : ""}{s.fullName}</span>
+                {levelOf(s.id) !== "none" && (
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold text-white ${levelOf(s.id) === "warning" ? "bg-warn-alert" : "bg-warn-watch"}`}>
+                    {levelOf(s.id) === "warning" ? "Cảnh báo" : "Vắng 1"}
+                  </span>
+                )}
+              </div>
               <span className="flex gap-1">
                 <button disabled={readOnly} aria-pressed={marks[s.id]?.status === "present"} onClick={() => void save(s.id, { status: "present", reason: null })}
                   className={`h-11 min-w-11 rounded-lg border px-3 text-sm ${marks[s.id]?.status === "present" ? "border-st-present bg-st-present text-white" : "border-line"} ${failedId === s.id ? "ring-2 ring-warn-alert" : ""}`}>Có</button>
@@ -146,11 +153,6 @@ export function AttendanceBoard({ board }: { board: Board }) {
                 <button disabled={readOnly} aria-label={`Thêm lựa chọn cho ${s.fullName}`} onClick={() => setSheetFor(s.id)}
                   className="h-11 w-11 rounded-lg border border-line text-lg">⋯</button>
               </span>
-              {levelOf(s.id) !== "none" && (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold text-white ${levelOf(s.id) === "warning" ? "bg-warn-alert" : "bg-warn-watch"}`}>
-                  {levelOf(s.id) === "warning" ? "Cảnh báo" : "Vắng 1"}
-                </span>
-              )}
             </li>
           ))}
         </ul>
