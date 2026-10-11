@@ -1,6 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { STATUS_CLASS, STATUS_LABEL } from "@/lib/attendance/ui";
+import { Check, CircleDashed, X } from "lucide-react";
+import { useState } from "react";
+import { Field } from "@/components/ui/Field";
+import { StatusPill } from "@/components/ui/Pill";
+import { Sheet } from "@/components/ui/Sheet";
+import { STATUS_META } from "@/components/ui/status";
+import { STATUS_LABEL } from "@/lib/attendance/ui";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 
 const ORDER: AttendanceStatus[] = ["present", "late", "absent_excused", "absent_unexcused"];
@@ -15,33 +20,41 @@ interface Props {
 
 export function StatusSheet({ name, current, reason, onPick, onClose }: Props) {
   const [text, setText] = useState(reason ?? "");
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
   return (
-    <>
-    <button aria-label="Đóng" tabIndex={-1} onClick={onClose} className="fixed inset-0 z-20 cursor-default bg-black/30" />
-    <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Điểm danh ${name}`} className="fixed inset-x-0 bottom-0 z-30 rounded-t-3xl border-t border-line bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl outline-none">
-      <div className="mx-auto flex max-w-3xl flex-col gap-2">
-        <h2 className="text-lg font-semibold">{name}</h2>
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Lý do (không bắt buộc)" maxLength={200}
-          className="h-12 rounded-xl border border-line px-4" />
-        <div className="grid grid-cols-2 gap-2">
-          {ORDER.map((s) => (
-            <button key={s} onClick={() => onPick(s, text.trim() || null)} aria-pressed={current === s}
-              className={`h-12 rounded-xl border-2 text-sm font-semibold ${current === s ? STATUS_CLASS[s] : "border-line bg-paper"}`}>
-              {STATUS_LABEL[s]}
-            </button>
-          ))}
+    <Sheet label={`Điểm danh ${name}`} onClose={onClose}>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="break-words text-xl font-semibold">{name}</h2>
+          <div className="mt-1.5 flex items-center gap-2 text-sm text-ink-soft">
+            Hiện tại: <StatusPill status={current ?? "none"} label={current ? STATUS_LABEL[current] : "Chưa điểm danh"} />
+          </div>
         </div>
-        <button onClick={() => onPick(null, null)} className="h-12 rounded-xl border border-line text-sm">Bỏ điểm danh (chưa điểm danh)</button>
-        <button onClick={onClose} className="h-12 rounded-xl text-sm text-ink-soft">Đóng</button>
+        <button onClick={onClose} aria-label="Đóng" className="btn btn-ghost btn-icon -mr-2 -mt-1 shrink-0">
+          <X aria-hidden size={22} />
+        </button>
       </div>
-    </div>
-    </>
+      <Field label="Lý do (không bắt buộc)" hint="Nhập trước khi chọn trạng thái, ví dụ: ốm, về quê.">
+        <input value={text} onChange={(e) => setText(e.target.value)} maxLength={200} className="input" />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        {ORDER.map((s) => {
+          const meta = STATUS_META[s];
+          const Icon = meta.icon;
+          const selected = current === s;
+          return (
+            <button key={s} onClick={() => onPick(s, text.trim() || null)} aria-pressed={selected}
+              className={`relative flex min-h-16 items-center gap-2.5 rounded-control border-2 px-3 py-2 text-left font-display text-base font-semibold leading-tight transition-[transform,background-color] duration-150 active:scale-[0.98] ${selected ? meta.solid : meta.tint}`}>
+              <Icon aria-hidden size={22} strokeWidth={2.25} className="shrink-0" />
+              <span className="min-w-0 flex-1">{STATUS_LABEL[s]}</span>
+              {selected && <Check aria-hidden size={18} strokeWidth={3} className="shrink-0" />}
+            </button>
+          );
+        })}
+      </div>
+      <button onClick={() => onPick(null, null)} className="btn btn-secondary w-full">
+        <CircleDashed aria-hidden size={20} />
+        Bỏ điểm danh (chưa điểm danh)
+      </button>
+    </Sheet>
   );
 }

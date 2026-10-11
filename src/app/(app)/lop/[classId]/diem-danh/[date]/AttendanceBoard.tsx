@@ -1,8 +1,12 @@
 "use client";
+import { Check, CheckCheck, Ellipsis, LayoutGrid, ListChecks, X } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SeatMap } from "@/components/seating/SeatMap";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
 import { StudentButton } from "@/components/attendance/StudentButton";
+import { Notice } from "@/components/ui/Notice";
+import { StatusPill, WarningPill } from "@/components/ui/Pill";
+import { STATUS_META, STATUS_ORDER, type StatusKey } from "@/components/ui/status";
 import { countMarked, createSequencer, fillPresent, initialMarks, settleSave, type Mark, type Marks } from "@/lib/attendance/marks";
 import { toggleStatus } from "@/lib/attendance/toggle";
 import { evaluateWarningFromCount } from "@/lib/attendance/warning";
@@ -27,8 +31,9 @@ export function AttendanceBoard({ board }: { board: Board }) {
   const readOnly = !board.canWrite || cancelled;
 
   const byId = useMemo(() => new Map(board.students.map((s) => [s.id, s])), [board.students]);
-  const levelOf = (id: string) =>
-    evaluateWarningFromCount((byId.get(id)?.priorUnexcused ?? 0) + (!cancelled && marks[id]?.status === "absent_unexcused" ? 1 : 0)).level;
+  const warnOf = (id: string) =>
+    evaluateWarningFromCount((byId.get(id)?.priorUnexcused ?? 0) + (!cancelled && marks[id]?.status === "absent_unexcused" ? 1 : 0));
+  const levelOf = (id: string) => warnOf(id).level;
 
   async function save(studentId: string, next: Mark) {
     const turn = seq.current.begin(studentId);
@@ -86,75 +91,129 @@ export function AttendanceBoard({ board }: { board: Board }) {
   }
 
   const button = (id: string) => (
-    <StudentButton fullName={byId.get(id)!.fullName} status={marks[id]?.status ?? null} warning={levelOf(id)}
+    <StudentButton fullName={byId.get(id)!.fullName} status={marks[id]?.status ?? null} warning={levelOf(id)} absences={warnOf(id).unexcused}
       failed={failedId === id} disabled={readOnly} onTap={() => tap(id)} onLongPress={() => !readOnly && setSheetFor(id)} />
   );
 
   const seatOf = new Map(board.plan?.assignments.map((a) => [seatKey(a), a.studentId]) ?? []);
   const seated = new Set(board.plan?.assignments.map((a) => a.studentId));
   const unseated = board.students.filter((s) => !seated.has(s.id));
+  const total = board.students.length;
+  const marked = countMarked(marks);
+  const tally = (key: StatusKey) => board.students.filter((s) => (marks[s.id]?.status ?? "none") === key).length;
+  const choice = (pressed: boolean, key: "present" | "absent_unexcused", failed: boolean) =>
+    `btn btn-sm w-full border-2 ${pressed ? STATUS_META[key].solid : "btn-secondary"} ${failed ? "ring-[3px] ring-warn-alert ring-offset-2" : ""}`;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium" aria-live="polite">Đã điểm danh {countMarked(marks)}/{board.students.length}</p>
+      <div className="card flex flex-col gap-4 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="font-display text-lg font-semibold tabular-nums" aria-live="polite">Đã điểm danh {marked}/{total}</p>
+          <span aria-hidden className="font-display text-sm font-medium tabular-nums text-ink-soft">{total ? Math.round((marked / total) * 100) : 0}%</span>
+        </div>
+        <div role="progressbar" aria-label="Tiến độ điểm danh" aria-valuemin={0} aria-valuemax={total} aria-valuenow={marked}
+          className="-mt-2 h-2.5 overflow-hidden rounded-full bg-surface-muted">
+          <div className="h-full origin-left rounded-full bg-st-present transition-transform duration-200"
+            style={{ transform: `scaleX(${total ? marked / total : 0})` }} />
+        </div>
         {board.canWrite && !cancelled && (
-          <button onClick={markAll} disabled={busy} className="h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">Tất cả có mặt</button>
+          <button onClick={markAll} disabled={busy} className="btn btn-primary btn-lg w-full">
+            <CheckCheck aria-hidden size={20} />
+            Tất cả có mặt
+          </button>
+        )}
+        {board.canWrite && (
+          <label className="-mx-1 flex min-h-11 items-center justify-between gap-3 rounded-control px-1">
+            <span className="flex flex-col">
+              <span className="font-medium">Buổi nghỉ lễ</span>
+              <span className="text-sm text-ink-soft">Không tính vào thống kê</span>
+            </span>
+            <input type="checkbox" checked={cancelled} disabled={busy} onChange={(e) => void toggleCancelled(e.target.checked)} className="switch" />
+          </label>
         )}
       </div>
-      {cancelled && <p role="status" className="rounded-xl bg-paper p-3 text-sm">Buổi nghỉ lễ — không tính vào thống kê.</p>}
-      {board.canWrite && (
-        <label className="flex min-h-11 items-center gap-2 text-sm">
-          <input type="checkbox" checked={cancelled} disabled={busy} onChange={(e) => void toggleCancelled(e.target.checked)} className="h-5 w-5" /> Buổi nghỉ lễ
-        </label>
-      )}
-      {error && <p role="alert" className="text-sm text-warn-alert">{error}</p>}
+      {cancelled && <Notice tone="info" role="status">Buổi nghỉ lễ — không tính vào thống kê.</Notice>}
+      {error && <Notice tone="error" role="alert">{error}</Notice>}
 
-      <div role="tablist" className="flex gap-2">
-        {(["map", "list"] as const).map((m) => (
-          <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
-            disabled={m === "map" && !board.plan}
-            className={`h-11 rounded-lg border border-line px-4 text-sm font-medium disabled:opacity-40 ${mode === m ? "bg-brand text-white" : "bg-card"}`}>
-            {m === "map" ? "Sơ đồ" : "Checklist"}
-          </button>
-        ))}
+      <div role="tablist" aria-label="Cách điểm danh" className="grid grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
+        {(["map", "list"] as const).map((m) => {
+          const Icon = m === "map" ? LayoutGrid : ListChecks;
+          return (
+            <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+              disabled={m === "map" && !board.plan}
+              className={`btn min-h-11 rounded-[8px] ${mode === m ? "bg-action text-on-action" : "text-ink-soft hover:bg-surface hover:text-ink"}`}>
+              <Icon aria-hidden size={20} />
+              {m === "map" ? "Sơ đồ" : "Checklist"}
+            </button>
+          );
+        })}
       </div>
 
       {mode === "map" && board.plan ? (
         <>
-          <SeatMap layout={board.plan.layout} renderSeat={(seat) => {
-            const id = seatOf.get(seatKey(seat));
-            return id ? button(id) : <div aria-hidden className="h-16 w-16 rounded-xl border border-dashed border-line opacity-50" />;
-          }} />
+          <div className="card overflow-hidden">
+            <SeatMap layout={board.plan.layout} renderSeat={(seat) => {
+              const id = seatOf.get(seatKey(seat));
+              return id ? button(id) : <div aria-hidden className="h-[72px] w-16 rounded-control border border-dashed border-border" />;
+            }} />
+            <ul aria-label="Chú thích" className="flex flex-wrap gap-x-4 gap-y-2 border-t border-border px-4 py-3">
+              {STATUS_ORDER.map((key) => (
+                <li key={key} className="flex items-center gap-1.5 text-sm text-ink-soft">
+                  <span aria-hidden className={`h-3.5 w-3.5 rounded-[4px] border-2 ${STATUS_META[key].swatch}`} />
+                  {STATUS_META[key].short}
+                  <span className="font-display font-semibold tabular-nums text-ink">{tally(key)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
           {unseated.length > 0 && (
-            <div>
-              <h2 className="mb-2 text-sm font-semibold text-ink-soft">Chưa xếp chỗ</h2>
+            <div className="flex flex-col gap-2">
+              <h3 className="text-base font-semibold">Chưa xếp chỗ <span className="font-normal text-ink-soft">· {unseated.length} em</span></h3>
               <div className="flex flex-wrap gap-2">{unseated.map((s) => <div key={s.id}>{button(s.id)}</div>)}</div>
             </div>
           )}
         </>
       ) : (
-        <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-card">
-          {board.students.map((s) => (
-            <li key={s.id} className="flex min-h-14 flex-wrap items-center justify-between gap-2 px-3 py-2">
-              <div className="flex min-w-0 flex-1 basis-40 flex-col items-start gap-1">
-                <span className="break-words font-medium">{s.saintName ? `${s.saintName} ` : ""}{s.fullName}</span>
-                {levelOf(s.id) !== "none" && (
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold text-white ${levelOf(s.id) === "warning" ? "bg-warn-alert" : "bg-warn-watch"}`}>
-                    {levelOf(s.id) === "warning" ? "Cảnh báo" : "Vắng 1"}
+        <ul className="card flex flex-col divide-y divide-border">
+          {board.students.map((s) => {
+            const status = marks[s.id]?.status ?? null;
+            const level = levelOf(s.id);
+            const failed = failedId === s.id;
+            return (
+              <li key={s.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+                  <span className="break-words font-medium leading-snug">
+                    {s.saintName && <span className="text-sm font-normal text-ink-soft">{s.saintName} </span>}
+                    {s.fullName}
                   </span>
-                )}
-              </div>
-              <span className="flex gap-1">
-                <button disabled={readOnly} aria-pressed={marks[s.id]?.status === "present"} onClick={() => void save(s.id, { status: "present", reason: null })}
-                  className={`h-11 min-w-11 rounded-lg border px-3 text-sm ${marks[s.id]?.status === "present" ? "border-st-present bg-st-present text-white" : "border-line"} ${failedId === s.id ? "ring-2 ring-warn-alert" : ""}`}>Có</button>
-                <button disabled={readOnly} aria-pressed={marks[s.id]?.status === "absent_unexcused"} onClick={() => void save(s.id, { status: "absent_unexcused", reason: null })}
-                  className={`h-11 min-w-11 rounded-lg border px-3 text-sm ${marks[s.id]?.status === "absent_unexcused" ? "border-st-unexcused bg-st-unexcused text-white" : "border-line"} ${failedId === s.id ? "ring-2 ring-warn-alert" : ""}`}>Vắng</button>
-                <button disabled={readOnly} aria-label={`Thêm lựa chọn cho ${s.fullName}`} onClick={() => setSheetFor(s.id)}
-                  className="h-11 w-11 rounded-lg border border-line text-lg">⋯</button>
-              </span>
-            </li>
-          ))}
+                  {(level !== "none" || status === "late" || status === "absent_excused") && (
+                    <span className="flex flex-wrap gap-1.5">
+                      {(status === "late" || status === "absent_excused") && <StatusPill status={status} />}
+                      {level !== "none" && (
+                        <WarningPill level={level === "warning" ? "warning" : "watch"}>
+                          {level === "warning" ? "Cảnh báo" : "Vắng 1"}
+                        </WarningPill>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <span className="grid grid-cols-[1fr_1fr_auto] gap-2 sm:w-72">
+                  <button disabled={readOnly} aria-pressed={status === "present"} onClick={() => void save(s.id, { status: "present", reason: null })}
+                    className={choice(status === "present", "present", failed)}>
+                    <Check aria-hidden size={18} strokeWidth={2.5} />Có
+                  </button>
+                  <button disabled={readOnly} aria-pressed={status === "absent_unexcused"} onClick={() => void save(s.id, { status: "absent_unexcused", reason: null })}
+                    className={choice(status === "absent_unexcused", "absent_unexcused", failed)}>
+                    <X aria-hidden size={18} strokeWidth={2.5} />Vắng
+                  </button>
+                  <button disabled={readOnly} aria-label={`Thêm lựa chọn cho ${s.fullName}`} onClick={() => setSheetFor(s.id)}
+                    className="btn btn-secondary btn-sm border-2">
+                    <Ellipsis aria-hidden size={18} strokeWidth={2.5} />Thêm
+                  </button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
 
