@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { students } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
-import { addStudent, setStudentActive, updateStudent } from "./students";
+import { addStudent, importStudents, setStudentActive, updateStudent } from "./students";
 
 async function setup() {
   const db = await createTestDb();
@@ -61,5 +61,31 @@ describe("updateStudent / setStudentActive", () => {
     if (!added.ok) throw new Error("setup");
     expect((await setStudentActive(db, b.otherGlv, { studentId: added.data.id, active: false })).ok).toBe(false);
     expect((await updateStudent(db, b.otherGlv, { studentId: "not-a-uuid", fullName: "X" })).ok).toBe(false);
+  });
+});
+
+describe("importStudents", () => {
+  it("inserts valid rows and skips students already in the class", async () => {
+    const { db, b } = await setup();
+    await addStudent(db, b.glv, { classId: b.classId, fullName: "An", birthDate: "2015-01-01" });
+    const r = await importStudents(db, b.glv, {
+      classId: b.classId,
+      rows: [{ fullName: "An", birthDate: "2015-01-01" }, { fullName: "Bình" }, { fullName: "Chi", parentPhone: "0901234567" }],
+    });
+    expect(r).toEqual({ ok: true, data: { inserted: 2, skipped: 1 } });
+    expect(await db.select().from(students)).toHaveLength(3);
+  });
+
+  it("re-validates rows on the server", async () => {
+    const { db, b } = await setup();
+    expect((await importStudents(db, b.glv, { classId: b.classId, rows: [{ fullName: "" }] })).ok).toBe(false);
+    expect(await db.select().from(students)).toHaveLength(0);
+  });
+
+  it("rejects more than the row limit and unauthorised callers", async () => {
+    const { db, b } = await setup();
+    const many = Array.from({ length: 501 }, (_, i) => ({ fullName: `Em ${i}` }));
+    expect((await importStudents(db, b.glv, { classId: b.classId, rows: many })).ok).toBe(false);
+    expect((await importStudents(db, b.otherGlv, { classId: b.classId, rows: [{ fullName: "X" }] })).ok).toBe(false);
   });
 });

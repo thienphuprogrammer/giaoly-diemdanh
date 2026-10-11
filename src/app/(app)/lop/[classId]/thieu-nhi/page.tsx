@@ -4,6 +4,7 @@ import { listStudents } from "@/db/queries/students";
 import { requireUser } from "@/lib/auth/dal";
 import { classPermissions } from "@/server/guard";
 import { setStudentActiveAction } from "./actions";
+import { ImportCsv } from "./ImportCsv";
 import { StudentForm } from "./StudentForm";
 
 export default async function StudentsPage({ params }: { params: Promise<{ classId: string }> }) {
@@ -15,6 +16,7 @@ export default async function StudentsPage({ params }: { params: Promise<{ class
   return (
     <section className="flex flex-col gap-4">
       {perms.canWrite && <StudentForm classId={classId} />}
+      {perms.canWrite && <ImportCsv classId={classId} />}
       <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-card">
         {list.map((s) => (
           <li key={s.id} className={`flex min-h-14 items-center justify-between px-4 py-2 ${s.active ? "" : "opacity-50"}`}>

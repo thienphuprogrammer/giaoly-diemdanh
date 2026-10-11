@@ -4,6 +4,7 @@ import { getStudent } from "@/db/queries/students";
 import { students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
+import { MAX_IMPORT_ROWS } from "@/lib/import/csv";
 import { studentFields } from "@/lib/students/schema";
 import { NOT_FOUND, guardClass } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
@@ -48,4 +49,24 @@ export async function setStudentActive(db: Db, user: AppUser, input: unknown): P
   if (!(await loadWritable(db, user, p.data.studentId))) return fail(NOT_FOUND_STUDENT);
   await db.update(students).set({ active: p.data.active }).where(eq(students.id, p.data.studentId));
   return ok(undefined);
+}
+
+export async function importStudents(
+  db: Db,
+  user: AppUser,
+  input: unknown,
+): Promise<ActionResult<{ inserted: number; skipped: number }>> {
+  const p = z.object({
+    classId: z.string(),
+    rows: z.array(studentFields).max(MAX_IMPORT_ROWS, `Tối đa ${MAX_IMPORT_ROWS} dòng mỗi lần nhập`),
+  }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const { classId, rows } = p.data;
+  if (!(await guardClass(db, user, classId, "write"))) return fail(NOT_FOUND);
+
+  const key = (r: { fullName: string; birthDate?: string | null }) => `${r.fullName.toLowerCase()}|${r.birthDate ?? ""}`;
+  const existing = new Set((await db.select().from(students).where(eq(students.classId, classId))).map(key));
+  const fresh = rows.filter((r) => !existing.has(key(r)));
+  if (fresh.length > 0) await db.insert(students).values(fresh.map((r) => ({ classId, ...r })));
+  return ok({ inserted: fresh.length, skipped: rows.length - fresh.length });
 }
