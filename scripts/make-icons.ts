@@ -1,11 +1,11 @@
 import { chromium } from "@playwright/test";
 
-const BG = `<rect width="512" height="512" fill="#2f5d46"/>`;
+const BG = `<rect width="512" height="512" fill="#1d4ed8"/>`;
 const ART = `
-  <rect x="96" y="156" width="140" height="90" rx="22" fill="#f7f1e6"/>
-  <rect x="276" y="156" width="140" height="90" rx="22" fill="#f7f1e6"/>
-  <rect x="96" y="286" width="140" height="90" rx="22" fill="#f7f1e6" opacity=".55"/>
-  <path d="M296 331l34 34 70-76" fill="none" stroke="#f7f1e6" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>`;
+  <rect x="96" y="156" width="140" height="90" rx="22" fill="#ffffff"/>
+  <rect x="276" y="156" width="140" height="90" rx="22" fill="#ffffff"/>
+  <rect x="96" y="286" width="140" height="90" rx="22" fill="#ffffff" opacity=".55"/>
+  <path d="M296 331l34 34 70-76" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>`;
 const svg = (body: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">${BG}${body}</svg>`;
 

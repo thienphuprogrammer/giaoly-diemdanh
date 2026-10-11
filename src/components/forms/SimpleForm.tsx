@@ -1,25 +1,52 @@
 "use client";
+import type { LucideIcon } from "lucide-react";
 import { useActionState } from "react";
+import { Field } from "@/components/ui/Field";
+import { Notice } from "@/components/ui/Notice";
 import type { FormState } from "@/server/form-state";
 
-interface Field { name: string; label: string; type?: string; autoComplete?: string; minLength?: number; maxLength?: number; options?: { value: string; label: string }[] }
+interface FieldSpec { name: string; label: string; type?: string; autoComplete?: string; minLength?: number; maxLength?: number; options?: { value: string; label: string }[] }
 
-export function SimpleForm({ title, fields, action }: { title: string; fields: Field[]; action: (prev: FormState, fd: FormData) => Promise<FormState> }) {
+interface Props {
+  title: string;
+  fields: FieldSpec[];
+  action: (prev: FormState, fd: FormData) => Promise<FormState>;
+  description?: string;
+  icon?: LucideIcon;
+  /** "sensitive": thao tác nhạy cảm (đặt lại mật khẩu) — viền và nút màu cảnh báo. */
+  tone?: "default" | "sensitive";
+}
+
+export function SimpleForm({ title, fields, action, description, icon: Icon, tone = "default" }: Props) {
   const [state, run, pending] = useActionState(action, undefined);
-  const cls = "h-12 rounded-xl border border-line bg-card px-4 text-base";
+  const sensitive = tone === "sensitive";
   return (
-    <form action={run} className="grid gap-3 rounded-2xl border border-line bg-card p-4">
-      <h2 className="font-semibold">{title}</h2>
-      {fields.map((f) => f.options ? (
-        <select key={f.name} name={f.name} aria-label={f.label} required className={cls}>
-          {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      ) : (
-        <input key={f.name} name={f.name} type={f.type ?? "text"} placeholder={f.label} aria-label={f.label} autoComplete={f.autoComplete} minLength={f.minLength} maxLength={f.maxLength} required className={cls} />
+    <form action={run} className={`card grid gap-4 p-4 ${sensitive ? "border-warn-alert/40" : ""}`}>
+      <div className="flex items-start gap-3">
+        {Icon && (
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-control ${sensitive ? "bg-warn-alert-tint text-warn-alert" : "bg-action-tint text-action"}`}>
+            <Icon aria-hidden size={20} />
+          </span>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          {description && <p className="mt-0.5 text-sm text-ink-soft">{description}</p>}
+        </div>
+      </div>
+      {fields.map((f) => (
+        <Field key={f.name} label={f.label}>
+          {f.options ? (
+            <select name={f.name} required className="input">
+              {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : (
+            <input name={f.name} type={f.type ?? "text"} autoComplete={f.autoComplete} minLength={f.minLength} maxLength={f.maxLength} required className="input" />
+          )}
+        </Field>
       ))}
-      {state?.error && <p role="alert" className="text-sm text-warn-alert">{state.error}</p>}
-      {state?.ok && <p role="status" className="text-sm text-brand">Đã lưu</p>}
-      <button disabled={pending} className="h-12 rounded-xl bg-brand font-semibold text-white disabled:opacity-60">Lưu</button>
+      {state?.error && <Notice tone="error" role="alert">{state.error}</Notice>}
+      {state?.ok && <Notice tone="success" role="status">Đã lưu</Notice>}
+      <button disabled={pending} className={`btn btn-lg w-full ${sensitive ? "btn-danger" : "btn-primary"}`}>Lưu</button>
     </form>
   );
 }
