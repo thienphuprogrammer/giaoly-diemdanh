@@ -4,7 +4,7 @@ import { shortName } from "@/lib/students/short-name";
 export function Avatar({ name, muted }: { name: string; muted?: boolean }) {
   const initial = shortName(name).charAt(0).toLocaleUpperCase("vi");
   return (
-    <span aria-hidden className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display text-base font-semibold ${muted ? "bg-surface-muted text-ink-muted" : "bg-action-tint text-action"}`}>
+    <span aria-hidden className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display text-base font-semibold ${muted ? "bg-surface-muted text-ink-soft" : "bg-action-tint text-action"}`}>
       {initial}
     </span>
   );
