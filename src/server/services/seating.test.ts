@@ -108,3 +108,45 @@ describe("activatePlan / deletePlan", () => {
     expect((await deletePlan(db, b.glv, { planId })).ok).toBe(true);
   });
 });
+
+describe("concurrency", () => {
+  it("createPlan: concurrent first plans leave exactly one active", async () => {
+    const db = await createTestDb();
+    const b = await seedBasics(db);
+    const rs = await Promise.all([
+      createPlan(db, b.glv, { classId: b.classId, name: "A" }),
+      createPlan(db, b.glv, { classId: b.classId, name: "B" }),
+    ]);
+    expect(rs.every((r) => r.ok)).toBe(true);
+    const plans = await db.select().from(seatingPlans).where(eq(seatingPlans.classId, b.classId));
+    expect(plans).toHaveLength(2);
+    expect(plans.filter((p) => p.isActive)).toHaveLength(1);
+  });
+
+  it("assignSeat: concurrent assignments of different students both persist", async () => {
+    const { db, b, planId, benches, kid } = await setup();
+    const [an, binh] = [await kid("An"), await kid("Bình")];
+    const rs = await Promise.all([
+      assignSeat(db, b.glv, { planId, benchId: benches[0].id, seatIndex: 0, studentId: an.id }),
+      assignSeat(db, b.glv, { planId, benchId: benches[0].id, seatIndex: 1, studentId: binh.id }),
+    ]);
+    expect(rs.every((r) => r.ok)).toBe(true);
+    expect(await db.select().from(seatAssignments)).toHaveLength(2);
+  });
+
+  it("saveLayout vs assignSeat never leaves an assignment for a missing seat", async () => {
+    const { db, b, planId, benches, kid } = await setup();
+    const an = await kid("An");
+    const layout = (await getPlan(db, planId))!.plan.layout.map((row) => ({
+      ...row,
+      items: row.items.filter((i) => i.id !== benches[0].id),
+    }));
+    await Promise.all([
+      saveLayout(db, b.glv, { planId, layout }),
+      assignSeat(db, b.glv, { planId, benchId: benches[0].id, seatIndex: 0, studentId: an.id }),
+    ]);
+    const data = (await getPlan(db, planId))!;
+    const ids = new Set(data.plan.layout.flatMap((r) => r.items).map((i) => i.id));
+    expect(data.assignments.every((a) => ids.has(a.benchId))).toBe(true);
+  });
+});

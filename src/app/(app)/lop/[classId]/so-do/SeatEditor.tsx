@@ -30,7 +30,7 @@ export function SeatEditor({ classId, planId, initialLayout, initialAssignments,
   const [busy, setBusy] = useState(false);
 
   const names = new Map(students.map((s) => [s.id, s.fullName]));
-  const owner = new Map(assignments.map((a) => [seatKey(a), a.studentId]));
+  const owner = new Map(assignments.filter((a) => names.has(a.studentId)).map((a) => [seatKey(a), a.studentId]));
   const freeIds = new Set(unseatedStudentIds(students.map((s) => s.id), assignments));
   const edit = (next: Layout) => { setLayout(next); setDirty(true); setMessage(undefined); };
 

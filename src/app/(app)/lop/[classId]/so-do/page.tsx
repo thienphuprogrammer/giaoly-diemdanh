@@ -4,9 +4,11 @@ import { SimpleForm } from "@/components/forms/SimpleForm";
 import { db } from "@/db/client";
 import { getPlan, listPlans } from "@/db/queries/seating";
 import { listStudents } from "@/db/queries/students";
+import { visibleAssignments } from "@/lib/seating/assignments";
 import { requireUser } from "@/lib/auth/dal";
 import { classPermissions } from "@/server/guard";
-import { activatePlanAction, createPlanAction, deletePlanAction } from "./actions";
+import { createPlanAction } from "./actions";
+import { PlanActions } from "./PlanActions";
 import { SeatEditor } from "./SeatEditor";
 
 export default async function SeatingPage({
@@ -27,6 +29,8 @@ export default async function SeatingPage({
   const data = selected ? await getPlan(db, selected.id) : null;
   const students = (await listStudents(db, classId)).map((s) => ({ id: s.id, fullName: s.fullName }));
 
+  const activeIds = new Set(students.map((s) => s.id));
+
   return (
     <section className="flex flex-col gap-4">
       <nav className="flex flex-wrap gap-2" aria-label="Các sơ đồ">
@@ -40,21 +44,8 @@ export default async function SeatingPage({
       {data && selected && (
         <>
           <SeatEditor key={selected.id} classId={classId} planId={selected.id} initialLayout={data.plan.layout}
-            initialAssignments={data.assignments} students={students} canWrite={perms.canWrite} />
-          {perms.canWrite && (
-            <div className="flex gap-2">
-              {!selected.isActive && (
-                <form action={async () => { "use server"; await activatePlanAction(classId, selected.id); }}>
-                  <button className="h-11 rounded-lg border border-line bg-card px-4 text-sm">Dùng sơ đồ này</button>
-                </form>
-              )}
-              {!selected.isActive && (
-                <form action={async () => { "use server"; await deletePlanAction(classId, selected.id); }}>
-                  <button className="h-11 rounded-lg border border-line bg-card px-4 text-sm text-warn-alert">Xóa sơ đồ</button>
-                </form>
-              )}
-            </div>
-          )}
+            initialAssignments={visibleAssignments(data.assignments, activeIds)} students={students} canWrite={perms.canWrite} />
+          {perms.canWrite && !selected.isActive && <PlanActions classId={classId} planId={selected.id} />}
         </>
       )}
       {!data && <p className="text-ink-soft">Lớp chưa có sơ đồ{perms.canWrite ? ". Hãy tạo sơ đồ đầu tiên." : "."}</p>}

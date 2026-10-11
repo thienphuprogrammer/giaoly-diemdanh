@@ -29,3 +29,7 @@ export function unseatedStudentIds(studentIds: readonly string[], assignments: r
   const seated = new Set(assignments.map((a) => a.studentId));
   return studentIds.filter((id) => !seated.has(id));
 }
+
+export function visibleAssignments(assignments: readonly Assignment[], activeStudentIds: ReadonlySet<string>): Assignment[] {
+  return assignments.filter((a) => activeStudentIds.has(a.studentId));
+}

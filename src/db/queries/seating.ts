@@ -10,10 +10,19 @@ export const listPlans = (db: Db, classId: string) =>
     .where(eq(seatingPlans.classId, classId))
     .orderBy(asc(seatingPlans.name));
 
-export async function getPlan(db: Db, planId: string) {
+export async function getPlan(db: Pick<Db, "select">, planId: string) {
   const [plan] = await db.select().from(seatingPlans).where(eq(seatingPlans.id, planId));
-  if (!plan) return null;
-  const rows = await db.select().from(seatAssignments).where(eq(seatAssignments.planId, planId));
+  return plan ? withAssignments(db, plan) : null;
+}
+
+/** Khóa dòng sơ đồ (FOR UPDATE) rồi đọc lại sơ đồ và phân ghế; chỉ gọi trong transaction. */
+export async function lockPlan(tx: Pick<Db, "select">, planId: string) {
+  const [plan] = await tx.select().from(seatingPlans).where(eq(seatingPlans.id, planId)).for("update");
+  return plan ? withAssignments(tx, plan) : null;
+}
+
+async function withAssignments(db: Pick<Db, "select">, plan: typeof seatingPlans.$inferSelect) {
+  const rows = await db.select().from(seatAssignments).where(eq(seatAssignments.planId, plan.id));
   const assignments: Assignment[] = rows.map((r) => ({ benchId: r.benchId, seatIndex: r.seatIndex, studentId: r.studentId }));
   return { plan, assignments };
 }

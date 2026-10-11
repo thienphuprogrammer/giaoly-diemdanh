@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignStudent, pruneAssignments, seatKey, unassignSeat, unseatedStudentIds } from "./assignments";
+import { assignStudent, pruneAssignments, seatKey, unassignSeat, unseatedStudentIds, visibleAssignments } from "./assignments";
 import type { Assignment, Layout } from "./types";
 
 const layout: Layout = [{ id: "r1", items: [{ type: "bench", id: "b1", seats: 2 }, { type: "bench", id: "b2", seats: 2 }] }];
@@ -54,4 +54,11 @@ describe("unassignSeat / pruneAssignments / unseatedStudentIds", () => {
   });
 
   it("builds stable seat keys", () => expect(seatKey(s("b1", 2))).toBe("b1:2"));
+});
+
+describe("visibleAssignments", () => {
+  it("drops assignments of students outside the active set", () => {
+    const list: Assignment[] = [{ ...s("b1", 0), studentId: "an" }, { ...s("b1", 1), studentId: "hidden" }];
+    expect(visibleAssignments(list, new Set(["an"]))).toEqual([{ ...s("b1", 0), studentId: "an" }]);
+  });
 });
