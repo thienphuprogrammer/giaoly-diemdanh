@@ -23,6 +23,14 @@ describe("createClass", () => {
     expect(rows.map((c) => c.name)).toContain("Lớp C");
   });
 
+  it("lets only one of two concurrent creates with the same name succeed", async () => {
+    const { db, b } = await setup();
+    const results = await Promise.all([createClass(db, b.head, { name: "Lớp Mới" }), createClass(db, b.head, { name: "Lớp Mới" })]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.find((r) => !r.ok)).toEqual({ ok: false, error: "Tên lớp đã tồn tại trong khối" });
+    expect(await db.select().from(classes).where(eq(classes.name, "Lớp Mới"))).toHaveLength(1);
+  });
+
   it("rejects a plain catechist and duplicate names", async () => {
     const { db, b } = await setup();
     expect((await createClass(db, b.glv, { name: "Lớp C" })).ok).toBe(false);
@@ -38,6 +46,12 @@ describe("createCatechist", () => {
     const [row] = await db.select().from(users).where(eq(users.email, "lan@x.vn"));
     expect(row).toMatchObject({ gradeId: b.gradeId, isGradeHead: false });
     expect(await verifyPassword(VALID_PW, row.passwordHash)).toBe(true);
+  });
+
+  it("trims the email before validating and stores it lowercased", async () => {
+    const { db, b } = await setup();
+    expect((await createCatechist(db, b.head, { name: "Lan", email: " Lan@X.vn ", password: VALID_PW })).ok).toBe(true);
+    expect(await db.select().from(users).where(eq(users.email, "lan@x.vn"))).toHaveLength(1);
   });
 
   it("rejects short passwords, duplicate emails and non-heads", async () => {
@@ -76,6 +90,19 @@ describe("assign / unassign / resetPassword", () => {
     const { db, b } = await setup();
     expect((await assignCatechist(db, b.head, { classId: b.classId, userId: b.head.id })).ok).toBe(true);
     expect(await db.select().from(classCatechists).where(eq(classCatechists.userId, b.head.id))).toHaveLength(1);
+  });
+
+  it("refuses a non-head caller, a grade-head target and another grade's target with one message", async () => {
+    const { db, b } = await setup();
+    const hashOf = async (id: string) => (await db.select().from(users).where(eq(users.id, id)))[0].passwordHash;
+    const before = { glv: await hashOf(b.glv.id), head: await hashOf(b.head.id), other: await hashOf(b.otherGlv.id) };
+    const results = [
+      await resetPassword(db, b.glv, { userId: b.glv.id, password: RESET_PW }),
+      await resetPassword(db, b.head, { userId: b.head.id, password: RESET_PW }),
+      await resetPassword(db, b.head, { userId: b.otherGlv.id, password: RESET_PW }),
+    ];
+    for (const r of results) expect(r).toEqual({ ok: false, error: "Bạn không có quyền thực hiện thao tác này" });
+    expect({ glv: await hashOf(b.glv.id), head: await hashOf(b.head.id), other: await hashOf(b.otherGlv.id) }).toEqual(before);
   });
 
   it("resets a catechist's password but not another grade's", async () => {

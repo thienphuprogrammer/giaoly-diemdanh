@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/db/client";
 import { resolveTerm } from "@/db/queries/stats";
+import { DEFAULT_RULES } from "@/lib/attendance/warning";
 import { requireUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
 import { attentionList } from "@/server/services/stats";
@@ -13,7 +14,7 @@ export default async function AttentionPage() {
   return (
     <section className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">Cần chú ý</h1>
-      <p className="text-sm text-ink-soft">{term?.name ?? "Chưa có học kỳ"} · vắng không phép từ 2 buổi là cảnh báo.</p>
+      <p className="text-sm text-ink-soft">{term?.name ?? "Chưa có học kỳ"} · vắng không phép từ {DEFAULT_RULES.unexcusedThreshold} buổi là cảnh báo.</p>
       {items.length === 0 && <p className="rounded-2xl border border-line bg-card p-4">Chưa có em nào cần chú ý. 🎉</p>}
       {[...groups.values()].map((list) => (
         <div key={list[0].classId} className="rounded-2xl border border-line bg-card">

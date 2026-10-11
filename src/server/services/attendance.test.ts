@@ -6,13 +6,16 @@ import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import { markAllPresent, openSession, readBoard, setCancelled, setStatus } from "./attendance";
 
+// Mốc "bây giờ" sau mọi ngày dùng trong test để kiểm tra ngày tương lai không ảnh hưởng.
+const LATE_NOW = new Date("2027-02-01T05:00:00Z");
+
 async function setup() {
   const db = await createTestDb();
   const b = await seedBasics(db);
   const mk = async (fullName: string, extra: Partial<typeof students.$inferInsert> = {}) =>
     (await db.insert(students).values({ classId: b.classId, fullName, ...extra }).returning())[0];
   const open = async (heldOn: string) => {
-    const r = await openSession(db, b.glv, { classId: b.classId, heldOn });
+    const r = await openSession(db, b.glv, { classId: b.classId, heldOn }, LATE_NOW);
     if (!r.ok) throw new Error(r.error);
     return r.data.id;
   };
@@ -30,6 +33,24 @@ describe("openSession", () => {
     const { db, b } = await setup();
     expect(await openSession(db, b.glv, { classId: b.classId, heldOn: "2026-08-31" })).toEqual({ ok: false, error: "Ngày này không thuộc học kỳ nào" });
     expect((await openSession(db, b.glv, { classId: b.classId, heldOn: "11/10/2026" })).ok).toBe(false);
+  });
+
+  it("rejects a date later than today in Vietnam and accepts today", async () => {
+    const { db, b } = await setup();
+    const now = new Date("2026-10-11T05:00:00Z"); // 12:00 ngày 11/10 giờ VN
+    const input = (heldOn: string) => ({ classId: b.classId, heldOn });
+    expect((await openSession(db, b.glv, input("2026-10-11"), now)).ok).toBe(true);
+    expect(await openSession(db, b.glv, input("2026-10-12"), now)).toEqual({ ok: false, error: "Không thể điểm danh cho ngày chưa tới" });
+  });
+
+  it("uses the Vietnam calendar day around midnight", async () => {
+    const { db, b } = await setup();
+    const input = (heldOn: string) => ({ classId: b.classId, heldOn });
+    const beforeMidnight = new Date("2026-10-11T16:59:00Z"); // 23:59 ngày 11/10 giờ VN
+    const afterMidnight = new Date("2026-10-11T17:01:00Z"); // 00:01 ngày 12/10 giờ VN
+    expect((await openSession(db, b.glv, input("2026-10-12"), beforeMidnight)).ok).toBe(false);
+    expect((await openSession(db, b.glv, input("2026-10-12"), afterMidnight)).ok).toBe(true);
+    expect((await openSession(db, b.glv, input("2026-10-13"), afterMidnight)).ok).toBe(false);
   });
 
   it("is idempotent: opening the same day twice returns the same session", async () => {

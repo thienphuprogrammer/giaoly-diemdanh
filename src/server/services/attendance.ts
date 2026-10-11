@@ -5,6 +5,7 @@ import { getStudent } from "@/db/queries/students";
 import { attendance, sessions, students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
+import { todayInVietnam } from "@/lib/dates";
 import { evaluateWarningFromCount, type WarningResult } from "@/lib/attendance/warning";
 import type { Assignment, Layout } from "@/lib/seating/types";
 import { NOT_FOUND, classPermissions, guardClass } from "../guard";
@@ -25,10 +26,11 @@ export interface Board {
   plan: { layout: Layout; assignments: Assignment[] } | null;
 }
 
-export async function openSession(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ id: string }>> {
+export async function openSession(db: Db, user: AppUser, input: unknown, now: Date = new Date()): Promise<ActionResult<{ id: string }>> {
   const p = z.object({ classId: z.string(), heldOn: z.iso.date("Ngày không hợp lệ") }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));
   if (!(await guardClass(db, user, p.data.classId, "write"))) return fail(NOT_FOUND);
+  if (p.data.heldOn > todayInVietnam(now)) return fail("Không thể điểm danh cho ngày chưa tới"); // YYYY-MM-DD so sánh được theo chuỗi
   const term = await findTermFor(db, p.data.heldOn);
   if (!term) return fail("Ngày này không thuộc học kỳ nào");
   await db.insert(sessions).values({ classId: p.data.classId, termId: term.id, heldOn: p.data.heldOn }).onConflictDoNothing();

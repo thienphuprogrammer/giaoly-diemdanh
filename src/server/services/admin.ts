@@ -12,6 +12,13 @@ const firstError = (e: z.ZodError) => e.issues[0]?.message ?? "Dữ liệu khôn
 // bcrypt cắt mọi ký tự sau 72 byte nên giới hạn ở 72.
 const password = z.string().min(10, "Mật khẩu phải có ít nhất 10 ký tự").max(72, "Mật khẩu tối đa 72 ký tự");
 
+const DUPLICATE_CLASS = "Tên lớp đã tồn tại trong khối";
+const UNIQUE_VIOLATION = "23505";
+const isUniqueViolation = (e: unknown): boolean => {
+  const code = (x: unknown) => (typeof x === "object" && x !== null ? (x as { code?: unknown }).code : undefined);
+  return code(e) === UNIQUE_VIOLATION || code((e as { cause?: unknown } | null)?.cause) === UNIQUE_VIOLATION;
+};
+
 const isHead = (user: AppUser): user is AppUser & { gradeId: string } => user.isGradeHead && !!user.gradeId;
 
 export async function createClass(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -19,15 +26,21 @@ export async function createClass(db: Db, user: AppUser, input: unknown): Promis
   if (!p.success) return fail(firstError(p.error));
   if (!isHead(user)) return fail(FORBIDDEN);
   const dup = await db.select({ id: classes.id }).from(classes).where(and(eq(classes.gradeId, user.gradeId), eq(classes.name, p.data.name)));
-  if (dup.length > 0) return fail("Tên lớp đã tồn tại trong khối");
-  const [row] = await db.insert(classes).values({ gradeId: user.gradeId, name: p.data.name }).returning({ id: classes.id });
-  return ok({ id: row.id });
+  if (dup.length > 0) return fail(DUPLICATE_CLASS);
+  try {
+    const [row] = await db.insert(classes).values({ gradeId: user.gradeId, name: p.data.name }).returning({ id: classes.id });
+    return ok({ id: row.id });
+  } catch (error) {
+    if (isUniqueViolation(error)) return fail(DUPLICATE_CLASS);
+    console.error("createClass failed", error);
+    return fail("Không tạo được lớp");
+  }
 }
 
 export async function createCatechist(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ id: string }>> {
   const p = z.object({
     name: z.string().trim().min(1, "Nhập họ tên").max(120),
-    email: z.email("Email không hợp lệ").transform((e) => e.trim().toLowerCase()),
+    email: z.string().trim().pipe(z.email("Email không hợp lệ")).transform((e) => e.toLowerCase()),
     password,
   }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));
