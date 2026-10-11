@@ -1,9 +1,9 @@
 "use client";
 import { useActionState } from "react";
+import { Field } from "@/components/ui/Field";
+import { Notice } from "@/components/ui/Notice";
 import type { FormState } from "@/server/form-state";
 import { updateStudentAction } from "./actions";
-
-const input = "h-12 rounded-xl border border-line bg-card px-4 text-base";
 
 export interface EditableStudent {
   id: string;
@@ -25,16 +25,19 @@ export function EditStudentForm({ classId, student, onDone }: { classId: string;
     }
   }, undefined);
   return (
-    <form action={action} className="grid gap-3 p-4">
-      <input name="saintName" aria-label="Tên thánh" placeholder="Tên thánh" defaultValue={student.saintName ?? ""} className={input} />
-      <input name="fullName" aria-label="Họ và tên" placeholder="Họ và tên *" defaultValue={student.fullName} required className={input} />
-      <input name="birthDate" type="date" aria-label="Ngày sinh" defaultValue={student.birthDate ?? ""} className={input} />
-      <input name="parentPhone" inputMode="tel" aria-label="SĐT phụ huynh" placeholder="SĐT phụ huynh" defaultValue={student.parentPhone ?? ""} className={input} />
-      <input name="note" aria-label="Ghi chú" placeholder="Ghi chú" defaultValue={student.note ?? ""} className={input} />
-      {state?.error && <p role="alert" className="text-sm text-warn-alert">{state.error}</p>}
-      <div className="flex gap-3">
-        <button disabled={pending} className="h-12 flex-1 rounded-xl bg-brand font-semibold text-white disabled:opacity-60">Lưu</button>
-        <button type="button" onClick={onDone} disabled={pending} className="h-12 rounded-xl border border-line px-5 disabled:opacity-60">Hủy</button>
+    <form action={action} className="grid gap-4 bg-action-tint/50 p-4">
+      <h3 className="text-base font-semibold">Sửa thông tin</h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Tên thánh"><input name="saintName" defaultValue={student.saintName ?? ""} className="input" /></Field>
+        <Field label="Họ và tên" required><input name="fullName" defaultValue={student.fullName} required className="input" /></Field>
+        <Field label="Ngày sinh"><input name="birthDate" type="date" defaultValue={student.birthDate ?? ""} className="input" /></Field>
+        <Field label="SĐT phụ huynh"><input name="parentPhone" inputMode="tel" defaultValue={student.parentPhone ?? ""} className="input" /></Field>
+        <Field label="Ghi chú" className="sm:col-span-2"><input name="note" defaultValue={student.note ?? ""} className="input" /></Field>
+      </div>
+      {state?.error && <Notice tone="error" role="alert">{state.error}</Notice>}
+      <div className="grid grid-cols-[1fr_auto] gap-3">
+        <button disabled={pending} className="btn btn-primary btn-lg">Lưu</button>
+        <button type="button" onClick={onDone} disabled={pending} className="btn btn-secondary btn-lg">Hủy</button>
       </div>
     </form>
   );

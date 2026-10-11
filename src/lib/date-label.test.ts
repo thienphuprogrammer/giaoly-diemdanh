@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateLabel } from "./date-label";
+import { dateLabel, shortDate } from "./date-label";
 
 describe("dateLabel", () => {
   it("formats an ISO day as a Vietnamese weekday + dd/mm/yyyy", () => {
@@ -14,5 +14,15 @@ describe("dateLabel", () => {
   it("returns the input unchanged when it is not a valid ISO day", () => {
     expect(dateLabel("hôm nay")).toBe("hôm nay");
     expect(dateLabel("2026-02-30")).toBe("2026-02-30");
+  });
+});
+
+describe("shortDate", () => {
+  it("formats an ISO day as dd/mm/yyyy", () => {
+    expect(shortDate("2014-07-16")).toBe("16/07/2014");
+  });
+  it("returns the input unchanged when it is not a valid ISO day", () => {
+    expect(shortDate("16/07/2014")).toBe("16/07/2014");
+    expect(shortDate("2014-13-01")).toBe("2014-13-01");
   });
 });
