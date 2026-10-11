@@ -6,6 +6,7 @@ import * as s from "../src/db/schema";
 import { hashPassword } from "../src/lib/auth/password";
 import { todayInVietnam } from "../src/lib/dates";
 
+const EDIT_NAME = "Trần Sửa";
 const E2E_PW = "e2e-password-1";
 const dayOffset = (days: number) => {
   const d = new Date(Date.now() + days * 86_400_000);
@@ -31,9 +32,16 @@ export default async function globalSetup() {
   const [term] = await db.insert(s.terms).values({ schoolYearId: year.id, name: "Học kỳ E2E", startsOn: dayOffset(-60), endsOn: dayOffset(120) }).returning();
   const [glvA] = await db.insert(s.users).values({ email: "glv-a@e2e.vn", name: "GLV A", passwordHash: hash, gradeId: gradeA.id }).returning();
   const [glvB] = await db.insert(s.users).values({ email: "glv-b@e2e.vn", name: "GLV B", passwordHash: hash, gradeId: gradeB.id }).returning();
+  const [headA] = await db.insert(s.users).values({ email: "head-a@e2e.vn", name: "Trưởng khối A", passwordHash: hash, gradeId: gradeA.id, isGradeHead: true }).returning();
+  const [glvReset] = await db.insert(s.users).values({ email: "glv-reset@e2e.vn", name: "GLV Reset", passwordHash: hash, gradeId: gradeA.id }).returning();
   const [classA] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp A" }).returning();
   const [classB] = await db.insert(s.classes).values({ gradeId: gradeB.id, name: "Lớp B" }).returning();
-  await db.insert(s.classCatechists).values([{ classId: classA.id, userId: glvA.id }, { classId: classB.id, userId: glvB.id }]);
+  const [classC] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp C" }).returning();
+  await db.insert(s.classCatechists).values([
+    { classId: classA.id, userId: glvA.id }, { classId: classB.id, userId: glvB.id },
+    { classId: classC.id, userId: glvReset.id }, { classId: classC.id, userId: headA.id },
+  ]);
+  await db.insert(s.students).values({ classId: classC.id, fullName: EDIT_NAME });
 
   const kids = await db.insert(s.students).values(["An", "Bình", "Chi", "Dũng"].map((n) => ({ classId: classA.id, fullName: `Nguyễn ${n}` }))).returning();
   const [plan] = await db.insert(s.seatingPlans).values({
@@ -49,6 +57,6 @@ export default async function globalSetup() {
   const [past] = await db.insert(s.sessions).values({ classId: classA.id, termId: term.id, heldOn: dayOffset(-7) }).returning();
   await db.insert(s.attendance).values({ sessionId: past.id, studentId: kids[0].id, status: "absent_unexcused" });
 
-  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id }));
+  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id }));
   await sql.end();
 }
