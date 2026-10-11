@@ -1,5 +1,4 @@
 "use client";
-import type { LucideIcon } from "lucide-react";
 import { useActionState } from "react";
 import { Field } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
@@ -12,20 +11,21 @@ interface Props {
   fields: FieldSpec[];
   action: (prev: FormState, fd: FormData) => Promise<FormState>;
   description?: string;
-  icon?: LucideIcon;
+  /** Phần tử biểu tượng (vd. <Plus aria-hidden size={20} />): truyền phần tử, không truyền hàm, vì form là Client Component. */
+  icon?: React.ReactNode;
   /** "sensitive": thao tác nhạy cảm (đặt lại mật khẩu) — viền và nút màu cảnh báo. */
   tone?: "default" | "sensitive";
 }
 
-export function SimpleForm({ title, fields, action, description, icon: Icon, tone = "default" }: Props) {
+export function SimpleForm({ title, fields, action, description, icon, tone = "default" }: Props) {
   const [state, run, pending] = useActionState(action, undefined);
   const sensitive = tone === "sensitive";
   return (
     <form action={run} className={`card grid gap-4 p-4 ${sensitive ? "border-warn-alert/40" : ""}`}>
       <div className="flex items-start gap-3">
-        {Icon && (
+        {icon && (
           <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-control ${sensitive ? "bg-warn-alert-tint text-warn-alert" : "bg-action-tint text-action"}`}>
-            <Icon aria-hidden size={20} />
+            {icon}
           </span>
         )}
         <div className="min-w-0">

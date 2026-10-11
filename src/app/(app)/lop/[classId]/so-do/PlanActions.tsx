@@ -1,10 +1,11 @@
 "use client";
+import { Star, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Notice } from "@/components/ui/Notice";
 import { activatePlanAction, deletePlanAction } from "./actions";
 
 const GENERIC_ERROR = "Không thực hiện được, thử lại sau.";
-const btn = "h-11 rounded-lg border border-line bg-card px-4 text-sm disabled:opacity-60";
 
 export function PlanActions({ classId, planId }: { classId: string; planId: string }) {
   const router = useRouter();
@@ -35,12 +36,17 @@ export function PlanActions({ classId, planId }: { classId: string; planId: stri
   };
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
-        <button className={btn} disabled={busy} onClick={activate}>Dùng sơ đồ này</button>
-        <button className={`${btn} text-warn-alert`} disabled={busy} onClick={remove}>Xóa sơ đồ</button>
+    <div className="card flex flex-col gap-3 p-4">
+      <p className="text-sm text-ink-soft">Sơ đồ này chưa được dùng khi điểm danh.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button className="btn btn-secondary" disabled={busy} onClick={activate}>
+          <Star aria-hidden size={20} />Dùng sơ đồ này
+        </button>
+        <button className="btn btn-danger" disabled={busy} onClick={remove}>
+          <Trash2 aria-hidden size={20} />Xóa sơ đồ
+        </button>
       </div>
-      {message && <p role="status" className="text-sm">{message}</p>}
+      {message && <Notice tone="error" role="status">{message}</Notice>}
     </div>
   );
 }

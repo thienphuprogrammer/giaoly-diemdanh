@@ -1,6 +1,8 @@
+import { LayoutGrid, Plus, Star } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SimpleForm } from "@/components/forms/SimpleForm";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { db } from "@/db/client";
 import { getPlan, listPlans } from "@/db/queries/seating";
 import { listStudents } from "@/db/queries/students";
@@ -32,15 +34,22 @@ export default async function SeatingPage({
   const activeIds = new Set(students.map((s) => s.id));
 
   return (
-    <section className="flex flex-col gap-4">
-      <nav className="flex flex-wrap gap-2" aria-label="Các sơ đồ">
-        {plans.map((p) => (
-          <Link key={p.id} href={`?plan=${p.id}`}
-            className={`flex h-11 items-center rounded-full border px-4 text-sm ${p.id === selected?.id ? "border-brand bg-brand text-white" : "border-line bg-card"}`}>
-            {p.name}{p.isActive ? " ★" : ""}
-          </Link>
-        ))}
-      </nav>
+    <section className="flex flex-col gap-6">
+      {plans.length > 0 && (
+        <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" aria-label="Các sơ đồ">
+          {plans.map((p) => {
+            const current = p.id === selected?.id;
+            return (
+              <Link key={p.id} href={`?plan=${p.id}`} aria-current={current ? "page" : undefined}
+                className={`flex h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 font-display text-sm font-medium transition-colors ${current ? "border-action bg-action text-on-action" : "border-border-strong bg-surface text-ink hover:bg-surface-muted"}`}>
+                {p.isActive && <Star aria-hidden size={16} />}
+                {p.name}
+                {p.isActive && <span className="sr-only"> (đang dùng)</span>}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
       {data && selected && (
         <>
           <SeatEditor key={selected.id} classId={classId} planId={selected.id} initialLayout={data.plan.layout}
@@ -48,9 +57,14 @@ export default async function SeatingPage({
           {perms.canWrite && !selected.isActive && <PlanActions classId={classId} planId={selected.id} />}
         </>
       )}
-      {!data && <p className="text-ink-soft">Lớp chưa có sơ đồ{perms.canWrite ? ". Hãy tạo sơ đồ đầu tiên." : "."}</p>}
+      {!data && (
+        <EmptyState icon={LayoutGrid} title="Lớp chưa có sơ đồ">
+          {perms.canWrite ? "Đặt tên cho sơ đồ đầu tiên ở bên dưới, rồi thêm hàng và băng ghế." : "Giáo lý viên phụ trách lớp sẽ tạo sơ đồ chỗ ngồi."}
+        </EmptyState>
+      )}
       {perms.canWrite && (
-        <SimpleForm title="Tạo sơ đồ mới" action={createPlanAction.bind(null, classId)} fields={[{ name: "name", label: "Tên sơ đồ" }]} />
+        <SimpleForm title="Tạo sơ đồ mới" icon={<Plus aria-hidden size={20} />} description="Ví dụ: phòng học chính, phòng nhà thờ."
+          action={createPlanAction.bind(null, classId)} fields={[{ name: "name", label: "Tên sơ đồ" }]} />
       )}
     </section>
   );
