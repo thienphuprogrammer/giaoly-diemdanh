@@ -6,8 +6,8 @@ import { authenticate } from "@/lib/auth/authenticate";
 import { createSession } from "@/lib/auth/dal";
 
 const schema = z.object({
-  email: z.email("Email không hợp lệ"),
-  password: z.string().min(1, "Nhập mật khẩu"),
+  email: z.string().trim().pipe(z.email("Email không hợp lệ")),
+  password: z.string().min(1, "Nhập mật khẩu").max(72, "Mật khẩu quá dài"),
 });
 
 export async function login(_prev: { error?: string } | undefined, formData: FormData) {

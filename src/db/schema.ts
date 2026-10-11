@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean, date, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
+  boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 import type { Layout } from "../lib/seating/types";
 
@@ -28,7 +28,7 @@ export const loginAttempts = pgTable("login_attempts", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull(),
   attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
-});
+}, (t) => [index("login_attempts_email_attempted_at_idx").on(t.email, t.attemptedAt)]);
 
 export const schoolYears = pgTable("school_years", {
   id: uuid("id").primaryKey().defaultRandom(),

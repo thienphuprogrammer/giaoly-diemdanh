@@ -53,4 +53,13 @@ describe("authenticate", () => {
     await authenticate(db, { email: "glv@x.vn", password: GOOD_PW }, now);
     expect(await db.select().from(loginAttempts)).toHaveLength(0);
   });
+
+  it("caps concurrent wrong-password attempts at the limit", async () => {
+    const { db } = await setup();
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => authenticate(db, { email: "glv@x.vn", password: "bad" }, now)),
+    );
+    expect(results.filter((r) => !r.ok && r.reason === "invalid").length).toBeLessThanOrEqual(5);
+    expect(results.filter((r) => !r.ok && r.reason === "locked").length).toBeGreaterThanOrEqual(7);
+  });
 });
