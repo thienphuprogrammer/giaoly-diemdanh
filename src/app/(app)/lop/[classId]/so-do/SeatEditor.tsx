@@ -19,6 +19,8 @@ interface Props {
 const SAVE_ERROR = "Không lưu được, thử lại sau.";
 const uid = () => crypto.randomUUID();
 const chip = "h-11 min-w-11 rounded-lg border border-line bg-card px-3 text-sm font-medium";
+// bg-card và bg-brand cùng tồn tại thì bg-card thắng (thứ tự CSS), chữ trắng trên nền trắng: ép bằng "!".
+const activeChip = "bg-brand! text-white!";
 
 export function SeatEditor({ classId, planId, initialLayout, initialAssignments, students, canWrite }: Props) {
   const [mode, setMode] = useState<"seat" | "layout">("seat");
@@ -65,8 +67,8 @@ export function SeatEditor({ classId, planId, initialLayout, initialAssignments,
     <div className="flex flex-col gap-4">
       {canWrite && (
         <div className="flex gap-2" role="tablist">
-          <button role="tab" aria-selected={mode === "seat"} disabled={dirty} onClick={() => setMode("seat")} className={`${chip} ${mode === "seat" ? "bg-brand text-white" : ""}`}>Xếp chỗ</button>
-          <button role="tab" aria-selected={mode === "layout"} onClick={() => setMode("layout")} className={`${chip} ${mode === "layout" ? "bg-brand text-white" : ""}`}>Bố cục</button>
+          <button role="tab" aria-selected={mode === "seat"} disabled={dirty} onClick={() => setMode("seat")} className={`${chip} ${mode === "seat" ? activeChip : ""}`}>Xếp chỗ</button>
+          <button role="tab" aria-selected={mode === "layout"} onClick={() => setMode("layout")} className={`${chip} ${mode === "layout" ? activeChip : ""}`}>Bố cục</button>
         </div>
       )}
       {dirty && <p className="text-sm text-warn-watch">Hãy lưu bố cục trước khi xếp chỗ.</p>}
