@@ -1,8 +1,12 @@
+import { CalendarDays, ChevronRight, ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Pill, StatusPill } from "@/components/ui/Pill";
 import { db } from "@/db/client";
 import { listSessions } from "@/db/queries/attendance";
 import { requireUser } from "@/lib/auth/dal";
+import { dateLabel } from "@/lib/date-label";
 import { todayInVietnam } from "@/lib/dates";
 import { classPermissions } from "@/server/guard";
 import { OpenDate } from "./OpenDate";
@@ -15,28 +19,51 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
   const today = todayInVietnam();
   const sessions = await listSessions(db, classId);
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       {perms.canWrite && (
-        <>
+        <div className="card flex flex-col gap-4 p-4">
           {/* prefetch={false}: mở buổi tạo bản ghi, không được chạy khi chỉ prefetch */}
           <Link prefetch={false} href={`/lop/${classId}/diem-danh/${today}`}
-            className="flex h-14 items-center justify-center rounded-2xl bg-brand text-lg font-semibold text-white">
+            className="btn btn-primary min-h-14 w-full text-lg">
+            <ClipboardCheck aria-hidden size={22} />
             Điểm danh hôm nay
           </Link>
-          <OpenDate classId={classId} today={today} />
-        </>
+          <p className="-mt-2 text-center text-sm text-ink-soft">{dateLabel(today)}</p>
+          <div className="border-t border-border pt-4">
+            <OpenDate classId={classId} today={today} />
+          </div>
+        </div>
       )}
-      <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-card">
-        {sessions.length === 0 && <li className="p-4 text-ink-soft">Chưa có buổi nào.</li>}
-        {sessions.map((s) => (
-          <li key={s.id}>
-            <Link prefetch={false} href={`/lop/${classId}/diem-danh/${s.heldOn}`} className="flex min-h-14 items-center justify-between px-4 py-2">
-              <span className="font-medium">{s.heldOn}{s.cancelled ? " · nghỉ lễ" : ""}</span>
-              <span className="text-sm text-ink-soft">{s.marked} đã điểm danh · {s.absent} vắng KP</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Các buổi gần đây</h2>
+        {sessions.length === 0 ? (
+          <EmptyState icon={CalendarDays} title="Chưa có buổi nào">
+            {perms.canWrite ? "Bấm \"Điểm danh hôm nay\" để bắt đầu." : "Khi giáo lý viên điểm danh, các buổi sẽ hiện ở đây."}
+          </EmptyState>
+        ) : (
+          <ul className="card divide-y divide-border overflow-hidden">
+            {sessions.map((s) => (
+              <li key={s.id}>
+                <Link prefetch={false} href={`/lop/${classId}/diem-danh/${s.heldOn}`}
+                  className="flex min-h-16 items-center gap-3 px-4 py-3 outline-offset-[-3px] transition-colors hover:bg-surface-muted">
+                  <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <span className="font-display font-medium text-ink">{dateLabel(s.heldOn)}</span>
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {s.cancelled ? <Pill>Nghỉ lễ</Pill> : (
+                        <>
+                          <span className="text-sm text-ink-soft"><span className="tabular-nums">{s.marked}</span> đã điểm danh</span>
+                          {s.absent > 0 && <StatusPill status="absent_unexcused" label={`${s.absent} vắng KP`} />}
+                        </>
+                      )}
+                    </span>
+                  </span>
+                  <ChevronRight aria-hidden size={20} className="shrink-0 text-ink-muted" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
