@@ -24,13 +24,19 @@ export function countUnexcused(records: ReadonlyArray<{ status: AttendanceStatus
   return records.filter((r) => r.status === "absent_unexcused").length;
 }
 
-export function evaluateWarning(
-  records: ReadonlyArray<{ status: AttendanceStatus }>,
+export function evaluateWarningFromCount(
+  unexcused: number,
   rules: AttendanceRules = DEFAULT_RULES,
 ): WarningResult {
-  const unexcused = countUnexcused(records);
   const remaining = Math.max(0, rules.unexcusedThreshold - unexcused);
   const level: WarningLevel =
     unexcused >= rules.unexcusedThreshold ? "warning" : unexcused > 0 ? "watch" : "none";
   return { level, unexcused, remaining };
+}
+
+export function evaluateWarning(
+  records: ReadonlyArray<{ status: AttendanceStatus }>,
+  rules: AttendanceRules = DEFAULT_RULES,
+): WarningResult {
+  return evaluateWarningFromCount(countUnexcused(records), rules);
 }

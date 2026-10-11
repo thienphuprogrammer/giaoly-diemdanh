@@ -3,6 +3,7 @@ import {
   DEFAULT_RULES,
   countUnexcused,
   evaluateWarning,
+  evaluateWarningFromCount,
   type AttendanceStatus,
 } from "./warning";
 
@@ -55,5 +56,14 @@ describe("evaluateWarning", () => {
     const rules = { ...DEFAULT_RULES, unexcusedThreshold: 3 };
     expect(evaluateWarning(r("absent_unexcused", "absent_unexcused"), rules).level).toBe("watch");
     expect(evaluateWarning(r("absent_unexcused", "absent_unexcused", "absent_unexcused"), rules).level).toBe("warning");
+  });
+});
+
+describe("evaluateWarningFromCount", () => {
+  it("maps counts to levels with the default threshold", () => {
+    expect(evaluateWarningFromCount(0)).toEqual({ level: "none", unexcused: 0, remaining: 2 });
+    expect(evaluateWarningFromCount(1)).toEqual({ level: "watch", unexcused: 1, remaining: 1 });
+    expect(evaluateWarningFromCount(2)).toEqual({ level: "warning", unexcused: 2, remaining: 0 });
+    expect(evaluateWarningFromCount(5).level).toBe("warning");
   });
 });
