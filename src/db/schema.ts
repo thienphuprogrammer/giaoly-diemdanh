@@ -71,6 +71,8 @@ export const students = pgTable("students", {
   parentPhone: text("parent_phone"),
   note: text("note"),
   active: boolean("active").notNull().default(true),
+  /** Mã trên thẻ QR: 32 hex do cơ sở dữ liệu sinh, không đoán được, duy nhất. */
+  qrToken: text("qr_token").notNull().unique().default(sql`replace(gen_random_uuid()::text, '-', '')`),
 });
 
 export const seatingPlans = pgTable(
@@ -121,6 +123,34 @@ export const attendance = pgTable(
     reason: text("reason"),
     updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    /** Lượt quét gần nhất đã ghi dòng này; NULL khi ghi tay (không hoàn tác được bằng lượt quét cũ). */
+    lastEventId: uuid("last_event_id"),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.studentId] })],
+);
+
+export const scanKind = pgEnum("scan_kind", ["scan", "manual", "undo"]);
+export const scanResult = pgEnum("scan_result", ["applied", "noop"]);
+
+/** Nhật ký quét/chọn tên/hoàn tác: chống ghi trùng theo event_id và cho phép hoàn tác đúng lượt. Lượt bị từ chối không được lưu. */
+export const attendanceScans = pgTable(
+  "attendance_scans",
+  {
+    eventId: uuid("event_id").primaryKey(),
+    kind: scanKind("kind").notNull(),
+    sessionId: uuid("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id").references(() => students.id, { onDelete: "cascade" }),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    mode: text("mode"),
+    payloadHash: text("payload_hash").notNull(),
+    prevStatus: attendanceStatus("prev_status"),
+    prevReason: text("prev_reason"),
+    newStatus: attendanceStatus("new_status"),
+    result: scanResult("result").notNull(),
+    errorCode: text("error_code"),
+    targetEventId: uuid("target_event_id"),
+    capturedAt: timestamp("captured_at"),
+    receivedAt: timestamp("received_at").notNull().defaultNow(),
+  },
+  (t) => [index("attendance_scans_session_idx").on(t.sessionId, t.receivedAt)],
 );

@@ -78,6 +78,17 @@ describe("setStatus", () => {
     expect(await db.select().from(attendance)).toHaveLength(0);
   });
 
+  it("a manual write clears last_event_id so an older scan can no longer be undone", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    const sessionId = await open("2026-10-11");
+    await db.insert(attendance).values({ sessionId, studentId: an.id, status: "present", lastEventId: crypto.randomUUID() }).onConflictDoNothing();
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "late", reason: null });
+    const [row] = await db.select().from(attendance);
+    expect(row.status).toBe("late");
+    expect(row.lastEventId).toBeNull();
+  });
+
   it("keeps exactly one row for double taps and concurrent writes", async () => {
     const { db, b, mk, open } = await setup();
     const an = await mk("An");

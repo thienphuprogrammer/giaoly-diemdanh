@@ -63,7 +63,7 @@ export async function setStatus(db: Db, user: AppUser, input: unknown): Promise<
   if (p.data.status === null) {
     await db.delete(attendance).where(and(eq(attendance.sessionId, session.id), eq(attendance.studentId, student.id)));
   } else {
-    const values = { status: p.data.status, reason: p.data.reason || null, updatedBy: user.id, updatedAt: new Date() };
+    const values = { status: p.data.status, reason: p.data.reason || null, updatedBy: user.id, updatedAt: new Date(), lastEventId: null };
     await db.insert(attendance)
       .values({ sessionId: session.id, studentId: student.id, ...values })
       .onConflictDoUpdate({ target: [attendance.sessionId, attendance.studentId], set: values });
