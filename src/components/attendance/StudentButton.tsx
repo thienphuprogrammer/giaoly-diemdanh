@@ -20,10 +20,12 @@ interface Props {
 
 const LONG_MS = 500;
 const CLICK_GUARD_MS = 60;
-// Phải nằm HOÀN TOÀN trong khung của ô ghế (không dùng offset âm): nếu tràn ra ngoài sẽ che
-// góc ghế bên cạnh và gây mở nhầm bảng chọn của em khác.
-const OPTIONS_CLASS =
-  "absolute right-0.5 top-0.5 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink";
+// Vùng chạm 36×36px ở góc phải trên (vòng tròn nhìn thấy 28px). Không lên 44px được: ô ghế trên điện thoại
+// chỉ rộng 64px, vùng 44px sẽ phủ lên giữa ô và cướp cú chạm điểm danh chính. Phải nằm HOÀN TOÀN trong khung
+// ô ghế (không dùng offset âm): nếu tràn ra ngoài sẽ che góc ghế bên cạnh và gây mở nhầm bảng chọn của em khác.
+const OPTIONS_CLASS = "group absolute right-0 top-0 z-10 flex h-9 w-9 items-start justify-end p-0.5";
+const OPTIONS_DOT =
+  "flex h-7 w-7 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-soft transition-colors group-hover:bg-surface-muted group-hover:text-ink";
 
 /** Kích thước ô ghế dùng chung cho sơ đồ điểm danh và trình xếp chỗ. */
 export const SEAT_TILE = "h-[72px] w-16 sm:h-20 sm:w-20";
@@ -70,7 +72,7 @@ export function StudentButton({ fullName, status, warning, absences, failed, dis
       {!disabled && (
         <button aria-label={`Mở lựa chọn cho ${fullName}`} onClick={onLongPress}
           className={OPTIONS_CLASS}>
-          <Ellipsis aria-hidden size={16} strokeWidth={2.5} />
+          <span aria-hidden className={OPTIONS_DOT}><Ellipsis size={16} strokeWidth={2.5} /></span>
         </button>
       )}
     </div>

@@ -41,7 +41,7 @@ export default async function AttendancePage({ params }: { params: Promise<{ cla
         <p className="font-display text-sm font-medium text-ink-soft">Buổi điểm danh</p>
         <h2 className="mt-0.5 text-xl font-semibold">{dateLabel(date)}</h2>
       </div>
-      <AttendanceBoard board={board} />
+      <AttendanceBoard board={board} renderId={crypto.randomUUID()} />
     </section>
   );
 }

@@ -48,13 +48,78 @@ test("điểm danh bằng sơ đồ, thấy cảnh báo và danh sách Cần ch�
   await page.getByRole("button", { name: "Vắng có phép" }).click();
   await expect(page.getByRole("button", { name: /Nguyễn Bình: Vắng có phép/ })).toBeVisible();
 
-  // Chế độ checklist dùng cùng dữ liệu.
-  await page.getByRole("tab", { name: "Checklist" }).click();
+  // Chế độ danh sách dùng cùng dữ liệu.
+  await page.getByRole("tab", { name: "Danh sách" }).click();
   await expect(page.getByRole("button", { name: "Vắng", exact: true, pressed: true })).toHaveCount(1);
 
   await page.goto("/can-chu-y");
   await expect(page.getByText("Nguyễn An")).toBeVisible();
   await expect(page.getByText(/Cảnh báo · 2 buổi/)).toBeVisible();
+});
+
+async function openBoard(page: Page) {
+  await login(page, "glv-a@e2e.vn");
+  await page.goto(`/lop/${state().classA}/diem-danh/${todayInVietnam()}`);
+  await expect(page.getByText(/Đã điểm danh 0\/4/)).toBeVisible();
+}
+
+test("trạng thái lưu, hoàn tác Tất cả có mặt và xác nhận nghỉ lễ", async ({ page }) => {
+  await openBoard(page);
+
+  await page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Tất cả có mặt" }).click();
+  await expect(page.getByText("Đã điểm danh 4/4")).toBeVisible();
+  await expect(page.getByText("Đã ghi có mặt 3 em")).toBeVisible();
+  await page.getByRole("button", { name: "Hoàn tác" }).click();
+  await expect(page.getByText("Đã điểm danh 1/4")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Đã điểm danh 1/4")).toBeVisible(); // máy chủ cũng đã hoàn tác
+
+  // Đã có dấu điểm danh => bật nghỉ lễ phải hỏi lại; Huỷ thì giữ nguyên.
+  await page.getByText("Buổi nghỉ lễ", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Đánh dấu buổi nghỉ lễ?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Huỷ" }).click();
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await page.getByText("Buổi nghỉ lễ", { exact: true }).click();
+  await dialog.getByRole("button", { name: "Nghỉ lễ" }).click();
+  await expect(page.getByText("Buổi nghỉ lễ — không tính vào thống kê.")).toBeVisible();
+});
+
+test("bảng lấy dữ liệu mới khi tab hiện lại và khi quay lại bằng Back", async ({ page }) => {
+  await openBoard(page);
+  const sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1 });
+  try {
+    // Thiết bị khác ghi "Đi muộn" cho Bình.
+    const [row] = await sql`
+      select st.id as student_id, se.id as session_id from students st
+      join sessions se on se.class_id = st.class_id and se.held_on = ${todayInVietnam()}
+      where st.class_id = ${state().classA} and st.full_name = 'Nguyễn Bình'`;
+    await sql`insert into attendance (session_id, student_id, status) values (${row.session_id}, ${row.student_id}, 'late')`;
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.getByRole("button", { name: /Nguyễn Bình: Đi muộn/ })).toBeVisible();
+
+    // Sang màn quét, thiết bị khác ghi thêm, bấm Back => bảng không hiện bản cũ đã cache.
+    await page.getByRole("link", { name: "Quét QR" }).click();
+    await expect(page).toHaveURL(/\/quet$/);
+    const [chi] = await sql`select id from students where class_id = ${state().classA} and full_name = 'Nguyễn Chi'`;
+    await sql`insert into attendance (session_id, student_id, status) values (${row.session_id}, ${chi.id}, 'absent_excused')`;
+    await page.goBack();
+    await expect(page.getByRole("button", { name: /Nguyễn Chi: Vắng có phép/ })).toBeVisible();
+    await expect(page.getByText("Đã điểm danh 2/4")).toBeVisible();
+  } finally {
+    await sql.end();
+  }
+});
+
+test("báo mất mạng trên bảng điểm danh", async ({ page, context }) => {
+  await openBoard(page);
+  await context.setOffline(true);
+  await expect(page.getByText(/Mất mạng — chưa lưu được/)).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByText(/Mất mạng — chưa lưu được/)).toBeHidden();
 });
 
 test("GLV lớp khác không xem được lớp này", async ({ page }) => {

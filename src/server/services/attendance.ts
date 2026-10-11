@@ -71,7 +71,11 @@ export async function setStatus(db: Db, user: AppUser, input: unknown): Promise<
   return ok({ warning: evaluateWarningFromCount(await unexcusedCount(db, student.id, session.termId)) });
 }
 
-export async function markAllPresent(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ marked: number }>> {
+/**
+ * Điền "có mặt" cho các em chưa có dấu. Mọi dòng của một lần bấm mang chung `lastEventId = batchId`
+ * để hoàn tác đúng các dòng đó (dòng bị sửa sau đó có `lastEventId` khác nên không bị xoá).
+ */
+export async function markAllPresent(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ marked: number; batchId: string; studentIds: string[] }>> {
   const p = z.object({ sessionId: z.string() }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));
   const session = await loadWritableSession(db, user, p.data.sessionId);
@@ -83,12 +87,25 @@ export async function markAllPresent(db: Db, user: AppUser, input: unknown): Pro
     (await db.select({ id: attendance.studentId }).from(attendance).where(eq(attendance.sessionId, session.id))).map((m) => m.id),
   );
   const missing = roster.filter((s) => !markedIds.has(s.id));
-  if (missing.length > 0) {
-    await db.insert(attendance)
-      .values(missing.map((m) => ({ sessionId: session.id, studentId: m.id, status: "present" as const, updatedBy: user.id })))
-      .onConflictDoNothing();
-  }
-  return ok({ marked: missing.length });
+  const batchId = crypto.randomUUID();
+  const inserted = missing.length === 0 ? [] : await db.insert(attendance)
+    .values(missing.map((m) => ({ sessionId: session.id, studentId: m.id, status: "present" as const, updatedBy: user.id, lastEventId: batchId })))
+    .onConflictDoNothing()
+    .returning({ id: attendance.studentId });
+  return ok({ marked: inserted.length, batchId, studentIds: inserted.map((r) => r.id) });
+}
+
+/** Hoàn tác một lần "Tất cả có mặt": xoá các dòng vẫn còn nguyên từ lần đó; trả về id các em đã xoá. */
+export async function undoMarkAllPresent(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ studentIds: string[] }>> {
+  const p = z.object({ sessionId: z.string(), batchId: z.uuid("Không hoàn tác được") }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const session = await loadWritableSession(db, user, p.data.sessionId);
+  if (!session) return fail(NOT_FOUND_SESSION);
+  if (session.cancelled) return fail(CANCELLED);
+  const removed = await db.delete(attendance)
+    .where(and(eq(attendance.sessionId, session.id), eq(attendance.lastEventId, p.data.batchId), eq(attendance.status, "present")))
+    .returning({ id: attendance.studentId });
+  return ok({ studentIds: removed.map((r) => r.id) });
 }
 
 export async function setCancelled(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {

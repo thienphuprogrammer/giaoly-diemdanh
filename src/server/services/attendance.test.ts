@@ -4,7 +4,7 @@ import { listSessions } from "@/db/queries/attendance";
 import { attendance, seatAssignments, seatingPlans, students } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
-import { markAllPresent, openSession, readBoard, setCancelled, setStatus } from "./attendance";
+import { markAllPresent, openSession, readBoard, setCancelled, setStatus, undoMarkAllPresent } from "./attendance";
 
 // Mốc "bây giờ" sau mọi ngày dùng trong test để kiểm tra ngày tương lai không ảnh hưởng.
 const LATE_NOW = new Date("2027-02-01T05:00:00Z");
@@ -143,10 +143,69 @@ describe("markAllPresent", () => {
     const sessionId = await open("2026-10-11");
     await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "absent_unexcused", reason: null });
     const r = await markAllPresent(db, b.glv, { sessionId });
-    expect(r).toEqual({ ok: true, data: { marked: 1 } });
+    expect(r.ok && r.data.marked).toBe(1);
+    expect(r.ok && r.data.studentIds).toEqual([binh.id]);
+    expect(r.ok && typeof r.data.batchId).toBe("string");
     const rows = await db.select().from(attendance).where(and(eq(attendance.sessionId, sessionId), eq(attendance.studentId, binh.id)));
     expect(rows[0].status).toBe("present");
     expect((await db.select().from(attendance)).find((x) => x.studentId === an.id)?.status).toBe("absent_unexcused");
+  });
+
+  it("returns no ids and a fresh batch when everyone is already marked", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    const sessionId = await open("2026-10-11");
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "late", reason: null });
+    const r = await markAllPresent(db, b.glv, { sessionId });
+    expect(r.ok && r.data.marked).toBe(0);
+    expect(r.ok && r.data.studentIds).toEqual([]);
+  });
+});
+
+describe("undoMarkAllPresent", () => {
+  async function marked() {
+    const ctx = await setup();
+    const [an, binh, chi] = [await ctx.mk("An"), await ctx.mk("Bình"), await ctx.mk("Chi")];
+    const sessionId = await ctx.open("2026-10-11");
+    await setStatus(ctx.db, ctx.b.glv, { sessionId, studentId: chi.id, status: "absent_excused", reason: "ốm" });
+    const r = await markAllPresent(ctx.db, ctx.b.glv, { sessionId });
+    if (!r.ok) throw new Error(r.error);
+    return { ...ctx, an, binh, chi, sessionId, batchId: r.data.batchId };
+  }
+  const statusOf = async (db: Awaited<ReturnType<typeof setup>>["db"], studentId: string) =>
+    (await db.select().from(attendance).where(eq(attendance.studentId, studentId)))[0]?.status ?? null;
+
+  it("clears exactly the rows written by that batch and keeps earlier marks", async () => {
+    const { db, b, an, binh, chi, sessionId, batchId } = await marked();
+    const r = await undoMarkAllPresent(db, b.glv, { sessionId, batchId });
+    expect(r.ok && [...r.data.studentIds].sort()).toEqual([an.id, binh.id].sort());
+    expect(await statusOf(db, an.id)).toBeNull();
+    expect(await statusOf(db, binh.id)).toBeNull();
+    expect(await statusOf(db, chi.id)).toBe("absent_excused");
+  });
+
+  it("does not clear a row that changed after the batch (manual edit)", async () => {
+    const { db, b, an, binh, sessionId, batchId } = await marked();
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "present", reason: null });
+    const r = await undoMarkAllPresent(db, b.glv, { sessionId, batchId });
+    expect(r.ok && r.data.studentIds).toEqual([binh.id]);
+    expect(await statusOf(db, an.id)).toBe("present");
+  });
+
+  it("is idempotent and ignores unknown batches", async () => {
+    const { db, b, sessionId, batchId } = await marked();
+    await undoMarkAllPresent(db, b.glv, { sessionId, batchId });
+    expect(await undoMarkAllPresent(db, b.glv, { sessionId, batchId })).toEqual({ ok: true, data: { studentIds: [] } });
+    expect(await undoMarkAllPresent(db, b.glv, { sessionId, batchId: crypto.randomUUID() })).toEqual({ ok: true, data: { studentIds: [] } });
+  });
+
+  it("rejects strangers, read-only heads, malformed batch ids and cancelled sessions", async () => {
+    const { db, b, sessionId, batchId } = await marked();
+    expect((await undoMarkAllPresent(db, b.otherGlv, { sessionId, batchId })).ok).toBe(false);
+    expect((await undoMarkAllPresent(db, b.head, { sessionId, batchId })).ok).toBe(false);
+    expect((await undoMarkAllPresent(db, b.glv, { sessionId, batchId: "x" })).ok).toBe(false);
+    await setCancelled(db, b.glv, { sessionId, cancelled: true });
+    expect(await undoMarkAllPresent(db, b.glv, { sessionId, batchId })).toEqual({ ok: false, error: "Buổi này đã được đánh dấu nghỉ lễ" });
   });
 });
 

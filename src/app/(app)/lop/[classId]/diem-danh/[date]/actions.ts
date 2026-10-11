@@ -13,3 +13,6 @@ export async function markAllPresentAction(input: unknown) {
 export async function setCancelledAction(input: unknown) {
   return attendance.setCancelled(db, await requireUser(), input);
 }
+export async function undoMarkAllPresentAction(input: unknown) {
+  return attendance.undoMarkAllPresent(db, await requireUser(), input);
+}

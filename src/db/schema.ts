@@ -123,7 +123,7 @@ export const attendance = pgTable(
     reason: text("reason"),
     updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
-    /** Lượt quét gần nhất đã ghi dòng này; NULL khi ghi tay (không hoàn tác được bằng lượt quét cũ). */
+    /** Lượt quét (hoặc lần "Tất cả có mặt") gần nhất đã ghi dòng này; NULL khi ghi tay (không hoàn tác được bằng lượt cũ). */
     lastEventId: uuid("last_event_id"),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.studentId] })],
