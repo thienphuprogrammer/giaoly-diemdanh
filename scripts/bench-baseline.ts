@@ -10,35 +10,60 @@ if (!url) throw new Error("Thiếu E2E_DATABASE_URL");
 if (!/e2e/i.test(new URL(url).pathname)) throw new Error("Tên database phải chứa 'e2e'");
 
 const N = 200;
-const pct = (xs: number[], p: number) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor((p / 100) * xs.length))];
+const HELD_ON = "2000-01-01"; // không thể trùng dữ liệu thật
+const OWNER_NOTE = "bench-baseline";
+const SEED_MISSING = "Chưa có dữ liệu seed E2E (chạy e2e/global-setup trước)";
+// Nearest-rank: chỉ số = ceil(p/100 * n) - 1, kẹp trong [0, n-1].
+const pct = (xs: number[], p: number) => {
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1))];
+};
 
 async function main() {
   let queries = 0;
   const sql = postgres(url!, { max: 5 });
-  const db = drizzle(sql, { schema: s, logger: { logQuery: () => { queries++; } } }) as unknown as Db;
+  let createdSessionId: string | null = null;
+  try {
+    const db = drizzle(sql, { schema: s, logger: { logQuery: () => { queries++; } } }) as unknown as Db;
 
-  const [user] = await sql`select id, email, name, grade_id, is_grade_head from users where email = 'glv-a@e2e.vn'`;
-  const [cls] = await sql`select c.id from classes c join class_catechists cc on cc.class_id = c.id where cc.user_id = ${user.id} limit 1`;
-  const kids = await sql`select id from students where class_id = ${cls.id} and active limit 4`;
-  const [term] = await sql`select id from terms limit 1`;
-  const [session] = await sql`insert into sessions (class_id, term_id, held_on) values (${cls.id}, ${term.id}, '2026-01-01') on conflict (class_id, held_on) do update set cancelled = false returning id`;
-  const appUser = { id: user.id, email: user.email, name: user.name, isGradeHead: user.is_grade_head, gradeId: user.grade_id };
+    const [user] = await sql`select id, email, name, grade_id, is_grade_head from users where email = 'glv-a@e2e.vn'`;
+    if (!user) throw new Error(SEED_MISSING);
+    const [cls] = await sql`select c.id from classes c join class_catechists cc on cc.class_id = c.id where cc.user_id = ${user.id} limit 1`;
+    if (!cls) throw new Error(SEED_MISSING);
+    const kids = await sql`select id from students where class_id = ${cls.id} and active limit 4`;
+    if (kids.length < 1) throw new Error(SEED_MISSING);
+    const [term] = await sql`select id from terms limit 1`;
+    if (!term) throw new Error(SEED_MISSING);
 
-  const rtt: number[] = [];
-  for (let i = 0; i < 50; i++) { const t = performance.now(); await sql`select 1`; rtt.push(performance.now() - t); }
+    // Chỉ dùng/xóa phiên do chính script này tạo (ghi dấu bằng note).
+    const [existing] = await sql`select id, note from sessions where class_id = ${cls.id} and held_on = ${HELD_ON}`;
+    if (existing && existing.note !== OWNER_NOTE) {
+      throw new Error(`Đã có phiên ${HELD_ON} của lớp này không do bench tạo (note khác '${OWNER_NOTE}'); dừng để không xóa dữ liệu thật`);
+    }
+    // Nếu còn sót phiên của lần chạy trước bị ngắt (note đúng dấu) thì xóa rồi tạo lại.
+    if (existing) await sql`delete from sessions where id = ${existing.id} and note = ${OWNER_NOTE}`;
+    const [session] = await sql`insert into sessions (class_id, term_id, held_on, note) values (${cls.id}, ${term.id}, ${HELD_ON}, ${OWNER_NOTE}) returning id`;
+    createdSessionId = session.id;
+    const appUser = { id: user.id, email: user.email, name: user.name, isGradeHead: user.is_grade_head, gradeId: user.grade_id };
 
-  const times: number[] = [];
-  queries = 0;
-  for (let i = 0; i < N; i++) {
-    const t = performance.now();
-    await setStatus(db, appUser, { sessionId: session.id, studentId: kids[i % kids.length].id, status: i % 2 ? "present" : "absent_unexcused", reason: null });
-    times.push(performance.now() - t);
+    const rtt: number[] = [];
+    for (let i = 0; i < 50; i++) { const t = performance.now(); await sql`select 1`; rtt.push(performance.now() - t); }
+
+    const times: number[] = [];
+    queries = 0;
+    for (let i = 0; i < N; i++) {
+      const t = performance.now();
+      const r = await setStatus(db, appUser, { sessionId: session.id, studentId: kids[i % kids.length].id, status: i % 2 ? "present" : "absent_unexcused", reason: null });
+      if (!r.ok) throw new Error(`setStatus thất bại: ${JSON.stringify(r)}`);
+      times.push(performance.now() - t);
+    }
+    console.log(JSON.stringify({
+      selectOneRttMs: { p50: pct(rtt, 50), p95: pct(rtt, 95) },
+      setStatus: { n: N, queriesPerCall: queries / N, p50: pct(times, 50), p95: pct(times, 95) },
+    }, null, 2));
+  } finally {
+    if (createdSessionId) await sql`delete from sessions where id = ${createdSessionId} and note = ${OWNER_NOTE}`;
+    await sql.end();
   }
-  console.log(JSON.stringify({
-    selectOneRttMs: { p50: pct(rtt, 50), p95: pct(rtt, 95) },
-    setStatus: { n: N, queriesPerCall: queries / N, p50: pct(times, 50), p95: pct(times, 95) },
-  }, null, 2));
-  await sql`delete from sessions where id = ${session.id}`;
-  await sql.end();
 }
 main().catch((e) => { console.error(e.message); process.exit(1); });

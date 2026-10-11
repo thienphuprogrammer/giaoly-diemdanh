@@ -16,7 +16,8 @@
     "test:cov": "vitest run --coverage",
     "seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
     "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
-    "qr:wasm": "node scripts/copy-qr-wasm.mjs"
+    "qr:wasm": "node scripts/copy-qr-wasm.mjs",
+    "bench:baseline": "node --import tsx scripts/bench-baseline.ts"
   },
   "dependencies": {
     "barcode-detector": "^3.2.2",

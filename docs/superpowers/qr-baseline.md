@@ -28,8 +28,10 @@ Lý do chọn `barcode-detector` (không dùng `zxing-wasm` đơn lẻ):
 Lệnh (từ gốc repo; `E2E_DATABASE_URL` trỏ container Postgres 16 cục bộ, tên DB chứa `e2e`, đã seed bằng `e2e/global-setup.ts`):
 
 ```bash
-node --import tsx scripts/bench-baseline.ts
+E2E_DATABASE_URL='<chuỗi kết nối>' pnpm bench:baseline   # = node --import tsx scripts/bench-baseline.ts
 ```
+
+Biến môi trường `E2E_DATABASE_URL` là bắt buộc (không lưu vào file nào được theo dõi). Script chỉ tạo phiên `2000-01-01` đánh dấu `note = 'bench-baseline'`, dừng với lỗi nếu đã có phiên cùng ngày không do nó tạo, và luôn xóa phiên của chính nó khi kết thúc. Phân vị dùng nearest-rank. (Các số ở bảng dưới đo bằng phiên bản đầu của script, dùng ngày 2026-01-01 và phân vị làm tròn xuống; phương pháp tương đương, chạy lại sau sửa cho p50 3,2 ms trước và 2,2 ms sau do máy rảnh hơn, nên so sánh theo cùng một lượt chạy.)
 
 Môi trường: app (Node, postgres-js) và Postgres 16.15 cùng máy qua Docker `127.0.0.1:55432`, máy dev 20 luồng. N = 200 lượt `setStatus` mỗi lần chạy, 50 lượt `select 1`. Ba lần chạy liên tiếp:
 
@@ -49,7 +51,7 @@ Môi trường: app (Node, postgres-js) và Postgres 16.15 cùng máy qua Docker
 Không có Neon/Supabase trong môi trường này, nên số RTT thật, vùng Vercel và vùng DB **chưa được đo và chưa có số liệu**. Chủ dự án cần chạy từ máy chạy app hoặc từ một Vercel function (cùng vùng với app):
 
 ```bash
-E2E_DATABASE_URL='<chuỗi kết nối một DB hosted dùng riêng cho đo, tên DB chứa "e2e", đã seed bằng e2e/global-setup.ts>' node --import tsx scripts/bench-baseline.ts
+E2E_DATABASE_URL='<chuỗi kết nối một DB hosted dùng riêng cho đo, tên DB chứa "e2e", đã seed bằng e2e/global-setup.ts>' pnpm bench:baseline
 ```
 
 Ghi lại vào bảng dưới: `select 1` p50/p95, số truy vấn mỗi lượt (kỳ vọng 6), `setStatus` p50/p95, vùng Vercel project và vùng database. Nếu lệch vùng, đổi vùng function trong cài đặt Vercel (hoặc vùng DB) trước khi làm tiếp.
@@ -62,7 +64,7 @@ Ghi lại vào bảng dưới: `select 1` p50/p95, số truy vấn mỗi lượt
 | Số truy vấn mỗi `setStatus` | 6 (đã đo, cục bộ) |
 | `setStatus` p50 / p95 | _chưa đo_ |
 
-Lưu ý script chỉ chạy khi tên DB chứa `e2e` (chống chạy nhầm) và xóa phiên `2026-01-01` của lớp thử sau khi đo.
+Lưu ý script chỉ chạy khi tên DB chứa `e2e` (chống chạy nhầm) và xóa phiên `2000-01-01` (do script tạo) sau khi đo.
 
 ## 3. Kiểm tra decoder trong trình duyệt
 
