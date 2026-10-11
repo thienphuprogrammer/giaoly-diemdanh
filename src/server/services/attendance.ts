@@ -12,8 +12,8 @@ import { NOT_FOUND, classPermissions, guardClass } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
 
 const firstError = (e: z.ZodError) => e.issues[0]?.message ?? "Dữ liệu không hợp lệ";
-const NOT_FOUND_SESSION = "Không tìm thấy buổi học";
-const CANCELLED = "Buổi này đã được đánh dấu nghỉ lễ";
+export const NOT_FOUND_SESSION = "Không tìm thấy buổi học";
+export const CANCELLED = "Buổi này đã được đánh dấu nghỉ lễ";
 const STATUSES = ["present", "absent_excused", "absent_unexcused", "late"] as const;
 
 export interface Board {
