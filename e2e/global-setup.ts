@@ -41,6 +41,9 @@ export default async function globalSetup() {
   // GLV thứ hai của lớp A/Q cho project tablet: bảng tra quét giới hạn 30 lần/phút mỗi người, hai project chạy liền nhau với cùng một người sẽ chạm giới hạn.
   const [glvA2] = await db.insert(s.users).values({ email: "glv-a2@e2e.vn", name: "GLV A2", passwordHash: hash, gradeId: gradeA.id }).returning();
   await db.insert(s.classCatechists).values([{ classId: classQ.id, userId: glvA.id }, { classId: classQ.id, userId: glvA2.id }, { classId: classA.id, userId: glvA2.id }]);
+  // Thêm hai GLV lớp A cho các test hàng quét bền (tải lại trang, đăng nhập lại): mỗi lần mở màn quét tải bảng tra một lần.
+  const extra = await db.insert(s.users).values(["glv-a3@e2e.vn", "glv-a4@e2e.vn"].map((email, i) => ({ email, name: `GLV A${i + 3}`, passwordHash: hash, gradeId: gradeA.id }))).returning();
+  await db.insert(s.classCatechists).values(extra.map((u) => ({ classId: classA.id, userId: u.id })));
   await db.insert(s.students).values(Array.from({ length: 30 }, (_, i) => ({ classId: classQ.id, fullName: `Em Q${String(i + 1).padStart(2, "0")}` })));
   await db.insert(s.classCatechists).values([
     { classId: classA.id, userId: glvA.id }, { classId: classB.id, userId: glvB.id },

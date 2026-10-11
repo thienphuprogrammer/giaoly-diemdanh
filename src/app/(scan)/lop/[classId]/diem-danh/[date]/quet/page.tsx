@@ -15,7 +15,7 @@ export default async function ScanPage({ params }: { params: Promise<{ classId: 
   const perms = await classPermissions(db, user, classId);
   if (!perms.canWrite) notFound();
   const opened = await openSession(db, user, { classId, heldOn: date }); // idempotent
-  if (!opened.ok) return <Notice tone="error" role="alert">{opened.error}</Notice>;
+  if (!opened.ok) return <div className="p-4"><Notice tone="error" role="alert">{opened.error}</Notice></div>;
   const cls = await getClassById(db, classId);
-  return <ScanScreen sessionId={opened.data.id} classId={classId} className={cls?.name ?? ""} heldOn={date} />;
+  return <ScanScreen sessionId={opened.data.id} userId={user.id} classId={classId} className={cls?.name ?? ""} heldOn={date} />;
 }

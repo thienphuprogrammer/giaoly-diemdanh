@@ -4,11 +4,15 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { createQrDecoder } from "@/lib/qr/decoder";
 import { createFrameDeduper } from "@/lib/qr/frame-deduper";
 
-export type CameraState = "starting" | "on" | "denied" | "unavailable";
+export type CameraState = "starting" | "on" | "restarting" | "denied" | "unavailable";
 
 const DENIED = new Set(["NotAllowedError", "PermissionDeniedError", "SecurityError"]);
 const TICK_MS = 60;
 
+/**
+ * Camera + vòng giải mã. Tự mở lại khi luồng hình bị ngắt (khóa máy, chuyển app, iOS thu hồi camera)
+ * hoặc khi tab hiện lại mà hình đã tắt. Mở lại không được thì báo "unavailable" để màn quét hiện thông báo.
+ */
 export function QrCamera({ onCode, onState, paused }: {
   onCode: (text: string) => void;
   onState: (state: CameraState) => void;
@@ -22,6 +26,12 @@ export function QrCamera({ onCode, onState, paused }: {
   const emitCode = useEffectEvent((code: string) => onCode(code));
   const emitState = useEffectEvent((state: CameraState) => onState(state));
   const [torch, setTorch] = useState<{ supported: boolean; on: boolean }>({ supported: false, on: false });
+  /** Tăng lên để mở lại camera từ đầu (luồng cũ đã bị ngắt). */
+  const [generation, setGeneration] = useState(0);
+  const restart = useEffectEvent(() => {
+    emitState("restarting");
+    setGeneration((n) => n + 1);
+  });
 
   useEffect(() => {
     let stopped = false;
@@ -30,6 +40,18 @@ export function QrCamera({ onCode, onState, paused }: {
     const deduper = createFrameDeduper();
     // Nạp bộ giải mã (WASM) song song với việc xin quyền camera.
     const decoderReady = createQrDecoder().catch(() => null);
+    const onEnded = () => {
+      // Luồng bị ngắt khi tab đang ẩn: đợi tab hiện lại rồi mới mở (trình duyệt không cho mở camera khi ẩn).
+      if (!stopped && document.visibilityState === "visible") restart();
+    };
+    const onVisible = () => {
+      if (stopped || document.visibilityState !== "visible") return;
+      const t = track.current;
+      if (stream && (!t || t.readyState === "ended")) { restart(); return; }
+      const video = videoRef.current;
+      if (video?.paused && video.srcObject) void video.play().catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     (async () => {
       try {
@@ -38,7 +60,7 @@ export function QrCamera({ onCode, onState, paused }: {
           audio: false,
         });
       } catch (e) {
-        emitState(DENIED.has((e as DOMException).name) ? "denied" : "unavailable");
+        if (!stopped) emitState(DENIED.has((e as DOMException).name) ? "denied" : "unavailable");
         return;
       }
       if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
@@ -46,12 +68,13 @@ export function QrCamera({ onCode, onState, paused }: {
       if (!video) return;
       video.srcObject = stream;
       track.current = stream.getVideoTracks()[0] ?? null;
+      track.current?.addEventListener("ended", onEnded);
       const caps = (track.current?.getCapabilities?.() ?? {}) as { torch?: boolean };
       setTorch({ supported: !!caps.torch, on: false });
       await video.play().catch(() => undefined);
       const decoder = await decoderReady;
-      if (!decoder) { emitState("unavailable"); return; }
       if (stopped) return;
+      if (!decoder) { emitState("unavailable"); return; }
       emitState("on");
 
       const tick = async () => {
@@ -68,9 +91,12 @@ export function QrCamera({ onCode, onState, paused }: {
     return () => {
       stopped = true;
       window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      track.current?.removeEventListener("ended", onEnded);
+      track.current = null;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [generation]);
 
   async function toggleTorch() {
     const next = !torch.on;
@@ -81,7 +107,7 @@ export function QrCamera({ onCode, onState, paused }: {
   }
 
   return (
-    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-card bg-ink">
+    <div className="relative aspect-[4/3] max-h-[52dvh] w-full overflow-hidden rounded-card bg-ink">
       <video ref={videoRef} muted playsInline aria-label="Hình từ camera" className="h-full w-full object-cover" />
       <div aria-hidden className="pointer-events-none absolute inset-[18%] rounded-2xl border-4 border-white/80" />
       {torch.supported && (

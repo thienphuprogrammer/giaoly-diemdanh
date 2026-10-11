@@ -1,4 +1,5 @@
 import type { CurrentMark, ScanMode } from "./scan-rules";
+import type { PersistedEvent } from "./persist-queue";
 import type { AttendanceStatus } from "./warning";
 
 export type EventState = "sending" | "saved" | "needs_confirm" | "rejected" | "failed" | "undone";
@@ -41,7 +42,13 @@ export type ScanAction =
   | { type: "undone"; eventId: string }
   | { type: "undo_failed"; eventId: string; message: string }
   /** Bỏ một lượt đã xong việc cần xử lý (đã chọn lại, giữ nguyên, hoặc bỏ qua lỗi). Lượt còn đang gửi thì giữ. */
-  | { type: "dismiss"; eventId: string };
+  | { type: "dismiss"; eventId: string }
+  /** Nạp lại các lượt chưa lưu từ bộ nhớ máy (mở lại màn quét). Lượt đã có trong hàng thì bỏ qua (theo eventId). */
+  | { type: "restore"; events: readonly PersistedEvent[] }
+  /** Có mạng lại / tab hiện lại / đăng nhập lại: gửi lại ngay các lượt chưa lưu, với số lần thử mới. */
+  | { type: "resume" }
+  /** Máy chủ trả 401: giữ lượt trong hàng (không tính là một lần thử) cho tới khi đăng nhập lại. */
+  | { type: "auth_wait"; eventId: string };
 
 const patch = (s: ScanQueueState, id: string, change: (e: QueuedEvent) => Partial<QueuedEvent>): ScanQueueState => ({
   events: s.events.map((e) => (e.eventId === id ? { ...e, ...change(e) } : e)),
@@ -63,7 +70,25 @@ export function queueReducer(s: ScanQueueState, a: ScanAction): ScanQueueState {
     case "undone": return patch(s, a.eventId, () => ({ state: "undone", undoBusy: false }));
     case "undo_failed": return patch(s, a.eventId, () => ({ undoBusy: false, undoError: a.message }));
     case "dismiss": return { events: s.events.filter((e) => e.eventId !== a.eventId || !NEEDS_ACTION.has(e.state)) };
+    case "restore": {
+      const known = new Set(s.events.map((e) => e.eventId));
+      const fresh = a.events.filter((p) => !known.has(p.eventId)).map(fromPersisted);
+      return fresh.length ? { events: [...fresh, ...s.events] } : s;
+    }
+    case "resume": {
+      if (!s.events.some(isResumable)) return s;
+      return { events: s.events.map((e) => (isResumable(e) ? { ...e, state: "sending" as const, attempts: 0, notBefore: undefined } : e)) };
+    }
+    case "auth_wait": return patch(s, a.eventId, () => ({ inFlight: false, notBefore: undefined }));
   }
+}
+
+const isResumable = (e: QueuedEvent): boolean =>
+  e.state === "failed" || (e.state === "sending" && (e.attempts > 0 || e.notBefore !== undefined));
+
+function fromPersisted(p: PersistedEvent): QueuedEvent {
+  const { failed, ...rest } = p;
+  return { ...rest, state: failed ? "failed" : "sending", inFlight: false, undoBusy: false, notBefore: undefined };
 }
 
 const NEEDS_ACTION: ReadonlySet<EventState> = new Set(["rejected", "failed", "needs_confirm"]);

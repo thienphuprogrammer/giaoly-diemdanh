@@ -1,135 +1,186 @@
 "use client";
-import { ArrowLeft, CircleAlert, Clock, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
-import Link from "next/link";
+import { Check, CircleAlert, Clock, LogIn, RefreshCw, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLeaveGuard } from "@/components/nav/useLeaveGuard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Notice } from "@/components/ui/Notice";
+import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
+import { dateLabel } from "@/lib/date-label";
 import { QrCamera, type CameraState } from "./QrCamera";
 import { useScanFeedbackSetting } from "./feedback";
 import { useScanSession } from "./useScanSession";
-import { dateLabel } from "@/lib/date-label";
+import { useWakeLock } from "./useWakeLock";
 
-export function ScanScreen({ sessionId, classId, className, heldOn }: { sessionId: string; classId: string; className: string; heldOn: string }) {
-  const s = useScanSession({ sessionId });
+interface ScanScreenProps { sessionId: string; userId: string; classId: string; className: string; heldOn: string }
+
+/**
+ * Màn quét toàn màn hình (không có thanh điều hướng/tab lớp). "Xong" và công tắc Có mặt/Đi muộn ở đáy cho ngón cái.
+ * Rời màn (Xong, Back, link) khi còn lượt chưa lưu thì hỏi lại; rời bằng `router.replace` để Back không quay lại máy quét.
+ */
+export function ScanScreen({ sessionId, userId, classId, className, heldOn }: ScanScreenProps) {
+  const s = useScanSession({ sessionId, userId });
   const [storedFeedback, saveFeedback] = useScanFeedbackSetting();
   const [camera, setCamera] = useState<CameraState>("starting");
+  const [cameraKey, setCameraKey] = useState(0);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
   const [review, setReview] = useState(false);
-  const [leave, setLeave] = useState(false);
-  const paused = !!s.confirm || finding || review || leave;
+  const guard = useLeaveGuard(s.pending, { navigate: "replace" });
+  const leaving = guard.target !== null;
+  const paused = !!s.confirm || finding || review || leaving;
+  useWakeLock(camera === "on" || camera === "restarting");
   // Sheet đặt focus lại mỗi khi onClose đổi: giữ các hàm đóng ổn định để không cướp focus khỏi ô tìm kiếm.
   const { setConfirm } = s;
   const closeConfirm = useCallback(() => setConfirm(null), [setConfirm]);
   const closeFinding = useCallback(() => { setFinding(false); setQuery(""); }, []);
   const closeReview = useCallback(() => setReview(false), []);
-  const closeLeave = useCallback(() => setLeave(false), []);
   const searchRef = useRef<HTMLInputElement>(null);
   // Effect của cha chạy sau effect của Sheet (vốn focus vào khung): đưa focus về ô tìm để gõ ngay.
   useEffect(() => { if (finding) searchRef.current?.focus(); }, [finding]);
+  const reopenCamera = useCallback(() => { setCamera("starting"); setCameraKey((k) => k + 1); }, []);
+  // Camera không mở được (đang bị app khác giữ, vừa khóa máy…): thử lại khi người dùng quay lại tab.
+  useEffect(() => {
+    if (camera !== "unavailable") return;
+    const onVisible = () => { if (document.visibilityState === "visible") reopenCamera(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [camera, reopenCamera]);
+
   const needsAction = s.queue.events.filter((e) => e.state === "needs_confirm" || e.state === "rejected" || e.state === "failed");
   const boardHref = `/lop/${classId}/diem-danh/${heldOn}`;
   const late = s.mode === "late";
+  const goBoard = () => { setReview(false); guard.go(boardHref); };
+  const relogin = () => guard.hardNavigate(`/login?next=${encodeURIComponent(`${boardHref}/quet`)}`);
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        {s.pending > 0
-          ? <button type="button" onClick={() => setLeave(true)} className="btn btn-secondary"><ArrowLeft aria-hidden size={18} /> Xong</button>
-          : <Link href={boardHref} className="btn btn-secondary"><ArrowLeft aria-hidden size={18} /> Xong</Link>}
+    <section aria-label="Quét thẻ QR" aria-busy={s.roster === null} className="flex min-h-dvh flex-col">
+      <header className="flex items-center gap-2 px-4 pt-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-lg font-semibold leading-tight">Quét thẻ QR</h1>
+          <p className="truncate font-display text-sm text-ink-soft">{className} · {dateLabel(heldOn)}</p>
+        </div>
         <button type="button" onClick={() => saveFeedback(!storedFeedback)} aria-pressed={storedFeedback}
           aria-label="Rung và tiếng bíp khi quét" title={storedFeedback ? "Đang bật rung/tiếng bíp" : "Đang tắt rung/tiếng bíp"}
           className="btn btn-ghost btn-icon shrink-0">
           {storedFeedback ? <Volume2 aria-hidden size={20} /> : <VolumeX aria-hidden size={20} />}
         </button>
-        <div className="ml-auto min-w-0 text-right">
-          <h2 className="font-display text-lg font-semibold leading-tight">Quét thẻ QR</h2>
-          <p className="truncate font-display text-sm text-ink-soft">{className} · {dateLabel(heldOn)}</p>
+      </header>
+
+      <div className="flex flex-1 flex-col gap-3 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3">
+        <OfflineBanner>Mất mạng — các lượt quét được giữ trên máy và sẽ tự gửi khi có mạng.</OfflineBanner>
+        {s.authRequired && (
+          <Notice tone="error" role="alert">
+            <p>Cần đăng nhập lại. Các lượt quét chưa lưu vẫn được giữ trên máy này và sẽ tự gửi sau khi đăng nhập.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={relogin} className="btn btn-primary btn-sm"><LogIn aria-hidden size={16} /> Đăng nhập lại</button>
+              <button type="button" onClick={s.resume} className="btn btn-secondary btn-sm"><RefreshCw aria-hidden size={16} /> Thử gửi lại</button>
+            </div>
+          </Notice>
+        )}
+        {s.persistFailed && s.pending > 0 && (
+          <Notice tone="warning" role="status">Máy không lưu được hàng chờ: đừng đóng trang cho tới khi gửi xong.</Notice>
+        )}
+
+        {camera === "denied" || camera === "unavailable" ? (
+          <EmptyState icon={VideoOff} title={camera === "denied" ? "Chưa cho phép dùng camera" : "Không mở được camera"}
+            action={(
+              <div className="flex flex-wrap justify-center gap-2">
+                {camera === "unavailable" && <button type="button" onClick={reopenCamera} className="btn btn-secondary"><RefreshCw aria-hidden size={18} /> Mở lại camera</button>}
+                <button type="button" onClick={() => setFinding(true)} className="btn btn-primary">Tìm bằng tên</button>
+              </div>
+            )}>
+            {camera === "denied"
+              ? "Vào cài đặt trình duyệt, cho trang này dùng camera rồi tải lại. Trong lúc đó vẫn điểm danh được bằng cách tìm tên."
+              : "Camera đang bị ứng dụng khác dùng, vừa bị tắt khi khóa máy, hoặc thiết bị không có camera. Bấm “Mở lại camera”, hoặc tìm tên để điểm danh."}
+          </EmptyState>
+        ) : (
+          <QrCamera key={cameraKey} onCode={s.handleCode} onState={setCamera} paused={paused} />
+        )}
+        {camera === "starting" && <p className="text-sm text-ink-soft" role="status">Đang mở camera…</p>}
+        {camera === "restarting" && <p className="text-sm text-ink-soft" role="status">Đang mở lại camera…</p>}
+        {s.rosterError && (
+          <Notice tone="error" role="alert">
+            Chưa tải được danh sách lớp. <button type="button" onClick={() => void s.loadRoster()} className="underline">Thử lại</button>
+          </Notice>
+        )}
+
+        <div aria-live="polite" className="min-h-[88px] rounded-card border border-border bg-surface p-3">
+          {s.banner ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                {s.banner.saintName && <p className="text-sm text-ink-soft">{s.banner.saintName}</p>}
+                <p className="font-display text-2xl font-semibold leading-tight">{s.banner.fullName ?? ""}</p>
+                <p className={`flex items-center gap-1 text-sm font-medium ${s.banner.tone === "error" ? "text-warn-alert" : "text-ink-soft"}`}>
+                  {s.banner.tone === "error" && <CircleAlert aria-hidden size={16} className="shrink-0" />}
+                  {s.banner.text}
+                </p>
+              </div>
+              {s.banner.status && <StatusPill status={s.banner.status} />}
+            </div>
+          ) : <p className="text-ink-soft">{s.roster === null ? "Đang tải danh sách lớp…" : "Đưa thẻ QR của em vào khung hình."}</p>}
+        </div>
+
+        <div role="group" className="flex flex-wrap items-center gap-2 tabular-nums" aria-label="Tổng kết lượt quét">
+          <Pill tone="neutral">Đã lưu {s.summary.saved}</Pill>
+          <Pill tone="action">Đang gửi {s.summary.sending}</Pill>
+          <Pill tone={s.summary.needsAction ? "alert" : "neutral"} icon={s.summary.needsAction ? CircleAlert : undefined}>Cần xử lý {s.summary.needsAction}</Pill>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => setFinding(true)} className="btn btn-secondary"><Search aria-hidden size={18} /> Tìm bằng tên</button>
+          <button type="button" onClick={() => setReview(true)} className="btn btn-secondary">Kiểm tra cuối buổi</button>
+        </div>
+
+        <ul className="flex flex-col divide-y divide-border rounded-card border border-border bg-surface">
+          {s.recent.length === 0 && <li className="p-3 text-sm text-ink-soft">Chưa quét thẻ nào.</li>}
+          {s.recent.map((e) => (
+            <li key={e.eventId} className="flex flex-wrap items-center gap-2 p-3">
+              <span className="min-w-0 flex-1 font-medium">{e.fullName}</span>
+              {e.state === "saved" && <StatusPill status={e.serverStatus ?? e.optimisticStatus} label={e.result === "noop" ? "Đã có" : undefined} />}
+              {e.state === "sending" && <Pill tone="action">{s.authRequired ? "Chờ đăng nhập" : "Đang gửi"}</Pill>}
+              {e.state === "needs_confirm" && (
+                <button type="button" onClick={() => s.reopenConfirm(e)} aria-label={`Chọn trạng thái cho ${e.fullName}`} className="btn btn-secondary btn-sm">
+                  <CircleAlert aria-hidden size={16} /> Cần chọn
+                </button>
+              )}
+              {e.state === "rejected" && <Pill tone="alert" icon={CircleAlert}>{e.message ?? "Bị từ chối"}</Pill>}
+              {e.state === "failed" && <Pill tone="alert" icon={CircleAlert}>Chưa gửi được</Pill>}
+              {e.state === "failed" && <button type="button" onClick={() => s.retry(e.eventId)} className="btn btn-secondary btn-sm">Thử lại</button>}
+              {(e.state === "rejected" || e.state === "failed") && (
+                <button type="button" onClick={() => s.dismiss(e.eventId)} aria-label={`Bỏ qua lượt của ${e.fullName}`} className="btn btn-ghost btn-sm">Bỏ qua</button>
+              )}
+              {e.state === "undone" && <Pill>Đã hoàn tác</Pill>}
+              {e.state === "saved" && e.result === "applied" && (
+                <button type="button" disabled={e.undoBusy} onClick={() => void s.undo(e)} aria-label={`Hoàn tác lượt của ${e.fullName}`} className="btn btn-secondary btn-sm">
+                  <Undo2 aria-hidden size={16} /> Hoàn tác
+                </button>
+              )}
+              {e.undoError && <p role="alert" className="w-full text-sm text-warn-alert">{e.undoError}</p>}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-bar backdrop-blur-sm">
+        <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          {late && <p role="status" className="text-center text-sm font-medium text-st-late">Đang quét chế độ <b>Đi muộn</b>: thẻ quét sau sẽ ghi Đi muộn.</p>}
+          <div className="flex items-stretch gap-2">
+            <div role="radiogroup" aria-label="Chế độ quét" className="grid flex-1 grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
+              {(["present", "late"] as const).map((m) => (
+                <button key={m} type="button" role="radio" aria-checked={s.mode === m} onClick={() => s.setMode(m)}
+                  className={`flex h-12 items-center justify-center gap-1.5 rounded-control font-display text-base transition-colors ${s.mode === m ? `${m === "late" ? "bg-st-late" : "bg-st-present"} font-semibold text-white shadow-sm` : "font-medium text-ink-soft hover:bg-surface"}`}>
+                  {m === "late" ? <Clock aria-hidden size={18} className="hidden min-[360px]:block" /> : <UserCheck aria-hidden size={18} className="hidden min-[360px]:block" />}
+                  {m === "late" ? "Đi muộn" : "Có mặt"}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => guard.go(boardHref)} className="btn btn-primary h-auto min-h-14 shrink-0 px-4">
+              <Check aria-hidden size={18} /> Xong
+            </button>
+          </div>
         </div>
       </div>
-
-      <div role="radiogroup" aria-label="Chế độ quét" className="grid grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
-        {(["present", "late"] as const).map((m) => (
-          <button key={m} type="button" role="radio" aria-checked={s.mode === m} onClick={() => s.setMode(m)}
-            className={`flex h-12 items-center justify-center gap-2 rounded-control font-display text-base transition-colors ${s.mode === m ? `${m === "late" ? "bg-st-late" : "bg-st-present"} font-semibold text-white shadow-sm` : "font-medium text-ink-soft hover:bg-surface"}`}>
-            {m === "late" ? <Clock aria-hidden size={18} /> : <UserCheck aria-hidden size={18} />}
-            {m === "late" ? "Đi muộn" : "Có mặt"}
-          </button>
-        ))}
-      </div>
-      {late && <Notice tone="warning" role="status">Đang quét ở chế độ <b>Đi muộn</b>: các thẻ quét sau sẽ ghi Đi muộn.</Notice>}
-
-      {camera === "denied" || camera === "unavailable" ? (
-        <EmptyState icon={VideoOff} title={camera === "denied" ? "Chưa cho phép dùng camera" : "Không mở được camera"}
-          action={<button type="button" onClick={() => setFinding(true)} className="btn btn-primary">Tìm bằng tên</button>}>
-          {camera === "denied" ? "Vào cài đặt trình duyệt, cho trang này dùng camera rồi tải lại. Trong lúc đó vẫn điểm danh được bằng cách tìm tên." : "Thiết bị không có camera hoặc đang bị ứng dụng khác dùng. Bạn vẫn có thể tìm tên để điểm danh."}
-        </EmptyState>
-      ) : (
-        <QrCamera onCode={s.handleCode} onState={setCamera} paused={paused} />
-      )}
-      {camera === "starting" && <p className="text-sm text-ink-soft" role="status">Đang mở camera…</p>}
-      {s.rosterError && (
-        <Notice tone="error" role="alert">
-          Chưa tải được danh sách lớp. <button type="button" onClick={() => void s.loadRoster()} className="underline">Thử lại</button>
-        </Notice>
-      )}
-
-      <div aria-live="polite" className="min-h-[88px] rounded-card border border-border bg-surface p-3">
-        {s.banner ? (
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              {s.banner.saintName && <p className="text-sm text-ink-soft">{s.banner.saintName}</p>}
-              <p className="font-display text-2xl font-semibold leading-tight">{s.banner.fullName ?? ""}</p>
-              <p className={`flex items-center gap-1 text-sm font-medium ${s.banner.tone === "error" ? "text-warn-alert" : "text-ink-soft"}`}>
-                {s.banner.tone === "error" && <CircleAlert aria-hidden size={16} className="shrink-0" />}
-                {s.banner.text}
-              </p>
-            </div>
-            {s.banner.status && <StatusPill status={s.banner.status} />}
-          </div>
-        ) : <p className="text-ink-soft">Đưa thẻ QR của em vào khung hình.</p>}
-      </div>
-
-      <div role="group" className="flex flex-wrap items-center gap-2 tabular-nums" aria-label="Tổng kết lượt quét">
-        <Pill tone="neutral">Đã lưu {s.summary.saved}</Pill>
-        <Pill tone="action">Đang gửi {s.summary.sending}</Pill>
-        <Pill tone={s.summary.needsAction ? "alert" : "neutral"} icon={s.summary.needsAction ? CircleAlert : undefined}>Cần xử lý {s.summary.needsAction}</Pill>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => setFinding(true)} className="btn btn-secondary"><Search aria-hidden size={18} /> Tìm bằng tên</button>
-        <button type="button" onClick={() => setReview(true)} className="btn btn-secondary">Kiểm tra cuối buổi</button>
-      </div>
-
-      <ul className="flex flex-col divide-y divide-border rounded-card border border-border bg-surface">
-        {s.recent.length === 0 && <li className="p-3 text-sm text-ink-soft">Chưa quét thẻ nào.</li>}
-        {s.recent.map((e) => (
-          <li key={e.eventId} className="flex flex-wrap items-center gap-2 p-3">
-            <span className="min-w-0 flex-1 font-medium">{e.fullName}</span>
-            {e.state === "saved" && <StatusPill status={e.serverStatus ?? e.optimisticStatus} label={e.result === "noop" ? "Đã có" : undefined} />}
-            {e.state === "sending" && <Pill tone="action">Đang gửi</Pill>}
-            {e.state === "needs_confirm" && (
-              <button type="button" onClick={() => s.reopenConfirm(e)} aria-label={`Chọn trạng thái cho ${e.fullName}`} className="btn btn-secondary btn-sm">
-                <CircleAlert aria-hidden size={16} /> Cần chọn
-              </button>
-            )}
-            {e.state === "rejected" && <Pill tone="alert" icon={CircleAlert}>{e.message ?? "Bị từ chối"}</Pill>}
-            {e.state === "failed" && <Pill tone="alert" icon={CircleAlert}>Chưa gửi được</Pill>}
-            {e.state === "failed" && <button type="button" onClick={() => s.retry(e.eventId)} className="btn btn-secondary btn-sm">Thử lại</button>}
-            {(e.state === "rejected" || e.state === "failed") && (
-              <button type="button" onClick={() => s.dismiss(e.eventId)} aria-label={`Bỏ qua lượt của ${e.fullName}`} className="btn btn-ghost btn-sm">Bỏ qua</button>
-            )}
-            {e.state === "undone" && <Pill>Đã hoàn tác</Pill>}
-            {e.state === "saved" && e.result === "applied" && (
-              <button type="button" disabled={e.undoBusy} onClick={() => void s.undo(e)} aria-label={`Hoàn tác lượt của ${e.fullName}`} className="btn btn-secondary btn-sm">
-                <Undo2 aria-hidden size={16} /> Hoàn tác
-              </button>
-            )}
-            {e.undoError && <p role="alert" className="w-full text-sm text-warn-alert">{e.undoError}</p>}
-          </li>
-        ))}
-      </ul>
 
       {finding && (
         <Sheet label="Tìm bằng tên" onClose={closeFinding}>
@@ -174,29 +225,32 @@ export function ScanScreen({ sessionId, classId, className, heldOn }: { sessionI
             {needsAction.length === 0 && <li className="text-ink-soft">Không có lượt nào cần xử lý.</li>}
           </ul>
           <p className="text-sm text-ink-soft">Không tự chuyển em chưa điểm danh thành vắng. Muốn đánh vắng, mở bảng điểm danh.</p>
-          <Link href={boardHref} className="btn btn-primary btn-lg">Mở bảng điểm danh</Link>
+          <button type="button" onClick={goBoard} className="btn btn-primary btn-lg">Mở bảng điểm danh</button>
         </Sheet>
       )}
 
-      {leave && (
-        <Sheet label={s.pending > 0 ? "Còn lượt chưa lưu" : "Đã lưu hết"} onClose={closeLeave}>
+      {leaving && (
+        <Sheet label={s.pending > 0 ? "Còn lượt chưa lưu" : "Đã lưu hết"} onClose={guard.stay}>
           {s.pending > 0 ? (
             <>
               <p className="font-display text-lg font-semibold">Còn {s.unsaved.total} lượt chưa lưu</p>
               <ul className="text-ink-soft" role="status">
-                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây để gửi xong.</li>}
+                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về bảng điểm danh.</li>}
                 {s.unsaved.failed > 0 && <li>{s.unsaved.failed} lượt chưa gửi được: thử gửi lại, hoặc ghi tay trên bảng điểm danh.</li>}
               </ul>
-              <p className="text-sm text-ink-soft">Thoát bây giờ sẽ mất các lượt này.</p>
+              <p className="text-sm text-ink-soft">
+                {s.persistFailed
+                  ? "Thoát bây giờ sẽ mất các lượt này."
+                  : "Nếu thoát, các lượt này vẫn được giữ trên máy này và sẽ tự gửi khi mở lại màn quét của buổi này."}
+              </p>
               {s.unsaved.failed > 0 && <button type="button" className="btn btn-primary btn-lg" onClick={s.retryAllFailed}>Thử gửi lại {s.unsaved.failed} lượt</button>}
-              <button type="button" className={`btn btn-lg ${s.unsaved.failed > 0 ? "btn-secondary" : "btn-primary"}`} onClick={closeLeave}>Ở lại</button>
-              <Link href={boardHref} className="btn btn-danger">Vẫn thoát</Link>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={`btn btn-lg ${s.unsaved.failed > 0 ? "btn-secondary" : "btn-primary"}`} onClick={guard.stay}>Ở lại</button>
+                <button type="button" className="btn btn-danger btn-lg" onClick={guard.leave}>Vẫn thoát</button>
+              </div>
             </>
           ) : (
-            <>
-              <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét</p>
-              <Link href={boardHref} className="btn btn-primary btn-lg">Về bảng điểm danh</Link>
-            </>
+            <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét — đang về bảng điểm danh…</p>
           )}
         </Sheet>
       )}

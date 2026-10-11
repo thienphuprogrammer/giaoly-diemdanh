@@ -174,3 +174,31 @@ describe("backoffMs", () => {
     expect(backoffMs(4)).toBeNull();
   });
 });
+
+describe("resume and auth_wait", () => {
+  it("resume makes failed and backing-off events sendable now, with a fresh attempt budget", () => {
+    let s = enqueue(initialQueue, ev("a1", "A"), ev("b1", "B"), ev("c1", "C"));
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "a1" }), { type: "network_error", eventId: "a1", maxAttempts: 1, now: 1000, waitMs: null });
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "b1" }), { type: "network_error", eventId: "b1", maxAttempts: 4, now: 1000, waitMs: 4000 });
+    s = queueReducer(s, { type: "started", eventId: "c1" });
+    s = queueReducer(s, { type: "resume" });
+    expect(s.events.map((e) => [e.eventId, e.state, e.attempts, e.notBefore, e.inFlight])).toEqual([
+      ["a1", "sending", 0, undefined, false], ["b1", "sending", 0, undefined, false], ["c1", "sending", 0, undefined, true],
+    ]);
+    expect(sendable(s, 1001).map((e) => e.eventId)).toEqual(["a1", "b1"]);
+  });
+
+  it("resume leaves saved, rejected and needs_confirm events untouched", () => {
+    let s = enqueue(initialQueue, ev("a1", "A"), ev("b1", "B"));
+    s = queueReducer(s, { type: "resolved", eventId: "a1", result: "applied", status: "present" });
+    s = queueReducer(s, { type: "rejected", eventId: "b1", message: "x" });
+    expect(queueReducer(s, { type: "resume" })).toEqual(s);
+  });
+
+  it("auth_wait keeps the event unsent without spending an attempt", () => {
+    let s = enqueue(initialQueue, ev("e1"));
+    s = queueReducer(queueReducer(s, { type: "started", eventId: "e1" }), { type: "auth_wait", eventId: "e1" });
+    expect(s.events[0]).toMatchObject({ state: "sending", inFlight: false, attempts: 0 });
+    expect(unsavedSummary(s).total).toBe(1);
+  });
+});

@@ -1,13 +1,15 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { loadQueue, queueStorageKey, saveQueue, sweepStaleQueues, toPersisted, type StorageLike } from "@/lib/attendance/persist-queue";
 import { filterRoster } from "@/lib/attendance/roster-search";
-import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pendingCount, queueReducer, recentEvents, sendable, summarizeQueue, unsavedSummary, type QueuedEvent } from "@/lib/attendance/scan-queue";
+import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pendingCount, queueReducer, recentEvents, sendable, summarizeQueue, unsavedSummary, type QueuedEvent, type ScanAction } from "@/lib/attendance/scan-queue";
 import { decideScan, type CurrentMark, type ScanMode } from "@/lib/attendance/scan-rules";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { parseQrPayload } from "@/lib/qr/payload";
 import type { ScanRosterEntry } from "@/server/services/scan";
 import { fetchRoster, sendScan, sendUndo, type RosterResponse } from "./api";
 import { playScanFeedback } from "./feedback";
+import { useRememberedScanMode } from "./scanMode";
 
 export const INVALID_CARD = "Thẻ không dùng được cho lớp này";
 const ROSTER_COOLDOWN_MS = 10_000;
@@ -30,11 +32,23 @@ const isAbsence = (s: AttendanceStatus | null | undefined): s is "absent_excused
 type Marks = ReadonlyMap<string, CurrentMark | null>;
 const toMark = (status: AttendanceStatus | null, reason: string | null = null): CurrentMark | null => (status ? { status, reason } : null);
 
-export function useScanSession({ sessionId }: { sessionId: string }) {
+function localStore(): StorageLike | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function useScanSession({ sessionId, userId }: { sessionId: string; userId: string }) {
   const [roster, setRoster] = useState<ScanRosterEntry[] | null>(null);
   const [rosterError, setRosterError] = useState(false);
-  const [mode, setModeState] = useState<ScanMode>("present");
-  const [queue, dispatch] = useReducer(queueReducer, initialQueue);
+  const [mode, setStoredMode] = useRememberedScanMode(sessionId);
+  const [queue, applyAction] = useReducer(queueReducer, initialQueue);
+  /** Máy chủ trả 401: tạm dừng gửi, giữ hàng (đã lưu bền) cho tới khi đăng nhập lại. */
+  const [authRequired, setAuthRequired] = useState(false);
+  /** Không ghi được hàng chờ vào bộ nhớ máy (hết dung lượng/bị chặn): đóng trang lúc này sẽ mất lượt chưa gửi. */
+  const [persistFailed, setPersistFailed] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [tick, setTick] = useState(0); // đánh thức hàm gửi khi hết thời gian chờ thử lại (xem effect bên dưới)
@@ -48,10 +62,20 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
   const inFlight = useRef(new Set<string>()); // chặn gửi trùng một lượt khi effect chạy lại trước khi "started" kịp áp dụng
   const undoIds = useRef(new Map<string, string>()); // lượt quét -> mã lượt hoàn tác, để gửi lại hoàn tác là idempotent
   const modeRef = useRef(mode);
-  const queueRef = useRef(queue);
-  useLayoutEffect(() => { queueRef.current = queue; }, [queue]);
+  useLayoutEffect(() => { modeRef.current = mode; }, [mode]); // chế độ nhớ trong buổi được đọc sau khi hydrate
+  /** Bản mới nhất của hàng (đi trước lần render): quyết định đồng bộ và ghi bền ngay khi có thay đổi. */
+  const queueRef = useRef(initialQueue);
+  const storageKey = queueStorageKey(userId, sessionId);
 
-  const setMode = useCallback((m: ScanMode) => { modeRef.current = m; setModeState(m); }, []);
+  const setMode = useCallback((m: ScanMode) => { modeRef.current = m; setStoredMode(m); }, [setStoredMode]);
+
+  /** Mọi thay đổi hàng đi qua đây: áp dụng reducer (thuần) rồi ghi ngay các lượt chưa lưu vào localStorage. */
+  const dispatch = useCallback((action: ScanAction) => {
+    const next = queueReducer(queueRef.current, action);
+    queueRef.current = next;
+    applyAction(action);
+    setPersistFailed(saveQueue(localStore(), storageKey, toPersisted(next), Date.now()) === "failed");
+  }, [storageKey]);
 
   const writeMarks = useCallback((changes: Iterable<[string, CurrentMark | null]>) => {
     const next = new Map(marks.current);
@@ -67,9 +91,13 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     rosterLoaded.current = true;
     byToken.current = new Map(data.students.filter((s) => s.token).map((s) => [s.token, s]));
     byId.current = new Map(data.students.map((s) => [s.studentId, s]));
-    // Giữ trạng thái lạc quan của em còn lượt đang gửi; còn lại theo máy chủ.
-    const sending = new Set(queueRef.current.events.filter((e) => e.state === "sending").map((e) => e.studentId));
-    writeMarks(data.students.filter((s) => !sending.has(s.studentId)).map((s) => [s.studentId, toMark(s.status, s.reason)] as const));
+    // Em còn lượt đang gửi (kể cả lượt nạp lại sau khi mở lại trang): giữ trạng thái lạc quan; còn lại theo máy chủ.
+    const sending = new Map(queueRef.current.events.filter((e) => e.state === "sending").map((e) => [e.studentId, e.optimisticStatus]));
+    writeMarks(data.students.map((s) => {
+      const optimistic = sending.get(s.studentId);
+      const mark = optimistic ? (marks.current.get(s.studentId) ?? { status: optimistic, reason: null }) : toMark(s.status, s.reason);
+      return [s.studentId, mark] as const;
+    }));
     setRoster(data.students);
     return true;
   }, [writeMarks]);
@@ -78,6 +106,17 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     lastReload.current = Date.now();
     return applyRoster(await fetchRoster(sessionId));
   }, [sessionId, applyRoster]);
+
+  // Mở lại màn quét: nạp các lượt chưa lưu của buổi này (cùng người dùng) và gửi lại ngay; dọn hàng cũ quá hạn.
+  useEffect(() => {
+    const storage = localStore();
+    const now = Date.now();
+    sweepStaleQueues(storage, now);
+    const restored = loadQueue(storage, storageKey, now);
+    if (restored.length === 0) return;
+    dispatch({ type: "restore", events: restored });
+    dispatch({ type: "resume" });
+  }, [storageKey, dispatch]);
 
   useEffect(() => {
     let alive = true;
@@ -105,7 +144,7 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     setBanner({ tone: "applied", fullName: entry.fullName, saintName: entry.saintName, status, text: status === "late" ? "Đã ghi Đi muộn" : "Đã ghi Có mặt" });
     playScanFeedback("ok");
     return true;
-  }, [setMark]);
+  }, [setMark, dispatch]);
 
   const handleEntry = useCallback((entry: ScanRosterEntry, kind: "scan" | "manual") => {
     const decision = decideScan(marks.current.get(entry.studentId) ?? null, modeRef.current);
@@ -143,13 +182,13 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     if (!enqueueApply(confirm.entry, confirm.kind, status, status)) return; // hàng đầy: giữ bảng chọn và lượt "cần chọn"
     if (confirm.eventId) dispatch({ type: "dismiss", eventId: confirm.eventId });
     setConfirm(null);
-  }, [confirm, enqueueApply]);
+  }, [confirm, enqueueApply, dispatch]);
 
   /** "Giữ nguyên": không đổi gì, lượt "cần chọn" (nếu có) không còn cần xử lý. */
   const keepAsIs = useCallback(() => {
     if (confirm?.eventId) dispatch({ type: "dismiss", eventId: confirm.eventId });
     setConfirm(null);
-  }, [confirm]);
+  }, [confirm, dispatch]);
 
   /** Mở lại bảng chọn cho một lượt máy chủ trả "cần chọn" mà người dùng đã đóng. */
   const reopenConfirm = useCallback((ev: QueuedEvent) => {
@@ -158,7 +197,7 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     setConfirm({ entry, current: ev.serverStatus, defaultStatus: ev.mode, kind: ev.kind, eventId: ev.eventId });
   }, []);
 
-  const dismiss = useCallback((eventId: string) => dispatch({ type: "dismiss", eventId }), []);
+  const dismiss = useCallback((eventId: string) => dispatch({ type: "dismiss", eventId }), [dispatch]);
 
   /** Lượt đã thử hết lần mà chưa gửi được: trả em về trạng thái trước (nếu chưa có gì khác ghi đè) để quét lại gửi lượt mới. */
   const restoreAfterFailure = useCallback((ev: QueuedEvent) => {
@@ -168,6 +207,7 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
 
   // Gửi nền: mỗi em một lượt tại một thời điểm, các em khác song song.
   useEffect(() => {
+    if (authRequired) return;
     for (const ev of sendable(queue, Date.now())) {
       if (inFlight.current.has(ev.eventId)) continue;
       inFlight.current.add(ev.eventId);
@@ -179,6 +219,11 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
         eventId: ev.eventId, sessionId, kind: ev.kind, mode: ev.mode, confirmStatus: ev.confirmStatus, capturedAt: ev.capturedAt,
         ...(ev.kind === "scan" ? { token: ev.token } : { studentId: ev.studentId }),
       });
+      if (res.kind === "response" && res.status === 401) {
+        dispatch({ type: "auth_wait", eventId: ev.eventId }); // phiên hết hạn: giữ lượt, không tính là một lần thử
+        setAuthRequired(true);
+        return;
+      }
       if (res.kind === "network") {
         const attempt = ev.attempts + 1;
         const wait = attempt >= MAX_SEND_ATTEMPTS ? null : backoffMs(attempt);
@@ -205,7 +250,7 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
       setMark(ev.studentId, toMark(out.status));
       dispatch({ type: "resolved", eventId: ev.eventId, result: out.result, status: out.status });
     }
-  }, [queue, sessionId, tick, setMark, restoreAfterFailure]);
+  }, [queue, sessionId, tick, authRequired, setMark, restoreAfterFailure, dispatch]);
 
   // Đánh thức hàng gửi đúng lúc lượt chờ thử lại sớm nhất đến hạn; tính từ state, tự hủy khi state đổi hoặc rời trang.
   useEffect(() => {
@@ -230,7 +275,7 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     }
     setMark(ev.studentId, toMark(res.body.data.status, ev.prev?.reason ?? null));
     dispatch({ type: "undone", eventId: ev.eventId });
-  }, [sessionId, loadRoster, setMark]);
+  }, [sessionId, loadRoster, setMark, dispatch]);
 
   /** "Thử lại": đặt lại dấu lạc quan rồi đưa lượt về hàng gửi. */
   const retry = useCallback((eventId: string) => {
@@ -238,18 +283,30 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
     if (!ev || ev.state !== "failed") return;
     setMark(ev.studentId, { status: ev.optimisticStatus, reason: null });
     dispatch({ type: "retry", eventId });
-  }, [setMark]);
+  }, [setMark, dispatch]);
   const retryAllFailed = useCallback(() => {
     for (const ev of queueRef.current.events) if (ev.state === "failed") retry(ev.eventId);
   }, [retry]);
 
-  const pending = pendingCount(queue);
+  /** Có mạng lại, tab hiện lại, hoặc người dùng bấm gửi lại: gửi ngay mọi lượt chưa lưu (kể cả lượt chờ đăng nhập). */
+  const resume = useCallback(() => {
+    setAuthRequired(false);
+    const failed = queueRef.current.events.filter((e) => e.state === "failed");
+    if (failed.length) writeMarks(failed.map((e) => [e.studentId, { status: e.optimisticStatus, reason: null }] as const));
+    dispatch({ type: "resume" });
+  }, [writeMarks, dispatch]);
+
   useEffect(() => {
-    if (pending === 0) return;
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [pending]);
+    const onVisible = () => { if (document.visibilityState === "visible") resume(); };
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [resume]);
+
+  const pending = pendingCount(queue);
 
   // Cầu nối chỉ bật khi build E2E (NEXT_PUBLIC_E2E_SCAN_BRIDGE=1): cho kiểm thử đưa mã đã giải vào mà không cần camera.
   useEffect(() => {
@@ -262,5 +319,5 @@ export function useScanSession({ sessionId }: { sessionId: string }) {
   const unmarked = useMemo(() => (roster ?? []).filter((s) => !marksView.get(s.studentId)), [roster, marksView]);
   const search = useCallback((q: string) => filterRoster(roster ?? [], q), [roster]);
 
-  return { roster, rosterError, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
+  return { roster, rosterError, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
 }

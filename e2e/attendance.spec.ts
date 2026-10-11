@@ -121,6 +121,31 @@ test("bảng lấy dữ liệu mới khi tab hiện lại và khi quay lại b�
   }
 });
 
+test("Back của trình duyệt khi bảng còn lần lưu chưa xong thì hỏi lại", async ({ page }) => {
+  await openBoard(page);
+  const boardPath = new URL(page.url()).pathname;
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((r) => { release = r; });
+  // Giữ Server Action lưu điểm danh (POST cùng URL bảng) để lần lưu còn đang chờ.
+  const isBoard = (url: URL) => url.pathname === boardPath;
+  await page.route(isBoard, async (route) => {
+    if (route.request().method() === "POST") await held;
+    await route.continue();
+  });
+  await page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ }).click();
+  await page.evaluate(() => history.back());
+  const sheet = page.getByRole("dialog", { name: "Chưa lưu xong" });
+  await expect(sheet).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${boardPath}$`));
+  await sheet.getByRole("button", { name: "Ở lại" }).click();
+  release();
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
+  await page.unroute(isBoard);
+  // Đã lưu xong: Back đi tiếp qua mục lịch sử chặn, về trang trước thật.
+  await page.evaluate(() => history.back());
+  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+});
+
 test("báo mất mạng trên bảng điểm danh", async ({ page, context }) => {
   await openBoard(page);
   await context.setOffline(true);
