@@ -1,4 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
+import { CalendarRange, KeyRound, Link2, Plus, Unlink, UserPlus, UsersRound } from "lucide-react";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { listClassesForUser } from "@/db/queries/classes";
@@ -9,6 +10,8 @@ import { todayInVietnam } from "@/lib/dates";
 import { gradeOverview } from "@/server/services/stats";
 import { assignAction, createCatechistAction, createClassAction, resetPasswordAction, unassignAction } from "./actions";
 import { SimpleForm } from "@/components/forms/SimpleForm";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { WarningPill } from "@/components/ui/Pill";
 
 export default async function GradePage() {
   const user = await requireUser();
@@ -28,50 +31,80 @@ export default async function GradePage() {
   const namesOf = (classId: string) =>
     links.filter((l) => l.classId === classId).map((l) => catechists.find((u) => u.id === l.userId)?.name).filter(Boolean).join(", ");
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-8">
       <h1 className="text-2xl font-semibold">Khối</h1>
       {!term ? (
-        <p className="rounded-2xl border border-line bg-card p-4 text-ink-soft">Chưa có học kỳ nào</p>
+        <EmptyState icon={CalendarRange} title="Chưa có học kỳ nào">Khi có học kỳ, tỉ lệ có mặt của từng lớp sẽ hiện ở đây.</EmptyState>
       ) : (
-      <div className="rounded-2xl border border-line bg-card">
-        <h2 className="border-b border-line px-4 py-3 font-semibold">Tổng quan {term.name}</h2>
-        <ul className="divide-y divide-line">
-          {overview?.map((r) => (
-            <li key={r.classId} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
+        <div className="flex flex-col gap-3">
+          <h2 className="text-xl font-semibold">Tổng quan {term.name}</h2>
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {overview?.map((r) => {
+              const pct = r.presentRate === null ? null : Math.round(r.presentRate * 100);
+              return (
+                <li key={r.classId} className="card flex flex-col gap-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block break-words font-display text-lg font-semibold">{r.className}</span>
+                      <span className="text-sm tabular-nums text-ink-soft">{r.studentCount} em · {r.sessions} buổi</span>
+                    </span>
+                    {r.warningCount > 0 && <WarningPill level="warning">{r.warningCount} cảnh báo</WarningPill>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="w-24 shrink-0">
+                      <span className="block font-display text-2xl font-semibold leading-none tabular-nums">{pct === null ? "—" : `${pct}%`}</span>
+                      <span className="text-xs text-ink-soft">có mặt</span>
+                    </span>
+                    <span aria-hidden className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
+                      <span className="block h-full origin-left rounded-full bg-st-present" style={{ transform: `scaleX(${(pct ?? 0) / 100})` }} />
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      <div className="flex flex-col gap-3">
+        <h2 className="text-xl font-semibold">Lớp và giáo lý viên</h2>
+        <ul className="card divide-y divide-border overflow-hidden">
+          {classList.map((c) => (
+            <li key={c.id} className="flex min-h-16 items-center gap-3 px-4 py-3">
+              <UsersRound aria-hidden size={20} className="shrink-0 text-ink-muted" />
               <span className="min-w-0">
-                <span className="block truncate font-medium">{r.className}</span>
-                <span className="text-sm text-ink-soft">{r.studentCount} em · {r.sessions} buổi</span>
-              </span>
-              <span className="shrink-0 text-right text-sm">
-                <span className="block">{r.presentRate === null ? "—" : `${Math.round(r.presentRate * 100)}% có mặt`}</span>
-                {r.warningCount > 0 && <span className="font-semibold text-warn-alert">{r.warningCount} cảnh báo</span>}
+                <span className="block font-medium">{c.name}</span>
+                <span className="block text-sm text-ink-soft"><span className="tabular-nums">{c.studentCount}</span> em · GLV: {namesOf(c.id) || <span className="text-warn-watch">chưa gán</span>}</span>
               </span>
             </li>
           ))}
         </ul>
       </div>
-      )}
-      <ul className="flex flex-col gap-2">
-        {classList.map((c) => (
-          <li key={c.id} className="rounded-2xl border border-line bg-card p-4">
-            <span className="font-semibold">{c.name}</span>
-            <span className="block text-sm text-ink-soft">{c.studentCount} em · GLV: {namesOf(c.id) || "chưa gán"}</span>
-          </li>
-        ))}
-      </ul>
-      <SimpleForm title="Tạo lớp" action={createClassAction} fields={[{ name: "name", label: "Tên lớp" }]} />
-      <SimpleForm title="Tạo tài khoản GLV" action={createCatechistAction}
-        fields={[{ name: "name", label: "Họ tên" }, { name: "email", label: "Email", type: "email" }, { name: "password", label: "Mật khẩu (≥ 10 ký tự)", type: "password" }]} />
-      <SimpleForm title="Gán GLV vào lớp" action={assignAction}
-        fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
-      <SimpleForm title="Gỡ GLV khỏi lớp" action={unassignAction}
-        fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
+      <div className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Quản lý</h2>
+          <p className="mt-0.5 text-sm text-ink-soft">Tạo lớp, tài khoản và phân công giáo lý viên trong khối.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SimpleForm title="Tạo lớp" icon={<Plus aria-hidden size={20} />} action={createClassAction} fields={[{ name: "name", label: "Tên lớp" }]} />
+          <SimpleForm title="Tạo tài khoản GLV" icon={<UserPlus aria-hidden size={20} />} action={createCatechistAction}
+            fields={[{ name: "name", label: "Họ tên" }, { name: "email", label: "Email", type: "email" }, { name: "password", label: "Mật khẩu (≥ 10 ký tự)", type: "password" }]} />
+          <SimpleForm title="Gán GLV vào lớp" icon={<Link2 aria-hidden size={20} />} action={assignAction}
+            fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
+          <SimpleForm title="Gỡ GLV khỏi lớp" icon={<Unlink aria-hidden size={20} />} action={unassignAction}
+            fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
+        </div>
+      </div>
       {resetOptions.length > 0 && (
-        <SimpleForm title="Đặt lại mật khẩu" action={resetPasswordAction}
-          fields={[
-            { name: "userId", label: "Giáo lý viên", options: resetOptions },
-            { name: "password", label: "Mật khẩu mới (10–72 ký tự)", type: "password", autoComplete: "new-password", minLength: 10, maxLength: 72 },
-          ]} />
+        <div className="flex flex-col gap-3">
+          <h2 className="text-xl font-semibold text-warn-alert">Thao tác nhạy cảm</h2>
+          <SimpleForm title="Đặt lại mật khẩu" tone="sensitive" icon={<KeyRound aria-hidden size={20} />}
+            description="Mật khẩu cũ của giáo lý viên sẽ không dùng được nữa. Báo mật khẩu mới cho họ trực tiếp."
+            action={resetPasswordAction}
+            fields={[
+              { name: "userId", label: "Giáo lý viên", options: resetOptions },
+              { name: "password", label: "Mật khẩu mới (10–72 ký tự)", type: "password", autoComplete: "new-password", minLength: 10, maxLength: 72 },
+            ]} />
+        </div>
       )}
     </section>
   );

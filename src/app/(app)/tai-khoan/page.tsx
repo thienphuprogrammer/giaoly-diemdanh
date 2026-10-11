@@ -1,4 +1,7 @@
+import { LogOut, ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
+import { Avatar } from "@/components/ui/Avatar";
+import { Pill } from "@/components/ui/Pill";
 import { deleteSession, requireUser } from "@/lib/auth/dal";
 
 export default async function AccountPage() {
@@ -9,12 +12,20 @@ export default async function AccountPage() {
     redirect("/login");
   }
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Tài khoản</h1>
-      <p>{user.name}<br /><span className="text-ink-soft">{user.email}</span></p>
-      {user.isGradeHead && <p className="text-sm text-brand">Trưởng khối</p>}
+      <div className="card flex items-center gap-4 p-4">
+        <Avatar name={user.name} />
+        <div className="min-w-0 flex-1">
+          <p className="break-words font-display text-lg font-semibold">{user.name}</p>
+          <p className="break-all text-sm text-ink-soft">{user.email}</p>
+          {user.isGradeHead && <Pill tone="action" icon={ShieldCheck} className="mt-2">Trưởng khối</Pill>}
+        </div>
+      </div>
       <form action={logout}>
-        <button className="h-12 w-full rounded-xl border border-line bg-card font-medium">Đăng xuất</button>
+        <button className="btn btn-secondary btn-lg w-full">
+          <LogOut aria-hidden size={20} />Đăng xuất
+        </button>
       </form>
     </section>
   );
