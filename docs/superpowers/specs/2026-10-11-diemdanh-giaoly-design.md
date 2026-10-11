@@ -1,6 +1,6 @@
 # Web điểm danh lớp giáo lý — Thiết kế
 
-Ngày: 2026-10-11 · Trạng thái: chờ duyệt
+Ngày: 2026-10-11 · Trạng thái: đã duyệt (2026-10-11); điều chỉnh khi lập kế hoạch: bỏ Auth.js, thêm `id` cho `gap`, trưởng khối xác định bằng `users.grade_id`
 
 ## 1. Mục tiêu
 
@@ -34,14 +34,14 @@ Thông báo phụ huynh, chạy offline/đồng bộ lại, QR/tự check-in, nh
 
 ## 3. Mô hình dữ liệu (Postgres + Drizzle)
 
-Thực thể: `users` (cờ `is_grade_head`), `school_years`, `terms`, `grades` (có `head_id`),
+Thực thể: `users` (cờ `is_grade_head`, `grade_id` = khối của tài khoản), `school_years`, `terms`, `grades`,
 `classes`, `class_catechists`, `students` (tên thánh, họ tên, ngày sinh, SĐT phụ huynh,
 ghi chú, `active`), `seating_plans`, `seat_assignments`, `sessions`, `attendance`.
 
 ### Sơ đồ băng ghế
 ```
 seating_plans.layout = [
-  { id, items: [ {type:"bench", id, seats:2..4}, {type:"gap"}, ... ] },
+  { id, items: [ {type:"bench", id, seats:2..4}, {type:"gap", id}, ... ] },
   ...
 ]
 ```
@@ -109,7 +109,7 @@ Kiểm tra ở server qua một hàm duy nhất `canAccess(user, classId, "read"
 - Mọi thao tác ghi là Server Action: xác thực → `canAccess` → validate zod → ghi DB;
   trả `{ok:true,data}` hoặc `{ok:false,error}`.
 - Next.js (App Router, TypeScript, Tailwind), Postgres hosted (Neon/Supabase), Drizzle,
-  Auth.js (credentials), deploy Vercel. PWA ở mốc cuối.
+  session stateless `jose` + cookie `httpOnly` (cookie chỉ chứa `userId`, quyền đọc lại từ DB mỗi request; theo hướng dẫn xác thực của Next 16), deploy Vercel. PWA ở mốc cuối.
 
 ## 8. Xử lý lỗi và bảo mật
 
