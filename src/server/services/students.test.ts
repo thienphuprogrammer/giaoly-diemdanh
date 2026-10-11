@@ -64,6 +64,22 @@ describe("updateStudent / setStudentActive", () => {
   });
 });
 
+describe("updateStudent denial", () => {
+  it("leaves a real student of another class unchanged for a read-only head and a foreign catechist", async () => {
+    const { db, b } = await setup();
+    const added = await addStudent(db, b.glv, { classId: b.classId, fullName: "An", saintName: "Phêrô", note: "ghi chú" });
+    if (!added.ok) throw new Error("setup");
+    const [before] = await db.select().from(students);
+    const patch = { studentId: added.data.id, fullName: "Bị sửa", saintName: "", note: "" };
+    const a = await updateStudent(db, b.head, patch);
+    const c = await updateStudent(db, b.otherGlv, patch);
+    expect(a).toEqual({ ok: false, error: "Không tìm thấy thiếu nhi" });
+    expect(c).toEqual(a);
+    const [after] = await db.select().from(students);
+    expect(after).toEqual(before);
+  });
+});
+
 describe("importStudents", () => {
   it("inserts valid rows and skips students already in the class", async () => {
     const { db, b } = await setup();
