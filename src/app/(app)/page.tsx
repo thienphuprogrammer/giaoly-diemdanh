@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { listClassesForUser } from "@/db/queries/classes";
 import { resolveTerm } from "@/db/queries/stats";
 import { requireUser } from "@/lib/auth/dal";
+import { attentionByClass } from "@/lib/attendance/attention-counts";
 import { todayInVietnam } from "@/lib/dates";
 import { attentionList } from "@/server/services/stats";
 
@@ -11,7 +12,7 @@ export default async function HomePage() {
   const classes = await listClassesForUser(db, user);
   const term = await resolveTerm(db, undefined, todayInVietnam());
   const attention = term ? await attentionList(db, user, term.id) : [];
-  const needs = (classId: string) => attention.filter((a) => a.classId === classId).length;
+  const needs = attentionByClass(attention);
   return (
     <section className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">Lớp của tôi</h1>
@@ -23,7 +24,11 @@ export default async function HomePage() {
               <span>
                 <span className="block text-lg font-semibold">{c.name}</span>
                 <span className="text-sm text-ink-soft">{c.studentCount} em{c.canWrite ? "" : " · chỉ xem"}</span>
-                {needs(c.id) > 0 && <span className="ml-2 rounded-full bg-warn-alert px-2 py-0.5 text-xs font-semibold text-white">{needs(c.id)} cần chú ý</span>}
+                {needs.get(c.id) && (
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold text-white ${needs.get(c.id)?.hasWarning ? "bg-warn-alert" : "bg-warn-watch"}`}>
+                    {needs.get(c.id)?.count} cần chú ý
+                  </span>
+                )}
               </span>
               <span aria-hidden className="text-brand">›</span>
             </Link>

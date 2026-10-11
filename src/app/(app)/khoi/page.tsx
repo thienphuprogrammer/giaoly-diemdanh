@@ -29,8 +29,11 @@ export default async function GradePage() {
   return (
     <section className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Khối</h1>
+      {!term ? (
+        <p className="rounded-2xl border border-line bg-card p-4 text-ink-soft">Chưa có học kỳ nào</p>
+      ) : (
       <div className="rounded-2xl border border-line bg-card">
-        <h2 className="border-b border-line px-4 py-3 font-semibold">Tổng quan {term?.name}</h2>
+        <h2 className="border-b border-line px-4 py-3 font-semibold">Tổng quan {term.name}</h2>
         <ul className="divide-y divide-line">
           {overview?.map((r) => (
             <li key={r.classId} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
@@ -46,6 +49,7 @@ export default async function GradePage() {
           ))}
         </ul>
       </div>
+      )}
       <ul className="flex flex-col gap-2">
         {classList.map((c) => (
           <li key={c.id} className="rounded-2xl border border-line bg-card p-4">

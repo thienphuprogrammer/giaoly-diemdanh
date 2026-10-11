@@ -4,7 +4,39 @@ import { db } from "@/db/client";
 import { listTerms, resolveTerm } from "@/db/queries/stats";
 import { requireUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
-import { classStats } from "@/server/services/stats";
+import { classStats, type StatRow } from "@/server/services/stats";
+
+const ROW = "flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 sm:grid sm:grid-cols-[1fr_repeat(4,3rem)_6rem] sm:gap-x-2";
+const COLUMNS = [
+  { key: "present", short: "CM", full: "Có mặt" },
+  { key: "late", short: "M", full: "Đi muộn" },
+  { key: "excused", short: "CP", full: "Vắng có phép" },
+  { key: "unexcused", short: "KP", full: "Vắng không phép" },
+] as const;
+
+const badgeClass = (level: string) =>
+  level === "warning" ? "bg-warn-alert text-white" : level === "watch" ? "bg-warn-watch text-white" : "";
+const badgeText = (level: string) => (level === "warning" ? "Cảnh báo" : level === "watch" ? "Vắng 1" : "");
+
+function StatLine({ row }: { row: StatRow }) {
+  const level = row.summary.warning.level;
+  return (
+    <div role="row" className={`${ROW} text-sm`}>
+      <div role="cell" className="basis-full break-words font-medium sm:basis-auto">{row.fullName}</div>
+      {COLUMNS.map((c) => (
+        <div role="cell" key={c.key} className="sm:text-center">
+          <span aria-hidden className="text-ink-soft sm:hidden">{c.short} </span>
+          {row.summary[c.key]}
+        </div>
+      ))}
+      <div role="cell" className="sm:text-center">
+        {level !== "none" && (
+          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${badgeClass(level)}`}>{badgeText(level)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default async function StatsPage({
   params,
@@ -21,8 +53,6 @@ export default async function StatsPage({
   const stats = await classStats(db, user, classId, term.id);
   if (!stats) notFound();
   const terms = await listTerms(db);
-  const badge = (level: string) =>
-    level === "warning" ? "bg-warn-alert text-white" : level === "watch" ? "bg-warn-watch text-white" : "";
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -36,21 +66,22 @@ export default async function StatsPage({
         </nav>
         <a href={`/lop/${classId}/thong-ke/export?termId=${term.id}`} className="flex h-11 items-center rounded-lg border border-line bg-card px-4 text-sm font-medium">Xuất Excel</a>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-line bg-card">
-        <div className="grid grid-cols-[1fr_repeat(4,2.25rem)_5.5rem] items-center gap-x-1 border-b border-line px-3 py-2 text-xs font-semibold text-ink-soft">
-          <span>Em</span><span title="Có mặt">CM</span><span title="Đi muộn">M</span><span title="Vắng có phép">CP</span><span title="Vắng không phép">KP</span><span />
+      <div role="table" aria-label={`Thống kê ${stats.className} ${stats.term.name}`} className="overflow-hidden rounded-2xl border border-line bg-card">
+        <div role="rowgroup" className="sr-only sm:not-sr-only">
+          <div role="row" className={`${ROW} border-b border-line text-xs font-semibold text-ink-soft`}>
+            <div role="columnheader">Em</div>
+            {COLUMNS.map((c) => (
+              <div role="columnheader" key={c.key} className="sm:text-center">
+                <abbr title={c.full} aria-hidden className="no-underline">{c.short}</abbr>
+                <span className="sr-only">{c.full}</span>
+              </div>
+            ))}
+            <div role="columnheader"><span className="sr-only">Cảnh báo</span></div>
+          </div>
         </div>
-        <ul className="divide-y divide-line">
-          {stats.rows.map((r) => (
-            <li key={r.studentId} className="grid min-h-12 grid-cols-[1fr_repeat(4,2.25rem)_5.5rem] items-center gap-x-1 px-3 py-2 text-sm">
-              <span className="truncate font-medium">{r.fullName}</span>
-              <span>{r.summary.present}</span><span>{r.summary.late}</span><span>{r.summary.excused}</span><span>{r.summary.unexcused}</span>
-              <span className={`rounded-full px-2 py-0.5 text-center text-xs font-semibold ${badge(r.summary.warning.level)}`}>
-                {r.summary.warning.level === "warning" ? "Cảnh báo" : r.summary.warning.level === "watch" ? "Vắng 1" : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div role="rowgroup" className="divide-y divide-line">
+          {stats.rows.map((r) => <StatLine key={r.studentId} row={r} />)}
+        </div>
       </div>
     </section>
   );

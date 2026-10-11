@@ -3,6 +3,7 @@ import { resolveTerm } from "@/db/queries/stats";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
 import { buildStatsWorkbook } from "@/lib/export/excel";
+import { exportFilename } from "@/lib/export/filename";
 import { classStats } from "@/server/services/stats";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -15,11 +16,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ clas
   const stats = term ? await classStats(db, user, classId, term.id) : null;
   if (!stats) return new Response("Not found", { status: 404 });
   const buffer = await buildStatsWorkbook({ className: stats.className, termName: stats.term.name, rows: stats.rows });
-  const filename = `diem-danh-${stats.className}-${stats.term.name}.xlsx`.replace(/[^\p{L}\p{N}._-]+/gu, "-");
+  const filename = exportFilename(stats.className, stats.term.name);
   return new Response(new Uint8Array(buffer), {
     headers: {
       "Content-Type": XLSX,
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "Content-Disposition": `attachment; filename="diem-danh.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, no-store",
     },
   });
