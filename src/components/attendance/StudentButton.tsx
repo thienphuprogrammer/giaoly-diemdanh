@@ -16,6 +16,10 @@ interface Props {
 
 const LONG_MS = 500;
 const CLICK_GUARD_MS = 60;
+// Phải nằm HOÀN TOÀN trong khung 64px của ô ghế (không dùng offset âm): nếu tràn ra ngoài sẽ che
+// góc ghế bên cạnh và gây mở nhầm bảng chọn của em khác.
+const OPTIONS_CLASS =
+  "absolute right-0 top-0 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-line bg-card text-xs leading-none text-ink-soft";
 
 export function StudentButton({ fullName, status, warning, failed, disabled, onTap, onLongPress }: Props) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -48,14 +52,14 @@ export function StudentButton({ fullName, status, warning, failed, disabled, onT
         {shortName(fullName)}
       </button>
       {warning !== "none" && (
-        <span aria-hidden className={`pointer-events-none absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card text-[10px] font-bold text-white ${warning === "warning" ? "bg-warn-alert" : "bg-warn-watch"}`}>
+        <span aria-hidden className={`pointer-events-none absolute -left-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card text-[10px] font-bold text-white ${warning === "warning" ? "bg-warn-alert" : "bg-warn-watch"}`}>
           {warning === "warning" ? "!" : "1"}
         </span>
       )}
       {!disabled && (
         <button aria-label={`Mở lựa chọn cho ${fullName}`} onClick={onLongPress}
-          className="absolute -bottom-4 -right-4 z-10 flex h-11 w-11 items-center justify-center">
-          <span aria-hidden className="flex h-5 w-5 items-center justify-center rounded-full border border-line bg-card text-xs leading-none text-ink-soft">⋯</span>
+          className={OPTIONS_CLASS}>
+          <span aria-hidden>⋯</span>
         </button>
       )}
     </div>
