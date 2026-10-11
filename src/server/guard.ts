@@ -16,3 +16,14 @@ export async function guardClass(
   const cls = await getAccessClass(db, classId);
   return cls && canAccess(user, cls, action) ? cls : null;
 }
+
+export async function classPermissions(
+  db: Db,
+  user: AppUser,
+  classId: string,
+): Promise<{ canRead: boolean; canWrite: boolean }> {
+  if (!z.uuid().safeParse(classId).success) return { canRead: false, canWrite: false };
+  const cls = await getAccessClass(db, classId);
+  if (!cls) return { canRead: false, canWrite: false };
+  return { canRead: canAccess(user, cls, "read"), canWrite: canAccess(user, cls, "write") };
+}
