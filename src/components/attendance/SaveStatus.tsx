@@ -1,9 +1,17 @@
 "use client";
 import { CircleAlert, CircleCheck, LoaderCircle, RotateCcw, Undo2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { SaveChip } from "@/lib/attendance/board-state";
 
-/** Chip cạnh tiến độ: "Đang lưu N…" / "Đã lưu ✓". */
-export function SaveStatus({ chip }: { chip: SaveChip }) {
+/** Chip cạnh tiến độ: "Đang cập nhật…" (dữ liệu cũ, chờ bản mới) / "Đang lưu N…" / "Đã lưu ✓". */
+export function SaveStatus({ chip, stale = false }: { chip: SaveChip; stale?: boolean }) {
+  if (stale) {
+    return (
+      <span role="status" aria-live="polite" className="inline-flex min-h-7 items-center gap-1.5 rounded-full bg-surface-muted px-2.5 font-display text-sm font-medium text-ink-soft">
+        <LoaderCircle aria-hidden size={14} className="motion-safe:animate-spin" />Đang cập nhật…
+      </span>
+    );
+  }
   if (chip.kind === "idle") return <span role="status" aria-live="polite" className="sr-only" />;
   const saving = chip.kind === "saving";
   return (
@@ -28,9 +36,22 @@ export function SaveToasts({ failures, onRetry, onDismiss, undo }: {
   onDismiss: (studentId: string) => void;
   undo: { text: string; onUndo: () => void; onClose: () => void } | null;
 }) {
-  if (failures.length === 0 && !undo) return null;
+  const box = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  const visible = failures.length > 0 || !!undo;
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible]);
+  if (!visible) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 px-4 print:hidden">
+    <>
+    {/* Chừa chỗ dưới cùng của trang bằng đúng chiều cao vùng thông báo để không che các dòng cuối. */}
+    <div aria-hidden style={{ height }} />
+    <div ref={box} className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 px-4 print:hidden">
       <div className="mx-auto flex max-w-xl flex-col gap-2">
         {failures.length > 0 && (
           <ul role="alert" aria-label="Chưa lưu được" className="pointer-events-auto flex max-h-[40dvh] flex-col divide-y divide-warn-alert/20 overflow-y-auto rounded-control border border-warn-alert/30 bg-warn-alert-tint shadow-sheet">
@@ -63,5 +84,6 @@ export function SaveToasts({ failures, onRetry, onDismiss, undo }: {
         )}
       </div>
     </div>
+    </>
   );
 }

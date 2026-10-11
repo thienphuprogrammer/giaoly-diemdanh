@@ -28,6 +28,10 @@ export interface BoardState {
 export type BoardAction =
   | { type: "begin"; studentId: string; next: Mark; turn: number }
   | { type: "settle"; studentId: string; next: Mark; turn: number; ok: boolean; message?: string }
+  /** Quá hạn chờ: trả về như cũ và báo lỗi, nhưng lượt vẫn tính là đang lưu cho tới khi có kết quả thật. */
+  | { type: "timeout"; studentId: string; next: Mark; turn: number; message: string }
+  /** Kết quả thật của một lượt đã quá hạn. */
+  | { type: "late"; studentId: string; next: Mark; turn: number; ok: boolean }
   | { type: "dismiss"; studentId: string }
   | { type: "syncRequested" }
   | { type: "fresh"; server: Marks }
@@ -56,17 +60,30 @@ function decrement(inFlight: Readonly<Record<string, number>>, studentId: string
   return n > 0 ? { ...inFlight, [studentId]: n } : withoutKey(inFlight, studentId);
 }
 
+/** Lượt mới nhất của em bị lỗi/quá hạn: trả về giá trị đã xác nhận và ghi lỗi kèm dấu muốn lưu. */
+function revert(state: BoardState, studentId: string, next: Mark, turn: number, message: string): BoardState {
+  if (state.latest[studentId] !== turn) return state;
+  return {
+    ...state,
+    marks: { ...state.marks, [studentId]: state.confirmed[studentId] ?? null },
+    failures: [...dropFailure(state.failures, studentId), { studentId, mark: next, message }],
+  };
+}
+
 function settle(state: BoardState, a: Extract<BoardAction, { type: "settle" }>): BoardState {
   const inFlight = decrement(state.inFlight, a.studentId);
   // Server Action chạy tuần tự: mọi lần lưu thành công (kể cả phản hồi cũ) là trạng thái máy chủ lúc đó.
   if (a.ok) return { ...state, inFlight, confirmed: { ...state.confirmed, [a.studentId]: a.next }, savedCount: state.savedCount + 1 };
-  if (state.latest[a.studentId] !== a.turn) return { ...state, inFlight };
-  return {
-    ...state,
-    inFlight,
-    marks: { ...state.marks, [a.studentId]: state.confirmed[a.studentId] ?? null },
-    failures: [...dropFailure(state.failures, a.studentId), { studentId: a.studentId, mark: a.next, message: a.message ?? "" }],
-  };
+  return revert({ ...state, inFlight }, a.studentId, a.next, a.turn, a.message ?? "");
+}
+
+function late(state: BoardState, a: Extract<BoardAction, { type: "late" }>): BoardState {
+  const inFlight = decrement(state.inFlight, a.studentId);
+  if (!a.ok) return { ...state, inFlight };
+  const confirmed = { ...state.confirmed, [a.studentId]: a.next };
+  const base = { ...state, inFlight, confirmed, savedCount: state.savedCount + 1 };
+  if (state.latest[a.studentId] !== a.turn) return base;
+  return { ...base, marks: { ...state.marks, [a.studentId]: a.next }, failures: dropFailure(state.failures, a.studentId) };
 }
 
 function bulkSet(state: BoardState, ids: readonly string[], mark: Mark): BoardState {
@@ -90,6 +107,10 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
       };
     case "settle":
       return settle(state, action);
+    case "timeout":
+      return revert(state, action.studentId, action.next, action.turn, action.message);
+    case "late":
+      return late(state, action);
     case "dismiss":
       return { ...state, failures: dropFailure(state.failures, action.studentId) };
     case "syncRequested":

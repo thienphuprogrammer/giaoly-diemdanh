@@ -1,42 +1,43 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { runBulk, runStatusSave } from "@/lib/attendance/board-save";
 import { boardReducer, initBoardState, pendingCount, saveChip } from "@/lib/attendance/board-state";
 import { createSequencer, initialMarks, type Mark } from "@/lib/attendance/marks";
-import { TimeoutError, withTimeout } from "@/lib/with-timeout";
 import type { Board } from "@/server/services/attendance";
 import { markAllPresentAction, setCancelledAction, setStatusAction, undoMarkAllPresentAction } from "./actions";
 
 export const SAVE_TIMEOUT_MS = 10_000;
 export const UNDO_MS = 8_000;
-const SAVE_ERROR = "Không lưu được, thử lại sau.";
-const TIMEOUT_ERROR = "Mạng chậm, chưa chắc đã lưu.";
 const PRESENT: Mark = { status: "present", reason: null };
 
 // Các lần render máy chủ mà trang này đã hiển thị trong phiên JS hiện tại. Gặp lại cùng `renderId`
 // nghĩa là Next dùng lại bản RSC đã cache (Back/forward) => dữ liệu cũ, phải lấy mới.
 const seenRenders = new Set<string>();
 
-const errorText = (e: unknown) => (e instanceof TimeoutError ? TIMEOUT_ERROR : SAVE_ERROR);
-
 /**
- * Trạng thái và thao tác lưu của bảng điểm danh: chạm lạc quan có timeout, đếm lượt đang lưu,
- * lỗi từng em, "Tất cả có mặt" có hoàn tác, và đồng bộ lại từ máy chủ mà không ghi đè lượt chưa lưu.
+ * Trạng thái và thao tác lưu của bảng điểm danh: chạm lạc quan có timeout (kết quả đến muộn vẫn được áp dụng),
+ * đếm lượt đang lưu, lỗi từng em, "Tất cả có mặt" có hoàn tác, và đồng bộ lại từ máy chủ mà không ghi đè
+ * lượt chưa lưu.
  */
 export function useBoardSaves(board: Board, renderId: string) {
   const router = useRouter();
   const [state, dispatch] = useReducer(boardReducer, board.students, (s) => initBoardState(initialMarks(s)));
   const seq = useRef(createSequencer());
-  const [busy, setBusy] = useState(false);
+  // Số thao tác hàng loạt mà lần gửi THẬT chưa xong (kể cả đã quá hạn chờ).
+  const [bulkPending, setBulkPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(board.cancelled);
   const [undo, setUndo] = useState<{ batchId: string; count: number } | null>(null);
+  // Gắn lại từ bản RSC đã cache => dữ liệu cũ: khoá thao tác cho tới khi dữ liệu mới về.
+  const [stale, setStale] = useState(() => seenRenders.has(renderId));
 
   // Props mới (router.refresh) => gộp vào state, giữ các em đang chờ lưu.
   const [syncedBoard, setSyncedBoard] = useState(board);
   if (syncedBoard !== board) {
     setSyncedBoard(board);
     setCancelled(board.cancelled);
+    setStale(false);
     dispatch({ type: "fresh", server: initialMarks(board.students) });
   }
 
@@ -67,16 +68,10 @@ export function useBoardSaves(board: Board, renderId: string) {
   }, [refresh]);
 
   const { sessionId } = board;
-  const save = useCallback(async (studentId: string, next: Mark) => {
-    const turn = seq.current.begin(studentId);
-    dispatch({ type: "begin", studentId, next, turn });
-    try {
-      const r = await withTimeout(setStatusAction({ sessionId, studentId, status: next?.status ?? null, reason: next?.reason ?? null }), SAVE_TIMEOUT_MS);
-      dispatch({ type: "settle", studentId, next, turn, ok: r.ok, message: r.ok ? undefined : r.error });
-    } catch (e) {
-      dispatch({ type: "settle", studentId, next, turn, ok: false, message: errorText(e) });
-    }
-  }, [sessionId]);
+  const save = useCallback((studentId: string, next: Mark) => runStatusSave({
+    send: () => setStatusAction({ sessionId, studentId, status: next?.status ?? null, reason: next?.reason ?? null }),
+    dispatch, studentId, next, turn: seq.current.begin(studentId), ms: SAVE_TIMEOUT_MS,
+  }), [sessionId]);
 
   const retry = useCallback((studentId: string) => {
     const failure = state.failures.find((f) => f.studentId === studentId);
@@ -84,19 +79,15 @@ export function useBoardSaves(board: Board, renderId: string) {
   }, [state.failures, save]);
   const dismiss = useCallback((studentId: string) => dispatch({ type: "dismiss", studentId }), []);
 
-  async function bulk<T>(run: () => Promise<{ ok: true; data: T } | { ok: false; error: string }>, done: (data: T) => void) {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await withTimeout(run(), SAVE_TIMEOUT_MS);
-      if (r.ok) done(r.data); else setError(r.error);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const bulk = <T,>(send: () => Promise<{ ok: true; data: T } | { ok: false; error: string }>, done: (data: T) => void) =>
+    runBulk(send, SAVE_TIMEOUT_MS, {
+      start: () => setBulkPending((n) => n + 1),
+      end: () => setBulkPending((n) => n - 1),
+      error: setError,
+      done,
+    });
 
+  // Thành công đến muộn (sau khi đã báo quá hạn) vẫn mở lại snackbar hoàn tác với batchId thật.
   const markAll = () => bulk(() => markAllPresentAction({ sessionId }), (d) => {
     dispatch({ type: "bulkSet", studentIds: d.studentIds, mark: PRESENT });
     setUndo(d.studentIds.length > 0 ? { batchId: d.batchId, count: d.studentIds.length } : null);
@@ -124,13 +115,14 @@ export function useBoardSaves(board: Board, renderId: string) {
     if (value) setUndo(null);
   });
 
-  const pending = pendingCount(state) + (busy ? 1 : 0);
+  const busy = bulkPending > 0;
   return {
     marks: state.marks,
     failures: state.failures,
-    chip: saveChip(state, busy ? 1 : 0),
-    pending,
+    chip: saveChip(state, bulkPending),
+    pending: pendingCount(state) + bulkPending,
     busy,
+    stale,
     error,
     cancelled,
     undo,

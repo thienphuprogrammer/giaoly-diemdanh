@@ -14,7 +14,10 @@ export function useLeaveGuard(blocking: number) {
 
   useEffect(() => {
     if (blocking === 0) return;
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ""; // trình duyệt cũ chỉ hỏi khi có returnValue
+    };
     const onClick = (e: MouseEvent) => {
       const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
       if (!(a instanceof HTMLAnchorElement)) return;
@@ -35,15 +38,19 @@ export function useLeaveGuard(blocking: number) {
     };
   }, [blocking]);
 
+  // Đã lưu xong trong lúc đang hỏi: tự đi tiếp (bảng hỏi đóng khi trang này bị gỡ).
+  const continued = useRef<string | null>(null);
   const leave = useCallback(() => {
     if (!target) return;
+    continued.current = target;
     setTarget(null);
     router.push(target);
   }, [router, target]);
-  const stay = useCallback(() => setTarget(null), []);
+  const stay = useCallback(() => {
+    continued.current = null;
+    setTarget(null);
+  }, []);
 
-  // Đã lưu xong trong lúc đang hỏi: tự đi tiếp (bảng hỏi đóng khi trang này bị gỡ).
-  const continued = useRef<string | null>(null);
   useEffect(() => {
     if (!target || blocking > 0 || continued.current === target) return;
     continued.current = target;

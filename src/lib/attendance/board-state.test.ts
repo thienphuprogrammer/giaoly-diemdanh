@@ -165,3 +165,51 @@ describe("boardReducer: bulk writes", () => {
     expect(s.marks).toEqual({ a: null });
   });
 });
+
+describe("boardReducer: timeouts and late results", () => {
+  const timedOut = (state: BoardState, studentId: string, next: Mark, turn: number) =>
+    run(state, { type: "begin", studentId, next, turn }, { type: "timeout", studentId, next, turn, message: "Mạng chậm" });
+
+  it("a timeout reverts and records a failure but stays pending until the real result", () => {
+    const s = timedOut(initBoardState({ a: null }), "a", P, 1);
+    expect(s.marks.a).toBeNull();
+    expect(s.failures).toEqual([{ studentId: "a", mark: P, message: "Mạng chậm" }]);
+    expect(pendingCount(s)).toBe(1);
+    expect(saveChip(s)).toEqual({ kind: "saving", count: 1 });
+  });
+
+  it("a late success restores the mark, confirms it and clears the failure", () => {
+    const s = boardReducer(timedOut(initBoardState({ a: null }), "a", P, 1), { type: "late", studentId: "a", next: P, turn: 1, ok: true });
+    expect(s.marks.a).toEqual(P);
+    expect(s.confirmed.a).toEqual(P);
+    expect(s.failures).toEqual([]);
+    expect(pendingCount(s)).toBe(0);
+    expect(saveChip(s)).toEqual({ kind: "saved" });
+  });
+
+  it("a late failure keeps the reverted state and the failure", () => {
+    const s = boardReducer(timedOut(initBoardState({ a: L }), "a", P, 1), { type: "late", studentId: "a", next: P, turn: 1, ok: false });
+    expect(s.marks.a).toEqual(L);
+    expect(s.confirmed.a).toEqual(L);
+    expect(s.failures).toHaveLength(1);
+    expect(pendingCount(s)).toBe(0);
+  });
+
+  it("a late success under a newer tap only updates the confirmed value", () => {
+    let s = timedOut(initBoardState({ a: null }), "a", P, 1);
+    s = run(s, { type: "begin", studentId: "a", next: A, turn: 2 }, { type: "late", studentId: "a", next: P, turn: 1, ok: true });
+    expect(s.marks.a).toEqual(A);
+    expect(s.confirmed.a).toEqual(P);
+    expect(pendingCount(s)).toBe(1);
+  });
+
+  it("a stale timeout (newer tap in flight) neither reverts nor reports", () => {
+    const s = run(initBoardState({ a: null }),
+      { type: "begin", studentId: "a", next: P, turn: 1 },
+      { type: "begin", studentId: "a", next: A, turn: 2 },
+      { type: "timeout", studentId: "a", next: P, turn: 1, message: "x" });
+    expect(s.marks.a).toEqual(A);
+    expect(s.failures).toEqual([]);
+    expect(pendingCount(s)).toBe(2);
+  });
+});

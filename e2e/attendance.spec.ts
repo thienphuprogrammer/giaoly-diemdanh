@@ -66,6 +66,10 @@ async function openBoard(page: Page) {
 test("trạng thái lưu, hoàn tác Tất cả có mặt và xác nhận nghỉ lễ", async ({ page }) => {
   await openBoard(page);
 
+  // Dải "…" của ô ghế đủ vùng chạm 44px.
+  const options = await page.getByRole("button", { name: "Mở lựa chọn cho Nguyễn An" }).boundingBox();
+  expect(options?.height ?? 0).toBeGreaterThanOrEqual(44);
+
   await page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
 
@@ -109,6 +113,9 @@ test("bảng lấy dữ liệu mới khi tab hiện lại và khi quay lại b�
     await page.goBack();
     await expect(page.getByRole("button", { name: /Nguyễn Chi: Vắng có phép/ })).toBeVisible();
     await expect(page.getByText("Đã điểm danh 2/4")).toBeVisible();
+    // Dữ liệu mới đã về => hết "Đang cập nhật…", chạm lại được.
+    await expect(page.getByText("Đang cập nhật…")).toBeHidden();
+    await expect(page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ })).toBeEnabled();
   } finally {
     await sql.end();
   }

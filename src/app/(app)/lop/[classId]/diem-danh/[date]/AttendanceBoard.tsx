@@ -19,13 +19,21 @@ import { seatKey } from "@/lib/seating/assignments";
 import type { Board } from "@/server/services/attendance";
 import { useBoardSaves } from "./useBoardSaves";
 
+/** Lời nhắc khi rời trang: chỉ hứa "tự chuyển" khi không còn em nào lưu lỗi (lỗi thì phải xử lý trước). */
+function leaveMessage(pending: number, failed: number): string {
+  if (failed > 0) {
+    return `${failed} em chưa lưu được${pending > 0 ? `, còn ${pending} lượt đang lưu` : ""}. Bấm "Thử lại" hoặc bỏ qua lỗi ở cuối màn hình; nếu rời trang bây giờ, các thay đổi đó sẽ mất.`;
+  }
+  return `Còn ${pending} lượt đang lưu — trang sẽ tự chuyển khi lưu xong. Rời trang ngay có thể mất các thay đổi chưa lưu.`;
+}
+
 export function AttendanceBoard({ board, renderId }: { board: Board; renderId: string }) {
   const saves = useBoardSaves(board, renderId);
   const { marks, cancelled, save } = saves;
   const [mode, setMode] = useState<"map" | "list">(board.plan ? "map" : "list");
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [confirmHoliday, setConfirmHoliday] = useState(false);
-  const readOnly = !board.canWrite || cancelled;
+  const readOnly = !board.canWrite || cancelled || saves.stale;
   const guard = useLeaveGuard(saves.pending + saves.failures.length);
 
   const byId = useMemo(() => new Map(board.students.map((st) => [st.id, st])), [board.students]);
@@ -45,7 +53,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
 
   const button = (id: string) => (
     <StudentButton fullName={byId.get(id)!.fullName} status={marks[id]?.status ?? null} warning={levelOf(id)} absences={warnOf(id).unexcused}
-      failed={failedIds.has(id)} disabled={readOnly} onTap={() => tap(id)} onLongPress={() => !readOnly && setSheetFor(id)} />
+      failed={failedIds.has(id)} disabled={readOnly} showOptions={board.canWrite && !cancelled} onTap={() => tap(id)} onLongPress={() => !readOnly && setSheetFor(id)} />
   );
 
   const seatOf = new Map(board.plan?.assignments.map((a) => [seatKey(a), a.studentId]) ?? []);
@@ -63,7 +71,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
         <div className="flex items-baseline justify-between gap-3">
           <p className="font-display text-lg font-semibold tabular-nums" aria-live="polite">Đã điểm danh {marked}/{total}</p>
           <span className="flex items-center gap-2">
-            {board.canWrite && <SaveStatus chip={saves.chip} />}
+            {board.canWrite && <SaveStatus chip={saves.chip} stale={saves.stale} />}
             <span aria-hidden className="font-display text-sm font-medium tabular-nums text-ink-soft">{total ? Math.round((marked / total) * 100) : 0}%</span>
           </span>
         </div>
@@ -78,7 +86,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
               <ScanLine aria-hidden size={20} />
               Quét QR
             </Link>
-            <button onClick={() => void saves.markAll()} disabled={saves.busy || marked === total} className="btn btn-primary btn-lg w-full">
+            <button onClick={() => void saves.markAll()} disabled={saves.busy || saves.stale || marked === total} className="btn btn-primary btn-lg w-full">
               <CheckCheck aria-hidden size={20} />
               Tất cả có mặt
             </button>
@@ -90,7 +98,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
               <span className="font-medium">Buổi nghỉ lễ</span>
               <span className="text-sm text-ink-soft">Không tính vào thống kê</span>
             </span>
-            <input type="checkbox" checked={cancelled} disabled={saves.busy} onChange={(e) => onHolidayChange(e.target.checked)} className="switch" />
+            <input type="checkbox" checked={cancelled} disabled={saves.busy || saves.stale} onChange={(e) => onHolidayChange(e.target.checked)} className="switch" />
           </label>
         )}
       </div>
@@ -201,9 +209,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
         <Sheet label="Chưa lưu xong" onClose={guard.stay}>
           <h2 className="font-display text-lg font-semibold">Chưa lưu xong</h2>
           <p className="text-ink-soft">
-            {saves.pending > 0 ? `Còn ${saves.pending} lượt đang lưu — sẽ tự chuyển trang khi lưu xong. ` : ""}
-            {saves.failures.length > 0 ? `${saves.failures.length} em chưa lưu được. ` : ""}
-            Rời trang lúc này có thể mất các thay đổi chưa lưu.
+            {leaveMessage(saves.pending, saves.failures.length)}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" className="btn btn-primary btn-lg" onClick={guard.stay}>Ở lại</button>
