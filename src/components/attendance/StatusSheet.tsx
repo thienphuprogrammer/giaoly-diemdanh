@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { STATUS_CLASS, STATUS_LABEL } from "@/lib/attendance/ui";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 
@@ -15,8 +15,17 @@ interface Props {
 
 export function StatusSheet({ name, current, reason, onPick, onClose }: Props) {
   const [text, setText] = useState(reason ?? "");
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <div role="dialog" aria-label={`Điểm danh ${name}`} className="fixed inset-x-0 bottom-0 z-30 rounded-t-3xl border-t border-line bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
+    <>
+    <button aria-label="Đóng" tabIndex={-1} onClick={onClose} className="fixed inset-0 z-20 cursor-default bg-black/30" />
+    <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Điểm danh ${name}`} className="fixed inset-x-0 bottom-0 z-30 rounded-t-3xl border-t border-line bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl outline-none">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
         <h2 className="text-lg font-semibold">{name}</h2>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Lý do (không bắt buộc)" maxLength={200}
@@ -33,5 +42,6 @@ export function StatusSheet({ name, current, reason, onPick, onClose }: Props) {
         <button onClick={onClose} className="h-12 rounded-xl text-sm text-ink-soft">Đóng</button>
       </div>
     </div>
+    </>
   );
 }

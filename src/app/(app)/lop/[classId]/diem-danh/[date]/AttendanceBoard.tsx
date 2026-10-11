@@ -1,9 +1,9 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { SeatMap } from "@/components/seating/SeatMap";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
 import { StudentButton } from "@/components/attendance/StudentButton";
-import { countMarked, createSequencer, fillPresent, initialMarks, type Mark, type Marks } from "@/lib/attendance/marks";
+import { countMarked, createSequencer, fillPresent, initialMarks, settleSave, type Mark, type Marks } from "@/lib/attendance/marks";
 import { toggleStatus } from "@/lib/attendance/toggle";
 import { evaluateWarningFromCount } from "@/lib/attendance/warning";
 import { seatKey } from "@/lib/seating/assignments";
@@ -21,14 +21,14 @@ export function AttendanceBoard({ board }: { board: Board }) {
   const [cancelled, setCancelled] = useState(board.cancelled);
   const [busy, setBusy] = useState(false);
   // Trạng thái đã được máy chủ xác nhận cho từng em (để hoàn tác khi lưu lỗi) và bộ đếm lượt lưu:
-  // chạm liên tiếp có thể trả về lệch thứ tự, nên chỉ lượt mới nhất của một em mới được đổi state/hoàn tác.
+  // chạm liên tiếp có thể trả về lệch thứ tự: mọi lần lưu thành công đều cập nhật `confirmed`, nhưng chỉ lượt mới nhất mới được hoàn tác / báo lỗi.
   const confirmed = useRef<Marks>(initialMarks(board.students));
   const seq = useRef(createSequencer());
   const readOnly = !board.canWrite || cancelled;
 
   const byId = useMemo(() => new Map(board.students.map((s) => [s.id, s])), [board.students]);
   const levelOf = (id: string) =>
-    evaluateWarningFromCount((byId.get(id)?.priorUnexcused ?? 0) + (marks[id]?.status === "absent_unexcused" ? 1 : 0)).level;
+    evaluateWarningFromCount((byId.get(id)?.priorUnexcused ?? 0) + (!cancelled && marks[id]?.status === "absent_unexcused" ? 1 : 0)).level;
 
   async function save(studentId: string, next: Mark) {
     const turn = seq.current.begin(studentId);
@@ -44,19 +44,17 @@ export function AttendanceBoard({ board }: { board: Board }) {
     } catch {
       saved = false;
     } finally {
-      if (seq.current.isLatest(studentId, turn)) {
-        if (saved) {
-          confirmed.current = { ...confirmed.current, [studentId]: next };
-        } else {
-          const back = confirmed.current[studentId] ?? null;
-          setMarks((m) => ({ ...m, [studentId]: back }));
-          setFailedId(studentId);
-          setError(`${message} (${byId.get(studentId)?.fullName ?? "thiếu nhi"})`);
-        }
+      const settled = settleSave({ confirmed: confirmed.current, studentId, next, saved, isLatest: seq.current.isLatest(studentId, turn) });
+      confirmed.current = settled.confirmed;
+      if (settled.revertTo !== undefined) {
+        setMarks((m) => ({ ...m, [studentId]: settled.revertTo ?? null }));
+        setFailedId(studentId);
+        setError(`${message} (${byId.get(studentId)?.fullName ?? "thiếu nhi"})`);
       }
     }
   }
 
+  const closeSheet = useCallback(() => setSheetFor(null), []);
   const tap = (id: string) => { if (!readOnly) void save(id, { status: toggleStatus(marks[id]?.status ?? null), reason: null }); };
 
   async function markAll() {
@@ -159,8 +157,8 @@ export function AttendanceBoard({ board }: { board: Board }) {
       )}
 
       {sheetFor && (
-        <StatusSheet name={byId.get(sheetFor)!.fullName} current={marks[sheetFor]?.status ?? null} reason={marks[sheetFor]?.reason ?? null}
-          onClose={() => setSheetFor(null)}
+        <StatusSheet key={sheetFor} name={byId.get(sheetFor)!.fullName} current={marks[sheetFor]?.status ?? null} reason={marks[sheetFor]?.reason ?? null}
+          onClose={closeSheet}
           onPick={(status, reason) => { const id = sheetFor; setSheetFor(null); void save(id, status ? { status, reason } : null); }} />
       )}
     </div>

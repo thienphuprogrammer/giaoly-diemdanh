@@ -30,3 +30,20 @@ export function createSequencer() {
     isLatest: (key: string, n: number): boolean => latest.get(key) === n,
   };
 }
+
+/**
+ * Kết quả một lần lưu. Server Action chạy tuần tự nên MỌI lần lưu thành công đều phản ánh
+ * trạng thái máy chủ tại thời điểm đó (kể cả phản hồi cũ); chỉ lượt mới nhất mới được hoàn tác khi lỗi.
+ * `revertTo` là undefined nghĩa là không hoàn tác.
+ */
+export function settleSave(args: {
+  confirmed: Marks;
+  studentId: string;
+  next: Mark;
+  saved: boolean;
+  isLatest: boolean;
+}): { confirmed: Marks; revertTo: Mark | undefined } {
+  const { confirmed, studentId, next, saved, isLatest } = args;
+  if (saved) return { confirmed: { ...confirmed, [studentId]: next }, revertTo: undefined };
+  return { confirmed, revertTo: isLatest ? (confirmed[studentId] ?? null) : undefined };
+}

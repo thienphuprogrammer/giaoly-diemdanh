@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countMarked, createSequencer, fillPresent, initialMarks, type Mark } from "./marks";
+import { countMarked, createSequencer, fillPresent, initialMarks, settleSave, type Mark, type Marks } from "./marks";
 
 describe("initialMarks", () => {
   it("maps students to marks or null", () => {
@@ -36,5 +36,30 @@ describe("createSequencer", () => {
     expect(s.isLatest("a", first)).toBe(false);
     expect(s.isLatest("a", second)).toBe(true);
     expect(s.isLatest("b", other)).toBe(true);
+  });
+});
+
+describe("settleSave", () => {
+  const present: Mark = { status: "present", reason: null };
+  const absent: Mark = { status: "absent_unexcused", reason: null };
+
+  it("records confirmation for stale successes, then reverts a failed latest save to it", () => {
+    const start: Marks = { a: null };
+    const afterSave1 = settleSave({ confirmed: start, studentId: "a", next: present, saved: true, isLatest: false });
+    expect(afterSave1.confirmed.a).toEqual(present);
+    expect(afterSave1.revertTo).toBeUndefined();
+    const afterSave2 = settleSave({ confirmed: afterSave1.confirmed, studentId: "a", next: absent, saved: false, isLatest: true });
+    expect(afterSave2.revertTo).toEqual(present);
+    expect(afterSave2.confirmed.a).toEqual(present);
+  });
+
+  it("does not revert when a stale save fails", () => {
+    const r = settleSave({ confirmed: { a: present }, studentId: "a", next: absent, saved: false, isLatest: false });
+    expect(r.revertTo).toBeUndefined();
+  });
+
+  it("reverts to null when nothing was confirmed", () => {
+    const r = settleSave({ confirmed: {}, studentId: "a", next: present, saved: false, isLatest: true });
+    expect(r.revertTo).toBeNull();
   });
 });
