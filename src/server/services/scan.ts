@@ -141,7 +141,7 @@ export async function applyUndo(db: Db, user: AppUser, raw: unknown): Promise<Sc
   if (ctx.cancelled) return reject("cancelled", CANCELLED);
 
   try {
-    return await db.transaction(async (tx): Promise<ScanResponse<UndoOutcome>> => {
+    const result = await db.transaction(async (tx): Promise<ScanResponse<UndoOutcome>> => {
       const [target] = await tx.select().from(attendanceScans).where(and(eq(attendanceScans.eventId, targetEventId), eq(attendanceScans.sessionId, sessionId)));
       if (!target || target.result !== "applied" || target.kind === "undo" || !target.studentId) return reject("conflict", "Không có gì để hoàn tác");
       const key = and(eq(attendance.sessionId, sessionId), eq(attendance.studentId, target.studentId));
@@ -155,6 +155,11 @@ export async function applyUndo(db: Db, user: AppUser, raw: unknown): Promise<Sc
       });
       return success({ eventId, targetEventId, studentId: target.studentId, status: target.prevStatus });
     });
+    if (result.ok) return result;
+    // Yêu cầu trùng (cùng mã lượt) chạy song song có thể vừa hoàn tác xong và khiến lượt này thấy "đã thay đổi":
+    // khi đó trả lại kết quả đã lưu thay vì báo xung đột.
+    const event = await getScanEvent(db, eventId);
+    return event ? stored(event) : result;
   } catch (e) {
     if (!uniqueViolation(e)) throw e;
     const event = await getScanEvent(db, eventId);

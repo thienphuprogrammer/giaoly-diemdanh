@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    exclude: ["**/node_modules/**", "src/**/*.pg.test.ts"], // test đua Postgres thật: `pnpm test:pg`
     testTimeout: 30000,
     hookTimeout: 30000,
     coverage: {

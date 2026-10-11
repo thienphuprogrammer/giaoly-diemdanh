@@ -20,6 +20,7 @@ export default defineConfig({
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { DATABASE_URL: url, AUTH_SECRET: "e".repeat(40) },
+    // NEXT_PUBLIC_E2E_SCAN_BRIDGE chỉ bật ở đây (cầu nối window.__scanFeed cho test), không bao giờ ở bản build thật.
+    env: { DATABASE_URL: url, AUTH_SECRET: "e".repeat(40), NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1" },
   },
 });

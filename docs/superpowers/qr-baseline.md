@@ -86,3 +86,45 @@ Ghi chú vận hành: `src/proxy.ts` chuyển mọi đường dẫn không có c
 - Mục tiêu: p95 xử lý máy chủ của đường quét ≤ 100 ms khi app và DB cùng vùng.
 - Đối chiếu: sau Task 18, đo lại bằng cùng script (đường quét thật). Nếu vượt ngưỡng: trước hết gộp truy vấn bằng join/CTE (hiện 6 truy vấn mỗi `setStatus`); chỉ cân nhắc hàng chờ trên Postgres khi vẫn không đạt.
 - Nếu vùng app và DB lệch nhau, sửa vùng trước khi tối ưu truy vấn.
+
+## 5. Sau khi làm Task 18: đo đường quét qua HTTP thật
+
+Ngày đo: 2026-10-12. Lệnh (server production `next build` + `next start -p 3100` chạy với `DATABASE_URL` = `E2E_DATABASE_URL` và một `AUTH_SECRET` sinh ngẫu nhiên lúc chạy, không lưu vào file theo dõi; DB đã seed bằng `e2e/global-setup.ts`):
+
+```bash
+E2E_DATABASE_URL='<chuỗi kết nối>' AUTH_SECRET='<giống server>' pnpm bench:scan   # = node --import tsx scripts/bench-scan.ts
+```
+
+Script tạo buổi `2000-01-02` của "Lớp Q" (30 em) có `note = 'bench-scan'`, dừng nếu đã có buổi cùng ngày không do nó tạo, luôn xóa buổi của chính nó khi kết thúc. Mỗi lần chạy: 3 lượt khởi động (không tính), 30 lượt POST `/api/diem-danh/quet` tuần tự, rồi 30 lượt với 5 luồng song song; mỗi lượt phải trả `applied`, nếu không script dừng. Thời gian đo ở phía client HTTP (gồm định tuyến Next, xác thực cookie, đọc người dùng, kiểm tra quyền, giao dịch ghi). Phân vị nearest-rank.
+
+Môi trường: **giống mục 2** — app và Postgres 16 cùng một máy dev (Docker `127.0.0.1:55432`), vòng mạng gần 0. Đây **không phải** số đo với DB hosted.
+
+| Chỉ số (ms) | Lần 1 | Lần 2 | Lần 3 |
+|---|---|---|---|
+| Tuần tự p50 | 5.3 | 5.4 | 5.0 |
+| Tuần tự p95 | 8.2 | 17.7 | 17.5 |
+| Tuần tự max | 9.2 | 19.5 | 17.8 |
+| 5 song song p50 | 10.3 | 11.3 | 18.1 |
+| 5 song song p95 | 18.2 | 14.0 | 28.8 |
+| 30 lượt song song, tổng thời gian | 69 | 69 | 108 |
+
+Ghi chú: lần chạy thứ ba ngay sau hai lần đầu bị từ chối HTTP 429 (`rate_limited`) vì giới hạn quét 180 lượt/phút mỗi người dùng (3 × 63 lượt > 180), đúng thiết kế; lần 3 trong bảng là lần chạy lại sau khi hết cửa sổ một phút.
+
+So với số cơ sở (mục 2): `setStatus` cục bộ p50 ≈ 3,2 ms (gọi hàm trực tiếp, không qua HTTP). Đường quét qua HTTP đầy đủ p50 ≈ 5 ms, nên phần thêm của HTTP + xác thực + kiểm tra quyền chỉ khoảng 2 ms trên máy cục bộ. Theo mã nguồn (không đo số truy vấn trong lần này), một lượt quét mới gồm: đọc người dùng (`getCurrentUser`), `loadScanContext`, `findScanTarget`, rồi giao dịch `begin` + insert `attendance` + insert `attendance_scans` + `commit`, tức khoảng 7 lượt đi về DB.
+
+### Kết luận theo ngưỡng (tạm thời)
+
+- Cục bộ: p95 tuần tự ≤ 18 ms và p95 5 luồng ≤ 29 ms, **đạt** ngưỡng 100 ms với dư địa lớn → giữ thiết kế ghi đồng bộ, chưa cần gộp truy vấn hay hàng chờ.
+- **Chưa kết luận được cho sản xuất**: với DB hosted, thời gian ≈ số lượt đi về × RTT. Ước tính (suy ra, KHÔNG đo): khoảng 7 × RTT; RTT 5 ms (cùng vùng) ≈ 35 ms + xử lý, đạt; RTT 20 ms (lệch vùng) ≈ 140 ms, không đạt. Cần chạy lại `pnpm bench:scan` với server và DB ở đúng vùng sản xuất rồi điền bảng dưới. Nếu không đạt, làm theo thứ tự đã định: (1) sửa vùng app/DB, (2) gộp `loadScanContext` + `findScanTarget`, (3) đọc quyền trong cùng câu SQL thay cho `getCurrentUser` trên đường quét; chỉ mở ADR về hàng chờ khi vẫn không đạt.
+
+| Mục (hosted) | Giá trị |
+|---|---|
+| Vùng app / vùng DB | _chưa đo_ |
+| Tuần tự p50 / p95 | _chưa đo_ |
+| 5 song song p50 / p95 | _chưa đo_ |
+
+## 6. Kiểm tra đua trên Postgres thật
+
+PGlite chỉ có một kết nối nên các ca đua trong `scan.test.ts` thực chất chạy tuần tự. `src/server/services/scan.pg.test.ts` chạy cùng các ca trên Postgres thật (pool 12 kết nối, READ COMMITTED) bằng `pnpm test:pg`; dùng database riêng `<tên DB E2E>_conc` trên cùng máy chủ (tự tạo, tự xóa schema và migrate lại mỗi lần chạy, tên phải chứa `e2e`) và tự bỏ qua khi thiếu `E2E_DATABASE_URL`. Các ca (mỗi ca lặp 5–10 vòng): 5 yêu cầu giống hệt (cùng mã lượt), 5 mã lượt khác nhau cho cùng một em, 30 em song song, 5 lần hoàn tác khác mã, 5 lần hoàn tác cùng mã, hoàn tác đua với lượt quét mới, hoàn tác đua với sửa tay. Đều kiểm tra một dòng điểm danh, một mục nhật ký cho mỗi mã lượt và gửi lại trả đúng kết quả đã lưu.
+
+Lỗi tìm được và đã sửa: 5 yêu cầu hoàn tác **cùng mã lượt** chạy song song — yêu cầu thắng xóa/đổi dòng, các yêu cầu còn lại (đang chờ khóa `FOR UPDATE`) thấy dòng đã đổi và trả `conflict` thay vì kết quả đã lưu. `applyUndo` giờ kiểm tra lại mã lượt khi giao dịch trả xung đột và trả kết quả đã lưu nếu chính yêu cầu trùng đã commit.
