@@ -2,7 +2,9 @@
   "name": "diemdanh-giaoly",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22.9" },
+  "engines": {
+    "node": ">=22.9"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -20,6 +22,7 @@
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "jose": "^6.2.12",
+    "lucide-react": "^1.55.0",
     "next": "16.4.0",
     "postgres": "^3.4.9",
     "react": "19.3.0",

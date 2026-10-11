@@ -1,39 +1,233 @@
 @import "tailwindcss";
 
+/*
+ * "Rõ ràng" — light only. Slate neutrals, one blue action colour, semantic status colours.
+ * Every text pair below is >= 4.5:1 on its intended background (see the redesign report).
+ */
 :root {
-  --paper: #f7f1e6;
-  --card: #fffdf8;
-  --ink: #2b2118;
-  --ink-soft: #6b5d4f;
-  --line: #e3d8c4;
-  --brand: #2f5d46;
-  --st-present: #3f7d4e;
-  --st-excused: #3b6ea5;
-  --st-unexcused: #b3392f;
-  --st-late: #c98a1b;
-  --st-none: #b9ad99;
-  --warn-watch: #c98a1b;
-  --warn-alert: #b3392f;
+  --page: #f8fafc;
+  --surface: #ffffff;
+  --surface-muted: #f1f5f9;
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --ink-muted: #64748b;
+
+  --action: #1d4ed8;
+  --action-hover: #1e40af;
+  --action-tint: #eff6ff;
+  --on-action: #ffffff;
+
+  --st-present: #166534;
+  --st-present-tint: #dcfce7;
+  --st-unexcused: #991b1b;
+  --st-unexcused-tint: #fee2e2;
+  --st-excused: #1e40af;
+  --st-excused-tint: #dbeafe;
+  --st-late: #92400e;
+  --st-late-tint: #fef3c7;
+  --st-none: #64748b;
+
+  --warn-watch: #b45309;
+  --warn-watch-tint: #fef3c7;
+  --warn-alert: #991b1b;
+  --warn-alert-tint: #fee2e2;
 }
 
 @theme inline {
-  --color-paper: var(--paper);
-  --color-card: var(--card);
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
-  --color-line: var(--line);
-  --color-brand: var(--brand);
+  --color-ink-muted: var(--ink-muted);
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
+  --color-action-tint: var(--action-tint);
+  --color-on-action: var(--on-action);
   --color-st-present: var(--st-present);
-  --color-st-excused: var(--st-excused);
+  --color-st-present-tint: var(--st-present-tint);
   --color-st-unexcused: var(--st-unexcused);
+  --color-st-unexcused-tint: var(--st-unexcused-tint);
+  --color-st-excused: var(--st-excused);
+  --color-st-excused-tint: var(--st-excused-tint);
   --color-st-late: var(--st-late);
+  --color-st-late-tint: var(--st-late-tint);
   --color-st-none: var(--st-none);
   --color-warn-watch: var(--warn-watch);
+  --color-warn-watch-tint: var(--warn-watch-tint);
   --color-warn-alert: var(--warn-alert);
-  --font-body: var(--font-body-face), system-ui, sans-serif;
-  --font-display: var(--font-display-face), Georgia, serif;
+  --color-warn-alert-tint: var(--warn-alert-tint);
+
+  --font-sans: var(--font-body-face), system-ui, sans-serif;
+  --font-display: var(--font-display-face), var(--font-body-face), system-ui, sans-serif;
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+
+  --shadow-bar: 0 -1px 0 rgb(15 23 42 / 0.04), 0 -6px 20px rgb(15 23 42 / 0.06);
+  --shadow-sheet: 0 -8px 32px rgb(15 23 42 / 0.18);
+
+  --animate-sheet-in: sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 180ms ease-out;
+  @keyframes sheet-in {
+    from { transform: translateY(24px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 }
 
-html { background: var(--paper); color: var(--ink); }
-body { font-family: var(--font-body); -webkit-tap-highlight-color: transparent; }
-h1, h2, h3 { font-family: var(--font-display); }
+@layer base {
+  html {
+    background: var(--page);
+    color: var(--ink);
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--page);
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: 3px solid var(--action);
+    outline-offset: 2px;
+  }
+  button:not(:disabled), [role="button"], summary, a[href], label:has(input[type="checkbox"]) {
+    cursor: pointer;
+  }
+  button, a {
+    touch-action: manipulation;
+  }
+}
+
+/*
+ * Atoms are CSS component classes (usable on <button>, <Link>, <a>, <input> alike);
+ * anything that needs markup (pills, sheet, field, empty state) lives in src/components/ui.
+ * Utilities still win over these, so screens can adjust width/spacing inline.
+ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding-inline: 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.25;
+    text-align: center;
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+    user-select: none;
+  }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-lg { min-height: 3rem; padding-inline: 1.25rem; }
+  .btn-sm { min-height: 2.75rem; padding-inline: 0.75rem; font-size: 0.875rem; }
+  .btn-icon { padding-inline: 0; width: 2.75rem; }
+
+  .btn-primary { background: var(--action); color: var(--on-action); }
+  .btn-primary:hover:not(:disabled) { background: var(--action-hover); }
+  .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--border-strong); }
+  .btn-secondary:hover:not(:disabled) { background: var(--surface-muted); }
+  .btn-ghost { background: transparent; color: var(--ink-soft); }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-muted); color: var(--ink); }
+  .btn-danger { background: var(--surface); color: var(--warn-alert); border-color: var(--warn-alert); }
+  .btn-danger:hover:not(:disabled) { background: var(--warn-alert-tint); }
+
+  .input {
+    display: block;
+    width: 100%;
+    min-height: 3rem;
+    padding-inline: 0.875rem;
+    border: 1px solid var(--ink-muted);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 1rem;
+    transition: border-color 150ms ease;
+  }
+  .input:hover:not(:disabled) { border-color: var(--ink-soft); }
+  .input:focus-visible { outline-offset: 0; border-color: var(--action); }
+  .input::placeholder { color: var(--ink-muted); }
+  select.input {
+    appearance: none;
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+  }
+
+  .label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+  }
+
+  /* Checkbox drawn as a switch: keeps native checkbox semantics and keyboard behaviour. */
+  .switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 3rem;
+    height: 1.75rem;
+    appearance: none;
+    border: 1px solid var(--ink-muted);
+    border-radius: 999px;
+    background: var(--surface-muted);
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .switch::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    background: var(--ink-soft);
+    transition: transform 200ms ease, background-color 150ms ease;
+  }
+  .switch:checked { background: var(--action); border-color: var(--action); }
+  .switch:checked::before { transform: translateX(1.25rem); background: var(--on-action); }
+  .switch:disabled { opacity: 0.5; }
+
+  /* Horizontal scroller with edge shadows that only appear when there is more to scroll. */
+  .scroll-shadows {
+    background:
+      linear-gradient(to right, var(--surface) 40%, transparent) left / 2rem 100% no-repeat local,
+      linear-gradient(to left, var(--surface) 40%, transparent) right / 2rem 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgb(15 23 42 / 0.16), transparent) left / 0.75rem 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgb(15 23 42 / 0.16), transparent) right / 0.75rem 100% no-repeat scroll,
+      var(--surface);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
