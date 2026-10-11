@@ -26,7 +26,7 @@ const OPTIONS_CLASS =
   "absolute right-0.5 top-0.5 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-border-strong bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink";
 
 /** Kích thước ô ghế dùng chung cho sơ đồ điểm danh và trình xếp chỗ. */
-export const SEAT_TILE = "h-[72px] w-16";
+export const SEAT_TILE = "h-[72px] w-16 sm:h-20 sm:w-20";
 
 export function StudentButton({ fullName, status, warning, absences, failed, disabled, onTap, onLongPress }: Props) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -57,7 +57,7 @@ export function StudentButton({ fullName, status, warning, absences, failed, dis
         onContextMenu={(e) => e.preventDefault()}
         className={`flex h-full w-full touch-manipulation select-none flex-col items-center justify-end gap-1 rounded-control border-2 px-0.5 pb-2 transition-[transform,background-color,color,border-color] duration-150 enabled:active:scale-95 ${meta.solid} ${failed ? "ring-[3px] ring-warn-alert ring-offset-2" : ""}`}
       >
-        <span className="w-full truncate text-center font-display text-sm font-semibold leading-tight">{shortName(fullName)}</span>
+        <span className="w-full truncate text-center font-display text-sm font-semibold leading-tight sm:text-base">{shortName(fullName)}</span>
         <span className="font-display text-xs font-medium leading-none">{meta.short}</span>
       </button>
       {warning !== "none" && (

@@ -21,7 +21,7 @@ export function ClassTabs({ classId }: { classId: string }) {
         const Icon = t.icon;
         return (
           <Link key={t.slug} href={href} role="tab" aria-selected={active}
-            className={`relative flex h-12 min-w-max flex-1 items-center justify-center gap-1.5 px-2.5 font-display text-sm font-medium outline-offset-[-3px] transition-colors ${active ? "text-action" : "text-ink-soft hover:text-ink"}`}>
+            className={`relative flex h-12 min-w-max flex-1 items-center justify-center gap-1.5 px-1.5 sm:px-2.5 font-display text-sm font-medium outline-offset-[-3px] transition-colors ${active ? "text-action" : "text-ink-soft hover:text-ink"}`}>
             <Icon aria-hidden size={16} strokeWidth={active ? 2.25 : 2} className="hidden sm:block" />
             {t.label}
             <span aria-hidden className={`absolute inset-x-2 bottom-0 h-[3px] rounded-t-full ${active ? "bg-action" : "bg-transparent"}`} />

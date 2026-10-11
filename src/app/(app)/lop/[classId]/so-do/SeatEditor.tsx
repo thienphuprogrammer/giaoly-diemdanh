@@ -1,6 +1,7 @@
 "use client";
 import { Armchair, Check, Minus, MoveHorizontal, Plus, Rows3, Save, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
+import { SEAT_TILE } from "@/components/attendance/StudentButton";
 import { SeatMap } from "@/components/seating/SeatMap";
 import { Avatar } from "@/components/ui/Avatar";
 import { Notice } from "@/components/ui/Notice";
@@ -22,7 +23,7 @@ interface Props {
 
 const SAVE_ERROR = "Không lưu được, thử lại sau.";
 const uid = () => crypto.randomUUID();
-const TILE = "flex h-[72px] w-16 flex-col items-center justify-center gap-1 rounded-control border-2 px-0.5 font-display text-sm transition-[transform,background-color] duration-150 enabled:active:scale-95";
+const TILE = `${SEAT_TILE} flex flex-col items-center justify-center gap-1 rounded-control border-2 px-0.5 font-display text-sm transition-[transform,background-color] duration-150 enabled:active:scale-95`;
 
 export function SeatEditor({ classId, planId, initialLayout, initialAssignments, students, canWrite }: Props) {
   const [mode, setMode] = useState<"seat" | "layout">("seat");

@@ -43,10 +43,10 @@ export function StatusSheet({ name, current, reason, onPick, onClose }: Props) {
           const selected = current === s;
           return (
             <button key={s} onClick={() => onPick(s, text.trim() || null)} aria-pressed={selected}
-              className={`relative flex min-h-16 items-center gap-2.5 rounded-control border-2 px-3 py-2 text-left font-display text-base font-semibold leading-tight transition-[transform,background-color] duration-150 active:scale-[0.98] ${selected ? meta.solid : meta.tint}`}>
-              <Icon aria-hidden size={22} strokeWidth={2.25} className="shrink-0" />
-              <span className="min-w-0 flex-1">{STATUS_LABEL[s]}</span>
-              {selected && <Check aria-hidden size={18} strokeWidth={3} className="shrink-0" />}
+              className={`relative flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-control border-2 px-2 py-2.5 text-center font-display text-base font-semibold leading-tight transition-[transform,background-color] duration-150 active:scale-[0.98] ${selected ? meta.solid : meta.tint}`}>
+              <Icon aria-hidden size={24} strokeWidth={2.25} />
+              {STATUS_LABEL[s]}
+              {selected && <Check aria-hidden size={18} strokeWidth={3} className="absolute right-2 top-2" />}
             </button>
           );
         })}

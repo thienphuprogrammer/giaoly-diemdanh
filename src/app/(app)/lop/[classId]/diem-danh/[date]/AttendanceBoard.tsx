@@ -3,7 +3,7 @@ import { Check, CheckCheck, Ellipsis, LayoutGrid, ListChecks, X } from "lucide-r
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SeatMap } from "@/components/seating/SeatMap";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
-import { StudentButton } from "@/components/attendance/StudentButton";
+import { SEAT_TILE, StudentButton } from "@/components/attendance/StudentButton";
 import { Notice } from "@/components/ui/Notice";
 import { StatusPill, WarningPill } from "@/components/ui/Pill";
 import { STATUS_META, STATUS_ORDER, type StatusKey } from "@/components/ui/status";
@@ -154,7 +154,7 @@ export function AttendanceBoard({ board }: { board: Board }) {
           <div className="card overflow-hidden">
             <SeatMap layout={board.plan.layout} renderSeat={(seat) => {
               const id = seatOf.get(seatKey(seat));
-              return id ? button(id) : <div aria-hidden className="h-[72px] w-16 rounded-control border border-dashed border-border" />;
+              return id ? button(id) : <div aria-hidden className={`${SEAT_TILE} rounded-control border border-dashed border-border`} />;
             }} />
             <ul aria-label="Chú thích" className="flex flex-wrap gap-x-4 gap-y-2 border-t border-border px-4 py-3">
               {STATUS_ORDER.map((key) => (
