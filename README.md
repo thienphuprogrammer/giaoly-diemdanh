@@ -81,7 +81,7 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 
 ## Triển khai lên Vercel
 
-1. Đặt `DATABASE_URL` và `AUTH_SECRET` trong Project Settings, mục Environment Variables, cho cả môi trường Production và Preview. `DATABASE_URL` phải có cả lúc **build** vì `src/db/client.ts` báo lỗi ngay khi import nếu thiếu (build không kết nối database).
+1. Đặt `DATABASE_URL` và `AUTH_SECRET` trong Project Settings, mục Environment Variables, cho cả môi trường Production và Preview. `DATABASE_URL` chỉ cần lúc chạy: `src/db/client.ts` kết nối lười ở lần truy vấn đầu tiên nên `next build` không cần biến này (thiếu biến thì lần truy vấn đầu báo lỗi rõ ràng).
 2. Trước mỗi lần deploy có migration mới, chạy `pnpm db:migrate` với `DATABASE_URL` trỏ tới database production.
 3. Không commit `.env*` vào git.
 
