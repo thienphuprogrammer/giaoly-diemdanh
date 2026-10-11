@@ -70,4 +70,24 @@ describe("parseStudentsCsv", () => {
     expect(rows).toEqual([]);
     expect(errors[0].message).toContain(String(MAX_IMPORT_ROWS));
   });
+
+  it("treats a quote in the middle of an unquoted field as a literal", () => {
+    const { rows, errors } = parseStudentsCsv(`${HEADER}\n,Bé 5" cao,,,\n,Chi,,,`);
+    expect(errors).toEqual([]);
+    expect(rows.map((r) => r.fullName)).toEqual(['Bé 5" cao', "Chi"]);
+  });
+
+  it("errors on a header-only or blank-body file", () => {
+    const expected = [{ line: 0, message: "Không có dòng dữ liệu" }];
+    expect(parseStudentsCsv(HEADER).errors).toEqual(expected);
+    expect(parseStudentsCsv(`${HEADER}\n\n,,,,\n`).errors).toEqual(expected);
+  });
+
+  it("counts only non-blank rows against the limit", () => {
+    const rowsText = Array.from({ length: MAX_IMPORT_ROWS }, (_, i) => `,Em ${i},,,`);
+    const withBlanks = rowsText.flatMap((r) => [r, ""]).join("\n");
+    expect(parseStudentsCsv(`${HEADER}\n${withBlanks}`).rows).toHaveLength(MAX_IMPORT_ROWS);
+    const over = [...rowsText, ",Thừa,,,"].join("\n");
+    expect(parseStudentsCsv(`${HEADER}\n${over}`).errors[0].message).toContain(String(MAX_IMPORT_ROWS));
+  });
 });

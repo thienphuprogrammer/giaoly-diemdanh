@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getStudent } from "@/db/queries/students";
 import { students } from "@/db/schema";
@@ -64,9 +64,15 @@ export async function importStudents(
   const { classId, rows } = p.data;
   if (!(await guardClass(db, user, classId, "write"))) return fail(NOT_FOUND);
 
-  const key = (r: { fullName: string; birthDate?: string | null }) => `${r.fullName.toLowerCase()}|${r.birthDate ?? ""}`;
-  const existing = new Set((await db.select().from(students).where(eq(students.classId, classId))).map(key));
-  const fresh = rows.filter((r) => !existing.has(key(r)));
-  if (fresh.length > 0) await db.insert(students).values(fresh.map((r) => ({ classId, ...r })));
-  return ok({ inserted: fresh.length, skipped: rows.length - fresh.length });
+  const key = (r: { fullName: string; birthDate?: string | null }) =>
+    `${r.fullName.normalize("NFC").trim().toLowerCase()}|${r.birthDate ?? ""}`;
+  const unique = [...new Map(rows.map((r) => [key(r), r] as const).reverse()).values()].reverse();
+  const inserted = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${classId}))`);
+    const existing = new Set((await tx.select().from(students).where(eq(students.classId, classId))).map(key));
+    const fresh = unique.filter((r) => !existing.has(key(r)));
+    if (fresh.length > 0) await tx.insert(students).values(fresh.map((r) => ({ classId, ...r })));
+    return fresh.length;
+  });
+  return ok({ inserted, skipped: rows.length - inserted });
 }

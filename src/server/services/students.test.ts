@@ -88,4 +88,30 @@ describe("importStudents", () => {
     expect((await importStudents(db, b.glv, { classId: b.classId, rows: many })).ok).toBe(false);
     expect((await importStudents(db, b.otherGlv, { classId: b.classId, rows: [{ fullName: "X" }] })).ok).toBe(false);
   });
+
+  it("inserts duplicate rows inside one payload once", async () => {
+    const { db, b } = await setup();
+    const r = await importStudents(db, b.glv, { classId: b.classId, rows: [{ fullName: "An" }, { fullName: " an " }] });
+    expect(r).toEqual({ ok: true, data: { inserted: 1, skipped: 1 } });
+    expect(await db.select().from(students)).toHaveLength(1);
+  });
+
+  it("matches existing students regardless of Unicode normalisation form", async () => {
+    const { db, b } = await setup();
+    const name = "Nguyễn Văn An";
+    await addStudent(db, b.glv, { classId: b.classId, fullName: name.normalize("NFC") });
+    await importStudents(db, b.glv, { classId: b.classId, rows: [{ fullName: name.normalize("NFD") }] });
+    expect(await db.select().from(students)).toHaveLength(1);
+    const { db: db2, b: b2 } = await setup();
+    await addStudent(db2, b2.glv, { classId: b2.classId, fullName: name.normalize("NFD") });
+    await importStudents(db2, b2.glv, { classId: b2.classId, rows: [{ fullName: name.normalize("NFC") }] });
+    expect(await db2.select().from(students)).toHaveLength(1);
+  });
+
+  it("leaves one copy of each student for concurrent imports", async () => {
+    const { db, b } = await setup();
+    const input = { classId: b.classId, rows: [{ fullName: "An" }, { fullName: "Bình" }] };
+    await Promise.all([importStudents(db, b.glv, input), importStudents(db, b.glv, input)]);
+    expect(await db.select().from(students)).toHaveLength(2);
+  });
 });

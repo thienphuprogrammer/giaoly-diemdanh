@@ -34,7 +34,7 @@ export function parseCsv(text: string): string[][] {
       if (c !== '"') field += c;
       else if (src[i + 1] === '"') { field += '"'; i++; }
       else quoted = false;
-    } else if (c === '"') quoted = true;
+    } else if (c === '"' && field === "") quoted = true;
     else if (c === delimiter) { row.push(field); field = ""; }
     else if (c === "\n" || c === "\r") {
       if (c === "\r" && src[i + 1] === "\n") i++;
@@ -66,8 +66,11 @@ export function parseStudentsCsv(text: string): { rows: StudentFields[]; errors:
 
   const columns = records[0].map((h) => ALIASES[normalizeHeader(h)]);
   if (!columns.includes("fullName")) return { rows: [], errors: [{ line: 1, message: "Thiếu cột Họ tên" }] };
+  const isBlank = (cells: string[]) => cells.every((c) => c.trim() === "");
   const body = records.slice(1);
-  if (body.length > MAX_IMPORT_ROWS) {
+  const dataCount = body.filter((cells) => !isBlank(cells)).length;
+  if (dataCount === 0) return { rows: [], errors: [{ line: 0, message: "Không có dòng dữ liệu" }] };
+  if (dataCount > MAX_IMPORT_ROWS) {
     return { rows: [], errors: [{ line: 0, message: `Tối đa ${MAX_IMPORT_ROWS} dòng mỗi lần nhập` }] };
   }
 
@@ -76,7 +79,7 @@ export function parseStudentsCsv(text: string): { rows: StudentFields[]; errors:
   const seen = new Map<string, number>();
   body.forEach((cells, index) => {
     const line = index + 2;
-    if (cells.every((c) => c.trim() === "")) return;
+    if (isBlank(cells)) return;
     const raw: Partial<Record<Field, string>> = {};
     columns.forEach((field, i) => { if (field) raw[field] = (cells[i] ?? "").normalize("NFC").trim(); });
     if (raw.birthDate) raw.birthDate = toIsoDate(raw.birthDate);
