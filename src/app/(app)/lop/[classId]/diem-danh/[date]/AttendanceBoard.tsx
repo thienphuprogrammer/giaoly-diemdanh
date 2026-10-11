@@ -1,5 +1,6 @@
 "use client";
-import { Check, CheckCheck, Ellipsis, LayoutGrid, ListChecks, X } from "lucide-react";
+import { Check, CheckCheck, Ellipsis, LayoutGrid, ListChecks, ScanLine, X } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SeatMap } from "@/components/seating/SeatMap";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
@@ -117,10 +118,16 @@ export function AttendanceBoard({ board }: { board: Board }) {
             style={{ transform: `scaleX(${total ? marked / total : 0})` }} />
         </div>
         {board.canWrite && !cancelled && (
-          <button onClick={markAll} disabled={busy} className="btn btn-primary btn-lg w-full">
-            <CheckCheck aria-hidden size={20} />
-            Tất cả có mặt
-          </button>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Link prefetch={false} href={`/lop/${board.classId}/diem-danh/${board.heldOn}/quet`} className="btn btn-secondary btn-lg w-full">
+              <ScanLine aria-hidden size={20} />
+              Quét QR
+            </Link>
+            <button onClick={markAll} disabled={busy} className="btn btn-primary btn-lg w-full">
+              <CheckCheck aria-hidden size={20} />
+              Tất cả có mặt
+            </button>
+          </div>
         )}
         {board.canWrite && (
           <label className="-mx-1 flex min-h-11 items-center justify-between gap-3 rounded-control px-1">
