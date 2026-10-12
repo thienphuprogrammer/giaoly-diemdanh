@@ -47,7 +47,8 @@ export function QrCamera({ onCode, onState, paused }: {
     const onVisible = () => {
       if (stopped || document.visibilityState !== "visible") return;
       const t = track.current;
-      if (stream && (!t || t.readyState === "ended")) { restart(); return; }
+      // Luồng đã ngắt, hoặc bị "muted" (iOS giữ track nhưng không còn hình sau khi khóa máy/chuyển app): mở lại.
+      if (stream && (!t || t.readyState === "ended" || t.muted)) { restart(); return; }
       const video = videoRef.current;
       if (video?.paused && video.srcObject) void video.play().catch(() => undefined);
     };

@@ -1,15 +1,21 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { armGuard, guardLeave, guardPop, initialHistoryGuard, type GuardStep, type LeaveIntent } from "@/lib/history-guard";
+import { armGuard, guardClick, guardLeave, guardPop, initialHistoryGuard, mountGuard, type GuardStep, type LeaveIntent } from "@/lib/history-guard";
 import { guardedNavigation } from "@/lib/leave-guard";
 
 export type { LeaveIntent } from "@/lib/history-guard";
+
+/** Đánh dấu mục lịch sử lính gác (Next giữ state tùy biến khi tải lại trang), để không đặt chồng thêm mục. */
+const SENTINEL_KEY = "__ddGuard";
+const pushSentinel = () => window.history.pushState({ ...window.history.state, [SENTINEL_KEY]: true }, "", window.location.href);
 
 /**
  * Khi `blocking` > 0: bật `beforeunload`, chặn các link trong app (bắt ở pha capture trên document, trước khi
  * <Link> của Next xử lý) và chặn nút Back của trình duyệt/Android (lính gác lịch sử, xem `history-guard.ts`)
  * để hỏi lại. Khi hết lượt chờ trong lúc đang hỏi thì tự đi tiếp.
+ * Khi đã lưu hết mà lính gác còn trong lịch sử, bấm link vẫn bị bắt để rời qua lính gác (không để lại mục trùng URL
+ * làm lần Back sau "chết").
  *
  * `navigate: "replace"` để trang này không còn trong lịch sử sau khi rời đi (màn quét: Back không quay lại máy quét).
  * `go(href)` cho nút điều hướng tự vẽ (không phải <a>): đi ngay nếu không còn gì chờ, ngược lại thì hỏi.
@@ -23,8 +29,11 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
   /** Đã chọn rời trang (hoặc chủ động tải trang khác): không hỏi `beforeunload` nữa. */
   const bypass = useRef(false);
 
-  const navigate = useCallback((href: string) => {
-    if (replace) router.replace(href);
+  const navigate = useCallback((href: string, hard?: boolean) => {
+    if (hard) {
+      bypass.current = true;
+      window.location.assign(href);
+    } else if (replace) router.replace(href);
     else router.push(href);
   }, [router, replace]);
 
@@ -33,10 +42,10 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
     const effect = step.effect;
     switch (effect.kind) {
       case "push":
-        window.history.pushState({ ...window.history.state }, "", window.location.href);
+        pushSentinel();
         return;
       case "prompt":
-        window.history.pushState({ ...window.history.state }, "", window.location.href);
+        pushSentinel();
         setTarget({ kind: "back" });
         return;
       case "back":
@@ -46,12 +55,20 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
         window.history.go(effect.delta);
         return;
       case "navigate":
-        navigate(effect.href);
+        navigate(effect.href, effect.hard);
         return;
       case "none":
         return;
     }
   }, [navigate]);
+
+  // Mở trang trên chính mục lính gác (tải lại trang khi còn hàng chờ): đã gác sẵn, không đặt chồng thêm.
+  useEffect(() => {
+    const state: unknown = window.history.state;
+    if (typeof state === "object" && state !== null && (state as Record<string, unknown>)[SENTINEL_KEY] === true && !hist.current.exiting) {
+      hist.current = mountGuard(true);
+    }
+  }, []);
 
   // Đặt lính gác lịch sử khi bắt đầu có việc chưa lưu (một lần; ref giữ qua lần chạy kép của StrictMode).
   useEffect(() => {
@@ -63,10 +80,11 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
     const onPop = () => {
       const step = guardPop(hist.current, blockingRef.current > 0);
       if (step.effect.kind !== "navigate") return run(step);
-      // Next xử lý cùng sự kiện popstate (khôi phục mục lịch sử vừa về); điều hướng sau khi việc đó xong.
-      const href = step.effect.href;
+      // Next 16.4 xử lý cùng sự kiện popstate (ACTION_RESTORE cho mục vừa về) sau listener của nó; điều hướng ngay
+      // trong listener này bị lần khôi phục đó đè (thấy trong E2E). Đợi một macrotask cho việc đó xong rồi mới đi.
+      const { href, hard } = step.effect;
       hist.current = step.state;
-      window.setTimeout(() => navigate(href), 0);
+      window.setTimeout(() => navigate(href, hard), 0);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -79,7 +97,22 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
       e.preventDefault();
       e.returnValue = ""; // trình duyệt cũ chỉ hỏi khi có returnValue
     };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [blocking]);
+
+  const continued = useRef<LeaveIntent | null>(null);
+  const proceed = useCallback((intent: LeaveIntent) => {
+    continued.current = intent;
+    setTarget(null);
+    run(guardLeave(hist.current, intent));
+  }, [run]);
+
+  // Bắt link luôn được gắn; quyết định đọc từ ref (còn việc chờ => hỏi; còn lính gác => rời qua lính gác).
+  useEffect(() => {
     const onClick = (e: MouseEvent) => {
+      const decision = guardClick(hist.current, blockingRef.current > 0);
+      if (decision === "ignore") return;
       const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
       if (!(a instanceof HTMLAnchorElement)) return;
       const to = guardedNavigation({
@@ -89,22 +122,12 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
       if (!to) return;
       e.preventDefault();
       e.stopPropagation();
-      setTarget({ kind: "href", href: to });
+      if (decision === "prompt") setTarget({ kind: "href", href: to });
+      else proceed({ kind: "href", href: to });
     };
-    window.addEventListener("beforeunload", warn);
     document.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener("beforeunload", warn);
-      document.removeEventListener("click", onClick, true);
-    };
-  }, [blocking]);
-
-  const continued = useRef<LeaveIntent | null>(null);
-  const proceed = useCallback((intent: LeaveIntent) => {
-    continued.current = intent;
-    setTarget(null);
-    run(guardLeave(hist.current, intent));
-  }, [run]);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [proceed]);
 
   const leave = useCallback(() => { if (target) proceed(target); }, [target, proceed]);
   const stay = useCallback(() => {
@@ -118,11 +141,11 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
     else proceed({ kind: "href", href });
   }, [proceed]);
 
-  /** Tải hẳn trang khác (vd. đăng nhập lại) mà không bị `beforeunload` hỏi; dữ liệu cần giữ phải đã được lưu bền. */
+  /** Tải hẳn trang khác (vd. đăng nhập lại) không hỏi; bỏ lính gác trước. Dữ liệu cần giữ phải đã được lưu bền. */
   const hardNavigate = useCallback((href: string) => {
     bypass.current = true;
-    window.location.assign(href);
-  }, []);
+    proceed({ kind: "href", href, hard: true });
+  }, [proceed]);
 
   // Đã lưu xong trong lúc đang hỏi: tự đi tiếp (bảng hỏi đóng khi trang này bị gỡ).
   useEffect(() => {

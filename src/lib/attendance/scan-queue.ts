@@ -87,7 +87,8 @@ const isResumable = (e: QueuedEvent): boolean =>
   e.state === "failed" || (e.state === "sending" && (e.attempts > 0 || e.notBefore !== undefined));
 
 function fromPersisted(p: PersistedEvent): QueuedEvent {
-  const { failed, ...rest } = p;
+  const { failed, needsConfirm, serverStatus, ...rest } = p;
+  if (needsConfirm) return { ...rest, state: "needs_confirm", serverStatus: serverStatus ?? null, inFlight: false, undoBusy: false, notBefore: undefined };
   return { ...rest, state: failed ? "failed" : "sending", inFlight: false, undoBusy: false, notBefore: undefined };
 }
 
@@ -114,16 +115,17 @@ export function sendable(s: ScanQueueState, now: number = Date.now()): QueuedEve
   return out;
 }
 
-/** Lượt chưa lưu được: đang gửi, hoặc đã thử hết lần mà chưa gửi được (người dùng chưa bỏ qua). */
-export function unsavedSummary(s: ScanQueueState): { sending: number; failed: number; total: number } {
+/** Việc còn dở: đang gửi, đã thử hết lần mà chưa gửi được, hoặc máy chủ hỏi "cần chọn" mà người dùng chưa chọn. */
+export function unsavedSummary(s: ScanQueueState): { sending: number; failed: number; needsConfirm: number; total: number } {
   const sending = s.events.filter((e) => e.state === "sending").length;
   const failed = s.events.filter((e) => e.state === "failed").length;
-  return { sending, failed, total: sending + failed };
+  const needsConfirm = s.events.filter((e) => e.state === "needs_confirm").length;
+  return { sending, failed, needsConfirm, total: sending + failed + needsConfirm };
 }
 
-/** Số việc còn dở: lượt chưa lưu (đang gửi hoặc gửi hỏng) và hoàn tác đang chạy. Dùng để cảnh báo khi rời trang. */
+/** Số việc còn dở (xem `unsavedSummary`) cộng hoàn tác đang chạy. Dùng để cảnh báo khi rời trang. */
 export const pendingCount = (s: ScanQueueState): number =>
-  s.events.filter((e) => e.state === "sending" || e.state === "failed" || e.undoBusy).length;
+  s.events.filter((e) => e.state === "sending" || e.state === "failed" || e.state === "needs_confirm" || e.undoBusy).length;
 
 /** Mốc sớm nhất (sau `now`) mà một lượt đang chờ thử lại được gửi tiếp; null nếu không có. */
 export function nextWakeAt(s: ScanQueueState, now: number): number | null {

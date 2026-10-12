@@ -15,14 +15,19 @@ export function useWakeLock(active: boolean) {
     if (!wakeLock) return;
     let alive = true;
     let sentinel: WakeLockSentinelLike | null = null;
+    /** Đang xin khóa: không xin chồng lần nữa (hai khóa => một khóa bị rò, không bao giờ nhả). */
+    let requesting = false;
 
     const acquire = async () => {
-      if (!alive || document.visibilityState !== "visible" || (sentinel && !sentinel.released)) return;
+      if (!alive || requesting || document.visibilityState !== "visible" || (sentinel && !sentinel.released)) return;
+      requesting = true;
       try {
         const next = await wakeLock.request("screen");
         if (!alive) { void next.release().catch(() => undefined); return; }
         sentinel = next;
-      } catch { /* bị từ chối: màn hình có thể tự tắt, quét vẫn chạy */ }
+      } catch { /* bị từ chối: màn hình có thể tự tắt, quét vẫn chạy */ } finally {
+        requesting = false;
+      }
     };
     const onVisible = () => { if (document.visibilityState === "visible") void acquire(); };
 

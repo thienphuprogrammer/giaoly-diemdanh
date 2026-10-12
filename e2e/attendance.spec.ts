@@ -146,6 +146,20 @@ test("Back của trình duyệt khi bảng còn lần lưu chưa xong thì hỏi
   await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
 });
 
+test("đã lưu xong rồi chuyển tab lớp: Back hai lần về trang trước bảng, không có lần Back chết", async ({ page }) => {
+  await openBoard(page);
+  const boardUrl = page.url();
+  await page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
+  await page.getByRole("tab", { name: "Thống kê" }).click();
+  await expect(page).toHaveURL(/\/thong-ke$/);
+  await page.goBack();
+  await expect(page).toHaveURL(boardUrl);
+  await expect(page.getByRole("button", { name: /Nguyễn An: Có mặt/ })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+});
+
 test("báo mất mạng trên bảng điểm danh", async ({ page, context }) => {
   await openBoard(page);
   await context.setOffline(true);

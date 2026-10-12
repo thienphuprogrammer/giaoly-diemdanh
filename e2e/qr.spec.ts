@@ -149,11 +149,13 @@ test("lượt chưa lưu được giữ qua tải lại trang, gửi lại khi c
   await expect.poll(() => storedQueueSizes(page)).toEqual([1]);
   await context.setOffline(false); // "online" => gửi lại, vẫn bị chặn
 
+  const historyBefore = await page.evaluate(() => history.length);
   await page.reload();
   await waitScannerReady(page);
   const row = page.getByRole("listitem").filter({ hasText: "Nguyễn An" });
   await expect(row.getByText(/Đang gửi|Chưa gửi được/)).toBeVisible();
   expect(await storedQueueSizes(page)).toEqual([1]);
+  expect(await page.evaluate(() => history.length)).toBe(historyBefore); // tải lại trên mục lính gác: không đặt chồng thêm mục
 
   await page.unroute(QUET_API);
   await context.setOffline(true);
@@ -207,6 +209,21 @@ test("phiên hết hạn khi đang quét: giữ lượt, báo cần đăng nhậ
   await expect.poll(() => storedQueueSizes(page)).toEqual([]);
   const db = sql();
   try { expect((await todayMarks(db)).map((r) => r.full_name)).toEqual(["Nguyễn Chi"]); } finally { await db.end(); }
+});
+
+test("đăng xuất khi còn lượt quét chưa gửi thì hỏi trước và xóa hàng chờ khỏi máy", async ({ page }) => {
+  await login(page, reopener());
+  await openScanner(page, state().classA);
+  await page.route(QUET_API, (route) => route.abort("internetdisconnected"));
+  await feed(page, await tokenOf("Nguyễn Dũng"));
+  await expect.poll(() => storedQueueSizes(page)).toEqual([1]);
+  await page.goto("/tai-khoan");
+  await page.getByRole("button", { name: "Đăng xuất" }).click();
+  const sheet = page.getByRole("dialog", { name: "Còn lượt quét chưa gửi" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Vẫn đăng xuất" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(await storedQueueSizes(page)).toEqual([]);
 });
 
 test("em đang vắng: hỏi xác nhận rồi mới đổi; hoàn tác trả về vắng", async ({ page }) => {

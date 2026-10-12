@@ -144,10 +144,10 @@ describe("failed and rejected events", () => {
 
   it("counts failed events as unsaved, separately from those still sending", () => {
     let s = fail(enqueue(initialQueue, ev("e1", "A"), ev("e2", "B")), "e1");
-    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 1, total: 2 });
+    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 1, needsConfirm: 0, total: 2 });
     expect(pendingCount(s)).toBe(2);
     s = queueReducer(s, { type: "dismiss", eventId: "e1" });
-    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 0, total: 1 });
+    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 0, needsConfirm: 0, total: 1 });
   });
 });
 
@@ -200,5 +200,17 @@ describe("resume and auth_wait", () => {
     s = queueReducer(queueReducer(s, { type: "started", eventId: "e1" }), { type: "auth_wait", eventId: "e1" });
     expect(s.events[0]).toMatchObject({ state: "sending", inFlight: false, attempts: 0 });
     expect(unsavedSummary(s).total).toBe(1);
+  });
+});
+
+describe("needs_confirm counts as unfinished", () => {
+  it("is counted in pendingCount and unsavedSummary until the user decides", () => {
+    let s = enqueue(initialQueue, ev("e1", "A"), ev("e2", "B"));
+    s = queueReducer(s, { type: "needs_confirm", eventId: "e1", status: "absent_excused" });
+    expect(unsavedSummary(s)).toEqual({ sending: 1, failed: 0, needsConfirm: 1, total: 2 });
+    expect(pendingCount(s)).toBe(2);
+    expect(sendable(s).map((e) => e.eventId)).toEqual(["e2"]);
+    s = queueReducer(s, { type: "dismiss", eventId: "e1" });
+    expect(pendingCount(s)).toBe(1);
   });
 });

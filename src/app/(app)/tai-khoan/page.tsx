@@ -1,5 +1,6 @@
-import { LogOut, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
+import { LogoutButton } from "@/components/nav/LogoutButton";
 import { Avatar } from "@/components/ui/Avatar";
 import { Pill } from "@/components/ui/Pill";
 import { deleteSession, requireUser } from "@/lib/auth/dal";
@@ -22,11 +23,7 @@ export default async function AccountPage() {
           {user.isGradeHead && <Pill tone="action" icon={ShieldCheck} className="mt-2">Trưởng khối</Pill>}
         </div>
       </div>
-      <form action={logout}>
-        <button className="btn btn-secondary btn-lg w-full">
-          <LogOut aria-hidden size={20} />Đăng xuất
-        </button>
-      </form>
+      <LogoutButton userId={user.id} action={logout} />
     </section>
   );
 }

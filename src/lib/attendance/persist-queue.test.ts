@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_PERSISTED, PERSIST_TTL_MS, QUEUE_SCHEMA_VERSION, loadQueue, parseQueue, queueStorageKey, saveQueue, serializeQueue,
-  sweepStaleQueues, toPersisted, type PersistedEvent, type StorageLike,
+  MAX_PERSISTED, PERSIST_TTL_MS, QUEUE_SCHEMA_VERSION, clearUserQueues, countUnsentForUser, loadQueue, mergeForWrite, parseQueue,
+  persistOverflow, persistState, queueStorageKey, saveQueue, serializeQueue, sweepStaleQueues, toPersisted, type PersistedEvent, type StorageLike,
 } from "./persist-queue";
 import { initialQueue, queueReducer, type QueuedEvent, type ScanQueueState } from "./scan-queue";
 
@@ -43,23 +43,25 @@ describe("queueStorageKey", () => {
 });
 
 describe("toPersisted", () => {
-  it("keeps only unsaved events (sending, failed) with the payload needed to resend", () => {
+  it("keeps unsaved events (sending, failed) with the payload needed to resend, plus needs_confirm as display-only", () => {
     const out = toPersisted(state(
       queued("a"),
       queued("b", { state: "failed", attempts: 4 }),
       queued("c", { state: "saved", result: "applied" }),
       queued("d", { state: "rejected", message: "x" }),
-      queued("e", { state: "needs_confirm" }),
+      queued("e", { state: "needs_confirm", serverStatus: "absent_excused" }),
       queued("f", { state: "undone" }),
       queued("g", { kind: "manual", token: undefined, confirmStatus: "late", optimisticStatus: "late", inFlight: true, attempts: 2 }),
     ));
-    expect(out.map((e) => e.eventId)).toEqual(["a", "b", "g"]);
+    expect(out.map((e) => e.eventId)).toEqual(["a", "b", "e", "g"]);
     expect(out[1]).toMatchObject({ failed: true, attempts: 4 });
-    expect(out[2]).toEqual({
+    expect(out[2]).toMatchObject({ needsConfirm: true, serverStatus: "absent_excused", failed: false });
+    expect(out[2]).not.toHaveProperty("token"); // không cần gửi lại => không giữ mã thẻ
+    expect(out[3]).toEqual({
       eventId: "g", kind: "manual", studentId: "s-g", fullName: "Em g", saintName: null, mode: "present",
       confirmStatus: "late", optimisticStatus: "late", prev: null, capturedAt: "2026-10-12T08:00:00.000Z", attempts: 2, failed: false,
     });
-    expect(out[2]).not.toHaveProperty("token");
+    expect(out[3]).not.toHaveProperty("token");
   });
 
   it("caps the stored queue at the newest MAX_PERSISTED events", () => {
@@ -189,5 +191,105 @@ describe("restoring into the reducer", () => {
     s = queueReducer(s, { type: "restore", events: persisted(queued("a"), queued("b")) });
     expect(s.events.map((e) => e.eventId)).toEqual(["b", "a"]);
     expect(s.events.find((e) => e.eventId === "a")?.inFlight).toBe(true);
+  });
+});
+
+describe("needs_confirm persistence", () => {
+  it("round-trips a display-only needs_confirm event and restores it into the Cần chọn state", () => {
+    const events = toPersisted(state(queued("n", { state: "needs_confirm", serverStatus: "absent_unexcused", mode: "late" })));
+    const back = parseQueue(serializeQueue(events, NOW), NOW);
+    expect(back).toEqual(events);
+    const s = queueReducer(initialQueue, { type: "restore", events: back });
+    expect(s.events[0]).toMatchObject({ eventId: "n", state: "needs_confirm", serverStatus: "absent_unexcused", mode: "late", inFlight: false });
+    expect(s.events[0].token).toBeUndefined();
+  });
+
+  it("restored needs_confirm events are never sent and are removed on dismiss", () => {
+    let s = queueReducer(initialQueue, { type: "restore", events: toPersisted(state(queued("n", { state: "needs_confirm", serverStatus: "absent_excused" }))) });
+    s = queueReducer(s, { type: "resume" });
+    expect(s.events[0].state).toBe("needs_confirm");
+    s = queueReducer(s, { type: "dismiss", eventId: "n" });
+    expect(toPersisted(s)).toEqual([]);
+  });
+
+  it("still reads entries written before needs_confirm was persisted", () => {
+    const old = { ...toPersisted(state(queued("a")))[0] } as Record<string, unknown>;
+    delete old.needsConfirm;
+    const raw = JSON.stringify({ v: QUEUE_SCHEMA_VERSION, savedAt: NOW, events: [old] });
+    expect(parseQueue(raw, NOW).map((e) => e.eventId)).toEqual(["a"]);
+  });
+
+  it("rejects a needs_confirm entry with an invalid server status", () => {
+    const bad = { ...toPersisted(state(queued("n", { state: "needs_confirm", serverStatus: "absent_excused" })))[0], serverStatus: "nope" };
+    expect(parseQueue(JSON.stringify({ v: QUEUE_SCHEMA_VERSION, savedAt: NOW, events: [bad] }), NOW)).toEqual([]);
+  });
+});
+
+describe("cap and overflow", () => {
+  it("caps sending+failed together and reports overflow; needs_confirm does not count toward it", () => {
+    const unsent = Array.from({ length: MAX_PERSISTED }, (_, i) => queued(`u${i}`, { state: i % 2 ? "failed" : "sending" }));
+    const confirm = queued("c", { state: "needs_confirm", serverStatus: "absent_excused" });
+    expect(persistOverflow(state(...unsent, confirm))).toBe(false);
+    expect(toPersisted(state(...unsent, confirm))).toHaveLength(MAX_PERSISTED + 1);
+    const over = state(...unsent, queued("extra"), confirm);
+    expect(persistOverflow(over)).toBe(true);
+    const out = toPersisted(over);
+    expect(out.filter((e) => !e.needsConfirm)).toHaveLength(MAX_PERSISTED);
+    expect(out.map((e) => e.eventId)).not.toContain("u0");
+  });
+});
+
+describe("mergeForWrite (two tabs on the same session)", () => {
+  const p = (id: string) => toPersisted(state(queued(id)))[0];
+
+  it("keeps the other tab's entries that this tab never saw, and drops ones this tab saw (saved or dismissed here)", () => {
+    const stored = [p("other1"), p("mine-saved"), p("other2")];
+    const mine = [p("mine-new")];
+    const seen = new Set(["mine-saved", "mine-new"]);
+    expect(mergeForWrite(stored, mine, seen).map((e) => e.eventId)).toEqual(["other1", "other2", "mine-new"]);
+  });
+
+  it("prefers this tab's copy of an event and never duplicates", () => {
+    const stored = [{ ...p("x"), attempts: 1 }];
+    const mine = [{ ...p("x"), attempts: 3 }];
+    expect(mergeForWrite(stored, mine, new Set(["x"]))).toEqual(mine);
+    expect(mergeForWrite(stored, mine, new Set())).toEqual(mine);
+  });
+});
+
+describe("logout helpers", () => {
+  it("counts only unsent entries (not needs_confirm) of that user across sessions", () => {
+    const store = memoryStorage({
+      [queueStorageKey("u1", "ss1")]: serializeQueue(toPersisted(state(queued("a"), queued("b", { state: "failed" }))), NOW),
+      [queueStorageKey("u1", "ss2")]: serializeQueue(toPersisted(state(queued("c"), queued("n", { state: "needs_confirm", serverStatus: "absent_excused" }))), NOW),
+      [queueStorageKey("u2", "ss1")]: serializeQueue(toPersisted(state(queued("d"))), NOW),
+    });
+    expect(countUnsentForUser(store, "u1", NOW)).toBe(3);
+    expect(countUnsentForUser(null, "u1", NOW)).toBe(0);
+  });
+
+  it("clears every queue key of that user only", () => {
+    const store = memoryStorage({
+      [queueStorageKey("u1", "ss1")]: "x", [queueStorageKey("u1", "ss2")]: "y", [queueStorageKey("u2", "ss1")]: "z", other: "keep",
+    });
+    expect(clearUserQueues(store, "u1")).toBe(2);
+    expect([...store.data.keys()].sort()).toEqual([queueStorageKey("u2", "ss1"), "other"].sort());
+    expect(clearUserQueues(memoryStorage({}, { broken: true }), "u1")).toBe(0);
+  });
+});
+
+describe("persistState", () => {
+  const key = queueStorageKey("u1", "ss1");
+
+  it("writes this tab's queue merged with another tab's unseen entries", () => {
+    const store = memoryStorage({ [key]: serializeQueue(toPersisted(state(queued("other"), queued("gone"))), NOW) });
+    expect(persistState(store, key, state(queued("mine")), new Set(["mine", "gone"]), NOW)).toBe(true);
+    expect(loadQueue(store, key, NOW).map((e) => e.eventId)).toEqual(["other", "mine"]);
+  });
+
+  it("reports failure on quota errors and on overflow", () => {
+    expect(persistState(memoryStorage({}, { quota: true }), key, state(queued("a")), new Set(["a"]), NOW)).toBe(false);
+    const many = Array.from({ length: MAX_PERSISTED + 1 }, (_, i) => queued(`e${i}`));
+    expect(persistState(memoryStorage(), key, state(...many), new Set(), NOW)).toBe(false);
   });
 });

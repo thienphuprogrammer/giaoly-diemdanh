@@ -1,6 +1,6 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { loadQueue, queueStorageKey, saveQueue, sweepStaleQueues, toPersisted, type StorageLike } from "@/lib/attendance/persist-queue";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { loadQueue, persistState, queueStorageKey, sweepStaleQueues, type StorageLike } from "@/lib/attendance/persist-queue";
 import { filterRoster } from "@/lib/attendance/roster-search";
 import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pendingCount, queueReducer, recentEvents, sendable, summarizeQueue, unsavedSummary, type QueuedEvent, type ScanAction } from "@/lib/attendance/scan-queue";
 import { decideScan, type CurrentMark, type ScanMode } from "@/lib/attendance/scan-rules";
@@ -44,7 +44,8 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   const [roster, setRoster] = useState<ScanRosterEntry[] | null>(null);
   const [rosterError, setRosterError] = useState(false);
   const [mode, setStoredMode] = useRememberedScanMode(sessionId);
-  const [queue, applyAction] = useReducer(queueReducer, initialQueue);
+  /** Bản hiển thị của hàng; nguồn thật là `queueRef` (cập nhật đồng bộ trong `dispatch`). */
+  const [queue, setQueue] = useState(initialQueue);
   /** Máy chủ trả 401: tạm dừng gửi, giữ hàng (đã lưu bền) cho tới khi đăng nhập lại. */
   const [authRequired, setAuthRequired] = useState(false);
   /** Không ghi được hàng chờ vào bộ nhớ máy (hết dung lượng/bị chặn): đóng trang lúc này sẽ mất lượt chưa gửi. */
@@ -63,18 +64,22 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   const undoIds = useRef(new Map<string, string>()); // lượt quét -> mã lượt hoàn tác, để gửi lại hoàn tác là idempotent
   const modeRef = useRef(mode);
   useLayoutEffect(() => { modeRef.current = mode; }, [mode]); // chế độ nhớ trong buổi được đọc sau khi hydrate
-  /** Bản mới nhất của hàng (đi trước lần render): quyết định đồng bộ và ghi bền ngay khi có thay đổi. */
+  /** Nguồn thật của hàng (đi trước lần render): quyết định đồng bộ và ghi bền ngay khi có thay đổi. */
   const queueRef = useRef(initialQueue);
+  /** Mọi eventId tab này từng có: khi ghi, mục lạ trong bộ nhớ là của tab khác cùng buổi và được giữ lại. */
+  const seenIds = useRef(new Set<string>());
   const storageKey = queueStorageKey(userId, sessionId);
 
   const setMode = useCallback((m: ScanMode) => { modeRef.current = m; setStoredMode(m); }, [setStoredMode]);
 
-  /** Mọi thay đổi hàng đi qua đây: áp dụng reducer (thuần) rồi ghi ngay các lượt chưa lưu vào localStorage. */
+  /** Mọi thay đổi hàng đi qua đây: áp dụng reducer (thuần) rồi ghi ngay các lượt chưa xong vào localStorage. */
   const dispatch = useCallback((action: ScanAction) => {
     const next = queueReducer(queueRef.current, action);
+    if (next === queueRef.current) return;
     queueRef.current = next;
-    applyAction(action);
-    setPersistFailed(saveQueue(localStore(), storageKey, toPersisted(next), Date.now()) === "failed");
+    for (const e of next.events) seenIds.current.add(e.eventId);
+    setQueue(next);
+    setPersistFailed(!persistState(localStore(), storageKey, next, seenIds.current, Date.now()));
   }, [storageKey]);
 
   const writeMarks = useCallback((changes: Iterable<[string, CurrentMark | null]>) => {

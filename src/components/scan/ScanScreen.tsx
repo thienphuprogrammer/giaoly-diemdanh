@@ -233,10 +233,11 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
         <Sheet label={s.pending > 0 ? "Còn lượt chưa lưu" : "Đã lưu hết"} onClose={guard.stay}>
           {s.pending > 0 ? (
             <>
-              <p className="font-display text-lg font-semibold">Còn {s.unsaved.total} lượt chưa lưu</p>
+              <p className="font-display text-lg font-semibold">Còn {s.unsaved.total} lượt chưa xong</p>
               <ul className="text-ink-soft" role="status">
                 {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về bảng điểm danh.</li>}
                 {s.unsaved.failed > 0 && <li>{s.unsaved.failed} lượt chưa gửi được: thử gửi lại, hoặc ghi tay trên bảng điểm danh.</li>}
+                {s.unsaved.needsConfirm > 0 && <li>{s.unsaved.needsConfirm} em đang vắng cần chọn Có mặt/Đi muộn: bấm “Cần chọn” trong danh sách.</li>}
               </ul>
               <p className="text-sm text-ink-soft">
                 {s.persistFailed

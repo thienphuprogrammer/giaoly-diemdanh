@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { armGuard, guardPop, guardLeave, initialHistoryGuard, type HistoryGuardState } from "./history-guard";
+import { armGuard, guardClick, guardPop, guardLeave, initialHistoryGuard, mountGuard, type HistoryGuardState } from "./history-guard";
 
 const armed: HistoryGuardState = { armed: true, exiting: null };
 
@@ -55,5 +55,49 @@ describe("guardLeave (user chose to leave)", () => {
 
   it("goes back past the sentinel and the page itself for Back", () => {
     expect(guardLeave(armed, { kind: "back" })).toEqual({ state: { armed: false, exiting: { kind: "back" } }, effect: { kind: "go", delta: -2 } });
+  });
+});
+
+describe("mountGuard (page loaded on a sentinel entry, e.g. after reload)", () => {
+  it("starts armed without pushing another entry, so entries do not accumulate", () => {
+    const s = mountGuard(true);
+    expect(s).toEqual(armed);
+    expect(armGuard(s, true).effect).toEqual({ kind: "none" });
+    expect(guardPop(s, false).effect).toEqual({ kind: "back" }); // Back is not a dead press
+  });
+
+  it("starts unarmed on a normal entry", () => {
+    expect(mountGuard(false)).toEqual(initialHistoryGuard);
+  });
+});
+
+describe("guardClick (in-app link clicked)", () => {
+  it("asks while something is unsaved", () => {
+    expect(guardClick(armed, true)).toBe("prompt");
+    expect(guardClick(initialHistoryGuard, true)).toBe("prompt");
+  });
+
+  it("leaves through the sentinel when saved but still armed (removes the stale same-URL entry)", () => {
+    expect(guardClick(armed, false)).toBe("leave");
+    const step = guardLeave(armed, { kind: "href", href: "/lop/1/thong-ke" });
+    expect(step.effect).toEqual({ kind: "back" });
+    expect(guardPop(step.state, false)).toEqual({ state: initialHistoryGuard, effect: { kind: "navigate", href: "/lop/1/thong-ke" } });
+  });
+
+  it("lets the browser handle it when not armed or already leaving", () => {
+    expect(guardClick(initialHistoryGuard, false)).toBe("ignore");
+    expect(guardClick({ armed: false, exiting: { kind: "back" } }, true)).toBe("ignore");
+  });
+});
+
+describe("hard navigation (full page load, e.g. re-login)", () => {
+  it("pops the sentinel first, then loads the page", () => {
+    const step = guardLeave(armed, { kind: "href", href: "/login", hard: true });
+    expect(step.effect).toEqual({ kind: "back" });
+    expect(guardPop(step.state, true).effect).toEqual({ kind: "navigate", href: "/login", hard: true });
+  });
+
+  it("loads straight away when not armed", () => {
+    expect(guardLeave(initialHistoryGuard, { kind: "href", href: "/login", hard: true }).effect).toEqual({ kind: "navigate", href: "/login", hard: true });
   });
 });
