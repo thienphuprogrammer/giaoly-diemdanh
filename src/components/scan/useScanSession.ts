@@ -7,7 +7,7 @@ import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pen
 import { decideScan, type CurrentMark, type ScanMode } from "@/lib/attendance/scan-rules";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { parseQrPayload } from "@/lib/qr/payload";
-import { markRemainingAbsentAction } from "@/app/(app)/lop/[classId]/diem-danh/[date]/actions";
+import { markRemainingAbsentAction } from "@/server/actions/attendance";
 import type { ScanRosterEntry } from "@/server/services/scan";
 import { fetchRoster, sendScan, sendUndo, type RosterResponse } from "./api";
 import { playScanFeedback } from "./feedback";
@@ -56,6 +56,9 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   /** Không ghi được hàng chờ vào bộ nhớ máy (hết dung lượng/bị chặn): đóng trang lúc này sẽ mất lượt chưa gửi. */
   const [persistFailed, setPersistFailed] = useState(false);
   const [absent, setAbsent] = useState<AbsentState>({ phase: "idle" });
+  /** Số lần đánh vắng mà lần gửi THẬT chưa xong (kể cả đã quá hạn chờ): khoá rời trang/gửi lần nữa tới khi có kết quả thật. */
+  const [absentInFlight, setAbsentInFlight] = useState(0);
+  const absentInFlightRef = useRef(0);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [tick, setTick] = useState(0); // đánh thức hàm gửi khi hết thời gian chờ thử lại (xem effect bên dưới)
@@ -324,11 +327,11 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
    * Xong thì cập nhật dấu ngay và tải lại bảng tra để danh sách "chưa điểm danh" khớp máy chủ.
    */
   const markRemainingAbsent = useCallback(async () => {
-    if (pendingCount(queueRef.current) > 0 || absent.phase === "saving") return;
+    if (pendingCount(queueRef.current) > 0 || absentInFlightRef.current > 0) return;
     // Quá hạn chờ thì báo lỗi (có thể thử lại); nếu kết quả thật đến muộn và thành công thì vẫn áp dụng.
     await runBulk(() => markRemainingAbsentAction({ sessionId }), ABSENT_TIMEOUT_MS, {
-      start: () => setAbsent({ phase: "saving" }),
-      end: () => {},
+      start: () => { absentInFlightRef.current += 1; setAbsentInFlight(absentInFlightRef.current); setAbsent({ phase: "saving" }); },
+      end: () => { absentInFlightRef.current -= 1; setAbsentInFlight(absentInFlightRef.current); },
       error: (message) => { if (message) setAbsent({ phase: "error", message }); },
       done: (data) => {
         writeMarks(data.studentIds.map((id) => [id, { status: "absent_unexcused" as const, reason: null }] as const));
@@ -336,8 +339,9 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
         void loadRoster();
       },
     });
-  }, [sessionId, absent.phase, writeMarks, loadRoster]);
-  const clearAbsent = useCallback(() => setAbsent({ phase: "idle" }), []);
+  }, [sessionId, writeMarks, loadRoster]);
+  /** Xoá kết quả đã hiện (xong/lỗi); đang lưu thì giữ nguyên. */
+  const clearAbsent = useCallback(() => setAbsent((a) => (a.phase === "saving" ? a : { phase: "idle" })), []);
 
   // Cầu nối chỉ bật khi build E2E (NEXT_PUBLIC_E2E_SCAN_BRIDGE=1): cho kiểm thử đưa mã đã giải vào mà không cần camera.
   useEffect(() => {
@@ -350,5 +354,5 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   const unmarked = useMemo(() => (roster ?? []).filter((s) => !marksView.get(s.studentId)), [roster, marksView]);
   const search = useCallback((q: string) => filterRoster(roster ?? [], q), [roster]);
 
-  return { roster, rosterError, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, absent, markRemainingAbsent, clearAbsent, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
+  return { roster, rosterError, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, absent, absentInFlight, markRemainingAbsent, clearAbsent, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
 }

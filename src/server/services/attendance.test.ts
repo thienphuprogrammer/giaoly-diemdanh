@@ -318,18 +318,29 @@ describe("markRemainingAbsent", () => {
     expect(r.ok && r.data.marked).toBe(0);
   });
 
-  it("is not confused with markAllPresent undo (rows have no batch id)", async () => {
+  it("is not confused with markAllPresent undo: undoing a real batch keeps absent rows and vice versa", async () => {
+    const { db, b, mk, open } = await setup();
+    const [an, binh, chi] = [await mk("An"), await mk("Bình"), await mk("Chi")];
+    const sessionId = await open("2026-10-11");
+    const batch = await markAllPresent(db, b.glv, { sessionId }); // An, Bình, Chi có mặt
+    if (!batch.ok) throw new Error(batch.error);
+    await setStatus(db, b.glv, { sessionId, studentId: chi.id, status: null, reason: null });
+    const absent = await markRemainingAbsent(db, b.glv, { sessionId }); // chỉ Chi chưa có dòng
+    expect(absent.ok && absent.data.studentIds).toEqual([chi.id]);
+    const undone = await undoMarkAllPresent(db, b.glv, { sessionId, batchId: batch.data.batchId });
+    expect(undone.ok && [...undone.data.studentIds].sort()).toEqual([an.id, binh.id].sort());
+    const rows = await rowsOf(db, sessionId);
+    expect(rows.map((x) => [x.studentId, x.status])).toEqual([[chi.id, "absent_unexcused"]]);
+  });
+
+  it("only touches students of the session's class", async () => {
     const { db, b, mk, open } = await setup();
     const an = await mk("An");
-    await mk("Bình");
+    const [other] = await db.insert(students).values({ classId: b.otherClassId, fullName: "Khác lớp" }).returning();
     const sessionId = await open("2026-10-11");
-    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "present", reason: null });
-    await markRemainingAbsent(db, b.glv, { sessionId });
-    const batch = await markAllPresent(db, b.glv, { sessionId });
-    expect(batch.ok && batch.data.marked).toBe(0); // không còn em nào chưa có dòng
-    const undone = await undoMarkAllPresent(db, b.glv, { sessionId, batchId: crypto.randomUUID() });
-    expect(undone.ok && undone.data.studentIds).toEqual([]);
-    expect((await rowsOf(db, sessionId)).filter((x) => x.status === "absent_unexcused")).toHaveLength(1);
+    const r = await markRemainingAbsent(db, b.glv, { sessionId });
+    expect(r.ok && r.data.studentIds).toEqual([an.id]);
+    expect((await db.select().from(attendance)).some((x) => x.studentId === other.id)).toBe(false);
   });
 
   it("rejects cancelled (holiday) sessions without writing", async () => {

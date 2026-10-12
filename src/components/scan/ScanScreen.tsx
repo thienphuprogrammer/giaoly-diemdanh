@@ -30,7 +30,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
   const [query, setQuery] = useState("");
   const [review, setReview] = useState(false);
   const [absentOpen, setAbsentOpen] = useState(false);
-  const absentSaving = s.absent.phase === "saving";
+  const absentSaving = s.absentInFlight > 0;
   const busyCount = s.pending + (absentSaving ? 1 : 0); // đánh vắng đang lưu cũng chặn rời trang
   const guard = useLeaveGuard(busyCount, { navigate: "replace" });
   const leaving = guard.target !== null;
@@ -236,7 +236,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
           {s.absent.phase === "done" && (
             <Notice tone="success" role="status">{s.absent.marked > 0 ? `Đã đánh vắng ${s.absent.marked} em.` : "Không còn em nào cần đánh vắng."}</Notice>
           )}
-          {s.absent.phase === "saving" && <Notice tone="info" role="status">Đang lưu…</Notice>}
+          {absentSaving && <Notice tone="info" role="status">Đang lưu…</Notice>}
           {s.absent.phase === "error" && (
             <Notice tone="error" role="alert">
               <p>{s.absent.message}</p>

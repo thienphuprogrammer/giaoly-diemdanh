@@ -5,7 +5,8 @@ import { runBulk, runStatusSave } from "@/lib/attendance/board-save";
 import { boardReducer, initBoardState, pendingCount, saveChip } from "@/lib/attendance/board-state";
 import { createSequencer, initialMarks, type Mark } from "@/lib/attendance/marks";
 import type { Board } from "@/server/services/attendance";
-import { markAllPresentAction, markRemainingAbsentAction, setCancelledAction, setStatusAction, undoMarkAllPresentAction } from "./actions";
+import { markRemainingAbsentAction } from "@/server/actions/attendance";
+import { markAllPresentAction, setCancelledAction, setStatusAction, undoMarkAllPresentAction } from "./actions";
 
 export const SAVE_TIMEOUT_MS = 10_000;
 export const UNDO_MS = 8_000;
@@ -84,7 +85,7 @@ export function useBoardSaves(board: Board, renderId: string) {
 
   const bulk = <T,>(send: () => Promise<{ ok: true; data: T } | { ok: false; error: string }>, done: (data: T) => void) =>
     runBulk(send, SAVE_TIMEOUT_MS, {
-      start: () => setBulkPending((n) => n + 1),
+      start: () => { setBulkPending((n) => n + 1); setAbsentFailed(false); },
       end: () => setBulkPending((n) => n - 1),
       error: setError,
       done,
@@ -99,7 +100,7 @@ export function useBoardSaves(board: Board, renderId: string) {
 
   /** Kết thúc buổi: đánh vắng các em chưa có dấu. Đếm như một thao tác đang lưu (chip, chặn rời trang); lỗi thì báo kèm "Thử lại". */
   const markRemainingAbsent = () => runBulk(() => markRemainingAbsentAction({ sessionId }), SAVE_TIMEOUT_MS, {
-    start: () => setBulkPending((n) => n + 1),
+    start: () => { setBulkPending((n) => n + 1); setAbsentFailed(false); },
     end: () => setBulkPending((n) => n - 1),
     error: (m) => { setError(m); setAbsentFailed(m !== null); },
     done: (d) => {

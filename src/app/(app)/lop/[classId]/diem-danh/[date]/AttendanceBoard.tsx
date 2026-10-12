@@ -116,7 +116,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
       {saves.error && (
         <Notice tone="error" role="alert">
           <p>{saves.error}</p>
-          {saves.absentFailed && (
+          {saves.absentFailed && remaining.length > 0 && (
             <button type="button" onClick={() => setConfirmAbsent(true)} className="btn btn-secondary btn-sm mt-2">Thử lại đánh vắng</button>
           )}
         </Notice>

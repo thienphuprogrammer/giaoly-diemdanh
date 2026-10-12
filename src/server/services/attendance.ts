@@ -72,6 +72,28 @@ export async function setStatus(db: Db, user: AppUser, input: unknown): Promise<
 }
 
 /**
+ * Chèn một dòng `status` cho mọi em đang hoạt động của lớp CHƯA có dòng trong buổi (không đụng dòng có sẵn;
+ * `onConflictDoNothing` để hai thiết bị cùng bấm không ghi chồng). Trả về id các em vừa được ghi.
+ */
+async function fillUnmarked(
+  db: Db, user: AppUser, session: typeof sessions.$inferSelect,
+  status: "present" | "absent_unexcused", lastEventId: string | null,
+): Promise<string[]> {
+  const roster = await db.select({ id: students.id }).from(students)
+    .where(and(eq(students.classId, session.classId), eq(students.active, true)));
+  const markedIds = new Set(
+    (await db.select({ id: attendance.studentId }).from(attendance).where(eq(attendance.sessionId, session.id))).map((m) => m.id),
+  );
+  const missing = roster.filter((s) => !markedIds.has(s.id));
+  if (missing.length === 0) return [];
+  const inserted = await db.insert(attendance)
+    .values(missing.map((m) => ({ sessionId: session.id, studentId: m.id, status, updatedBy: user.id, lastEventId })))
+    .onConflictDoNothing()
+    .returning({ id: attendance.studentId });
+  return inserted.map((r) => r.id);
+}
+
+/**
  * Điền "có mặt" cho các em chưa có dấu. Mọi dòng của một lần bấm mang chung `lastEventId = batchId`
  * để hoàn tác đúng các dòng đó (dòng bị sửa sau đó có `lastEventId` khác nên không bị xoá).
  */
@@ -81,18 +103,9 @@ export async function markAllPresent(db: Db, user: AppUser, input: unknown): Pro
   const session = await loadWritableSession(db, user, p.data.sessionId);
   if (!session) return fail(NOT_FOUND_SESSION);
   if (session.cancelled) return fail(CANCELLED);
-  const roster = await db.select({ id: students.id }).from(students)
-    .where(and(eq(students.classId, session.classId), eq(students.active, true)));
-  const markedIds = new Set(
-    (await db.select({ id: attendance.studentId }).from(attendance).where(eq(attendance.sessionId, session.id))).map((m) => m.id),
-  );
-  const missing = roster.filter((s) => !markedIds.has(s.id));
   const batchId = crypto.randomUUID();
-  const inserted = missing.length === 0 ? [] : await db.insert(attendance)
-    .values(missing.map((m) => ({ sessionId: session.id, studentId: m.id, status: "present" as const, updatedBy: user.id, lastEventId: batchId })))
-    .onConflictDoNothing()
-    .returning({ id: attendance.studentId });
-  return ok({ marked: inserted.length, batchId, studentIds: inserted.map((r) => r.id) });
+  const studentIds = await fillUnmarked(db, user, session, "present", batchId);
+  return ok({ marked: studentIds.length, batchId, studentIds });
 }
 
 /** Hoàn tác một lần "Tất cả có mặt": xoá các dòng vẫn còn nguyên từ lần đó; trả về id các em đã xoá. */
@@ -120,17 +133,8 @@ export async function markRemainingAbsent(db: Db, user: AppUser, input: unknown)
   const session = await loadWritableSession(db, user, p.data.sessionId);
   if (!session) return fail(NOT_FOUND_SESSION);
   if (session.cancelled) return fail(CANCELLED);
-  const roster = await db.select({ id: students.id }).from(students)
-    .where(and(eq(students.classId, session.classId), eq(students.active, true)));
-  const markedIds = new Set(
-    (await db.select({ id: attendance.studentId }).from(attendance).where(eq(attendance.sessionId, session.id))).map((m) => m.id),
-  );
-  const missing = roster.filter((s) => !markedIds.has(s.id));
-  const inserted = missing.length === 0 ? [] : await db.insert(attendance)
-    .values(missing.map((m) => ({ sessionId: session.id, studentId: m.id, status: "absent_unexcused" as const, updatedBy: user.id, lastEventId: null })))
-    .onConflictDoNothing()
-    .returning({ id: attendance.studentId });
-  return ok({ marked: inserted.length, studentIds: inserted.map((r) => r.id) });
+  const studentIds = await fillUnmarked(db, user, session, "absent_unexcused", null);
+  return ok({ marked: studentIds.length, studentIds });
 }
 
 export async function setCancelled(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {
