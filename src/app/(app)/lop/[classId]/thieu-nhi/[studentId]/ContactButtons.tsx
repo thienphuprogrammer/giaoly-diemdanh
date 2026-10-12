@@ -4,14 +4,16 @@ import { phoneLinks } from "@/lib/phone";
 const BTN = "btn btn-secondary min-h-11 flex-1 basis-[6.5rem]";
 
 /** Nút liên hệ phụ huynh. Không có số (hoặc số cũ sai định dạng) thì ẩn nút và nhắc người dùng. */
-export function ContactButtons({ phone }: { phone: string | null }) {
+export function ContactButtons({ phone, canWrite }: { phone: string | null; canWrite: boolean }) {
   const links = phoneLinks(phone);
   if (!links) {
     return (
       <p className="flex items-start gap-2 text-sm text-ink-soft">
         <PhoneOff aria-hidden size={18} className="mt-0.5 shrink-0" />
         <span>
-          {phone ? `Số "${phone}" chưa đúng định dạng. Bấm "Sửa ghi chú và SĐT" để nhập lại.` : "Chưa có số phụ huynh. Bấm \"Sửa ghi chú và SĐT\" để thêm."}
+          {phone
+            ? `Số "${phone}" chưa đúng định dạng.${canWrite ? ' Bấm "Sửa ghi chú và SĐT" để nhập lại.' : " Nhờ giáo lý viên phụ trách cập nhật."}`
+            : `Chưa có số phụ huynh.${canWrite ? ' Bấm "Sửa ghi chú và SĐT" để thêm.' : ""}`}
         </span>
       </p>
     );

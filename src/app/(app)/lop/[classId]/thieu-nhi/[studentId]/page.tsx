@@ -48,7 +48,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
 
       <div className="card flex flex-col gap-3 p-4">
         <h3 className="text-base font-semibold">Phụ huynh</h3>
-        <ContactButtons phone={student.parentPhone} />
+        <ContactButtons phone={student.parentPhone} canWrite={canWrite} />
         {student.parentPhone && <p className="text-sm tabular-nums text-ink-soft"><span className="sr-only">SĐT phụ huynh </span>{student.parentPhone}</p>}
       </div>
 
@@ -65,15 +65,16 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       <div className="card flex flex-col gap-3 p-4">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="text-base font-semibold">Chuyên cần {term?.name ?? ""}</h3>
-          <p className="font-display text-2xl font-semibold tabular-nums" aria-label={percent === null ? "Chưa có buổi điểm danh" : `Tỉ lệ có mặt ${percent} phần trăm`}>
-            {percent === null ? "—" : `${percent}%`}
+          <p className="font-display text-2xl font-semibold tabular-nums">
+            <span className="sr-only">{percent === null ? "Chưa có buổi điểm danh" : "Tỉ lệ có mặt "}</span>
+            <span aria-hidden={percent === null}>{percent === null ? "—" : `${percent}%`}</span>
           </p>
         </div>
         <dl className="grid grid-cols-4 gap-2">
           {COUNTS.map((c) => (
-            <div key={c.key} className="flex flex-col items-center rounded-control bg-surface-muted py-2">
-              <dd className={`order-2 font-display text-lg font-semibold tabular-nums ${c.key === "unexcused" && summary.unexcused > 0 ? "text-st-unexcused" : "text-ink"}`}>{summary[c.key]}</dd>
-              <dt className="order-1 text-center text-xs text-ink-soft"><span aria-hidden>{STATUS_META[c.status].short}</span><span className="sr-only">{c.label}</span></dt>
+            <div key={c.key} className="flex flex-col-reverse items-center rounded-control bg-surface-muted py-2">
+              <dd className={`font-display text-lg font-semibold tabular-nums ${c.key === "unexcused" && summary.unexcused > 0 ? "text-st-unexcused" : "text-ink"}`}>{summary[c.key]}</dd>
+              <dt className="text-center text-xs text-ink-soft"><span aria-hidden>{STATUS_META[c.status].short}</span><span className="sr-only">{c.label}</span></dt>
             </div>
           ))}
         </dl>

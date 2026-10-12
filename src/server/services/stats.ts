@@ -17,11 +17,11 @@ export interface StatRow {
 
 type Roster = Awaited<ReturnType<typeof rosterOf>>;
 
-function buildRows(roster: Roster, records: { studentId: string; status: AttendanceStatus }[]): (StatRow & { parentPhone: string | null })[] {
+function buildRows(roster: Roster, records: { studentId: string; status: AttendanceStatus }[]): StatRow[] {
   const byStudent = new Map<string, { status: AttendanceStatus }[]>();
   for (const r of records) byStudent.set(r.studentId, [...(byStudent.get(r.studentId) ?? []), { status: r.status }]);
   return roster.map((s) => ({
-    studentId: s.id, classId: s.classId, fullName: s.fullName, saintName: s.saintName, parentPhone: s.parentPhone,
+    studentId: s.id, classId: s.classId, fullName: s.fullName, saintName: s.saintName,
     summary: summarize(byStudent.get(s.id) ?? []),
   }));
 }
@@ -58,11 +58,12 @@ export async function attentionList(db: Db, user: AppUser, termId: string): Prom
   const ids = visible.map((c) => c.id);
   const names = new Map(visible.map((c) => [c.id, c.name]));
   const [roster, records] = await Promise.all([rosterOf(db, ids), termRecords(db, ids, term.id)]);
+  const phones = new Map(roster.map((s) => [s.id, s.parentPhone]));
   return buildRows(roster, records)
     .filter((r) => r.summary.warning.level !== "none")
     .map((r) => ({
       classId: r.classId, className: names.get(r.classId) ?? "", studentId: r.studentId, fullName: r.fullName,
-      level: r.summary.warning.level as "watch" | "warning", unexcused: r.summary.unexcused, parentPhone: r.parentPhone,
+      level: r.summary.warning.level as "watch" | "warning", unexcused: r.summary.unexcused, parentPhone: phones.get(r.studentId) ?? null,
     }))
     .sort((a, b) =>
       Number(b.level === "warning") - Number(a.level === "warning") ||

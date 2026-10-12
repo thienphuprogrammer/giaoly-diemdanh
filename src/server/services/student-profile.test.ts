@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attendance, sessions, students } from "@/db/schema";
+import { attendance, sessions, students, users } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import { getStudentProfile } from "./student-profile";
@@ -54,6 +54,12 @@ describe("getStudentProfile", () => {
     expect(await getStudentProfile(db, b.glv, { classId: b.classId, studentId: "00000000-0000-4000-8000-000000000000", today: TODAY })).toBeNull();
     expect(await getStudentProfile(db, b.glv, { classId: b.classId, studentId: "not-a-uuid", today: TODAY })).toBeNull();
     expect(await getStudentProfile(db, b.otherGlv, { classId: b.otherClassId, studentId: kid.id, today: TODAY })).toBeNull();
+  });
+
+  it("is null for a grade head of another grade", async () => {
+    const { db, b, kid } = await setup();
+    const [otherHead] = await db.insert(users).values({ email: "head2@x.vn", name: "h2", passwordHash: "x", isGradeHead: true, gradeId: b.otherGradeId }).returning();
+    expect(await getStudentProfile(db, otherHead, { classId: b.classId, studentId: kid.id, today: TODAY })).toBeNull();
   });
 
   it("never carries the qr token", async () => {

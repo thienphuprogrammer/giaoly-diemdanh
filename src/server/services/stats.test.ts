@@ -32,6 +32,14 @@ describe("classStats", () => {
     expect(stats!.className).toBe("Lớp A");
   });
 
+  it("rows carry no parentPhone key", async () => {
+    const { db, b, kid } = await setup();
+    await kid("An", { parentPhone: "0901234567" });
+    const stats = await classStats(db, b.glv, b.classId, b.termId);
+    expect(Object.keys(stats!.rows[0])).not.toContain("parentPhone");
+    expect(JSON.stringify(stats)).not.toContain("0901234567");
+  });
+
   it("ignores cancelled sessions and hidden students", async () => {
     const { db, b, kid, session, mark } = await setup();
     const an = await kid("An");

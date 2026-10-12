@@ -58,6 +58,8 @@ test("mở hồ sơ từ Cần chú ý, có nút Gọi phụ huynh khi có số"
   await expect(page.getByText("Chưa có số phụ huynh")).toBeVisible();
   await expect(page.getByRole("link", { name: /Gọi phụ huynh Phạm/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Gọi phụ huynh/ })).toHaveAttribute("href", "tel:0901234567");
+  const call = page.getByRole("link", { name: /Gọi phụ huynh/ });
+  expect((await call.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await page.getByRole("link", { name: "Phạm Chưa Số" }).click();
   await expect(page).toHaveURL(new RegExp(`/thieu-nhi/${state().kidNoPhone}$`));
   await expect(page.getByRole("heading", { name: "Phạm Chưa Số" })).toBeVisible();
@@ -88,10 +90,23 @@ test("trưởng khối không được phân công chỉ đọc: thấy hồ sơ
   await expect(page.getByRole("link", { name: "Gọi", exact: true })).toBeVisible();
 });
 
+test("trưởng khối chỉ đọc thấy hồ sơ em chưa có số mà không bị bảo bấm Sửa", async ({ page }) => {
+  await login(page, "head-a@e2e.vn");
+  await page.goto(`/lop/${state().classP}/thieu-nhi/${state().kidNoPhone}`);
+  await expect(page.getByText("Chưa có số phụ huynh.")).toBeVisible();
+  await expect(page.getByText(/Bấm "Sửa/)).toHaveCount(0);
+});
+
 test("người ngoài quyền đọc lớp và id lạ đều nhận 404 như nhau", async ({ page }) => {
   await login(page, "glv-b@e2e.vn");
   const outsider = await page.goto(`/lop/${state().classP}/thieu-nhi/${state().kidWithPhone}`);
   expect(outsider!.status()).toBe(404);
   const unknown = await page.goto(`/lop/${state().classP}/thieu-nhi/00000000-0000-4000-8000-000000000000`);
   expect(unknown!.status()).toBe(404);
+});
+
+test("trưởng khối của khối khác nhận 404 như người lạ", async ({ page }) => {
+  await login(page, "head-b@e2e.vn");
+  const res = await page.goto(`/lop/${state().classP}/thieu-nhi/${state().kidWithPhone}`);
+  expect(res!.status()).toBe(404);
 });
