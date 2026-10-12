@@ -10,7 +10,10 @@ import { requireUser } from "@/lib/auth/dal";
 import { dateLabel } from "@/lib/date-label";
 import { todayInVietnam } from "@/lib/dates";
 import { classPermissions } from "@/server/guard";
+import { getClassSchedule } from "@/server/services/class-schedule";
+import { setClassScheduleAction } from "./actions";
 import { OpenDate } from "./OpenDate";
+import { ScheduleForm } from "./ScheduleForm";
 
 export default async function ClassHomePage({ params }: { params: Promise<{ classId: string }> }) {
   const { classId } = await params;
@@ -19,7 +22,7 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
   if (!perms.canRead) notFound();
   const today = todayInVietnam();
   const sunday = massSundayFor(today); // hôm nay nếu là Chúa nhật, không thì Chúa nhật vừa qua
-  const sessions = await listSessions(db, classId);
+  const [sessions, schedule] = await Promise.all([listSessions(db, classId), getClassSchedule(db, user, classId)]);
   return (
     <section className="flex flex-col gap-6">
       {perms.canWrite && (
@@ -41,6 +44,10 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
             <OpenDate classId={classId} today={today} />
           </div>
         </div>
+      )}
+      {schedule && (
+        <ScheduleForm classId={classId} meetsOn={schedule.meetsOn} meetsAt={schedule.meetsAt} label={schedule.label}
+          canEdit={schedule.canEdit} action={setClassScheduleAction} />
       )}
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Các buổi gần đây</h2>

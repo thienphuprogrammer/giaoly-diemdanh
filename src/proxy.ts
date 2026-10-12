@@ -50,6 +50,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Bỏ qua tài nguyên tĩnh công khai. iOS tải apple-touch-icon và ảnh khởi động (splash/*.png) không kèm cookie: chỉ đúng
-  // các tệp .png đó, đường dẫn khác cùng tiền tố vẫn qua proxy.
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*|apple-icon.*|apple-touch-icon(?:-precomposed)?\\.png$|splash/[\\w-]+\\.png$).*)"],
+  // các tệp .png đó, đường dẫn khác cùng tiền tố vẫn qua proxy. Service worker `/sw.js` (chỉ push, công khai) phải tải/cập
+  // nhật được cả khi phiên hết hạn: trình duyệt không theo chuyển hướng sang /login khi đăng ký/cập nhật service worker.
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*|apple-icon.*|apple-touch-icon(?:-precomposed)?\\.png$|splash/[\\w-]+\\.png$|sw\\.js$).*)"],
 };

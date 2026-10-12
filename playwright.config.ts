@@ -1,7 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import webpush from "web-push";
 
 const url = process.env.E2E_DATABASE_URL ?? "";
 const PORT = 3100;
+// Khoá VAPID sinh mới mỗi lần chạy (không có khoá trong repo); E2E giả lập PushManager nên không gửi ra dịch vụ push thật.
+const vapid = webpush.generateVAPIDKeys();
 
 export default defineConfig({
   testDir: "./e2e",
@@ -23,6 +26,9 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     // NEXT_PUBLIC_E2E_SCAN_BRIDGE chỉ bật ở đây (cầu nối window.__scanFeed cho test), không bao giờ ở bản build thật.
-    env: { DATABASE_URL: url, AUTH_SECRET: "e".repeat(40), NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1" },
+    env: {
+      DATABASE_URL: url, AUTH_SECRET: "e".repeat(40), NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1",
+      VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:e2e@giaoxu.vn",
+    },
   },
 });

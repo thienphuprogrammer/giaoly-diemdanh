@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean, check, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
+  boolean, check, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, smallint, text, time, timestamp, unique, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Layout } from "../lib/seating/types";
@@ -61,8 +61,15 @@ export const classes = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     gradeId: uuid("grade_id").notNull().references(() => grades.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /** Thứ trong tuần lớp học (0 = Chủ nhật … 6 = Thứ bảy); null = chưa đặt lịch (không nhắc). */
+    meetsOn: smallint("meets_on"),
+    /** Giờ bắt đầu buổi học (giờ Việt Nam, "HH:MM:SS"); null cùng lúc với `meetsOn`. */
+    meetsAt: time("meets_at"),
   },
-  (t) => [uniqueIndex("classes_grade_name_uq").on(t.gradeId, t.name)],
+  (t) => [
+    uniqueIndex("classes_grade_name_uq").on(t.gradeId, t.name),
+    check("classes_meets_on_range", sql`${t.meetsOn} between 0 and 6`),
+  ],
 );
 
 export const classCatechists = pgTable(
@@ -169,7 +176,7 @@ export const attendanceScans = pgTable(
   (t) => [index("attendance_scans_session_idx").on(t.sessionId, t.receivedAt)],
 );
 
-export const auditEntity = pgEnum("audit_entity", ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion"]);
+export const auditEntity = pgEnum("audit_entity", ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion", "class"]);
 
 /**
  * Nhật ký thay đổi (spec §2): một dòng cho mỗi thao tác thủ công THẬT SỰ đổi dữ liệu, ghi trong cùng transaction với
@@ -224,4 +231,45 @@ export const promotions = pgTable(
     index("promotions_from_class_created_idx").on(t.fromClassId, t.createdAt.desc()),
     check("promotions_distinct_classes", sql`${t.fromClassId} <> ${t.toClassId}`),
   ],
+);
+
+/**
+ * Đăng ký Web Push của một thiết bị (spec §4). `endpoint` là URL của dịch vụ push (đã qua danh sách cho phép, xem
+ * `src/lib/push/endpoint.ts`) và là duy nhất: một thiết bị đổi tài khoản thì dòng chuyển sang tài khoản mới.
+ * `failure_count` đếm lần gửi lỗi tạm thời liên tiếp (429/5xx); đủ ngưỡng thì xoá đăng ký.
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
+    failureCount: integer("failure_count").notNull().default(0),
+  },
+  (t) => [
+    unique("push_subscriptions_endpoint_unique").on(t.endpoint),
+    index("push_subscriptions_user_idx").on(t.userId, t.createdAt),
+    check("push_subscriptions_user_agent_len", sql`${t.userAgent} is null or char_length(${t.userAgent}) <= 200`),
+  ],
+);
+
+/**
+ * Nhật ký đã gửi thông báo, để tác vụ định kỳ (Task 39) không gửi trùng: chèn `on conflict do nothing` trước khi gửi.
+ * `target_key` là khoá đối tượng do loại thông báo tự dựng (ví dụ lớp + ngày). Khoá duy nhất coi NULL như nhau.
+ */
+export const notificationLog = pgTable(
+  "notification_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    targetKey: text("target_key").notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("notification_log_kind_target_user_uq").on(t.kind, t.targetKey, t.userId).nullsNotDistinct()],
 );

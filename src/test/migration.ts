@@ -38,3 +38,6 @@ export const AUDIT_KEYSET_MIGRATION = "0006_audit_keyset";
 
 /** Migration lên lớp: `grades.next_grade_id`, bảng `promotions`, loại nhật ký `school_year`/`promotion`. */
 export const PROMOTIONS_MIGRATION = "0007_promotions";
+
+/** Migration nhắc việc: `classes.meets_on/meets_at`, bảng `push_subscriptions`, `notification_log`, loại nhật ký `class`. */
+export const PUSH_MIGRATION = "0008_push";

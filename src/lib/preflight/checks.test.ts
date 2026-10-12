@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import webpush from "web-push";
 import { describe, expect, it } from "vitest";
 import { checkEnv, maskDatabaseUrl, migrationStatus, summarize, timezoneCheck, type Check } from "./checks";
 
@@ -105,11 +106,23 @@ describe("checkEnv: cờ nguy hiểm và tùy chọn", () => {
     expect(levels(cs, "OPTIONAL_PUSH")).toEqual(["info"]);
     expect(levels(cs, "OPTIONAL_CRON")).toEqual(["info"]);
     expect(summarize(cs).failed).toBe(false);
-    const [pub, priv, cron] = [randomBytes(12).toString("hex"), randomBytes(12).toString("hex"), randomBytes(12).toString("hex")];
-    const set = checkEnv({ ...base, VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, CRON_SECRET: cron }, { prod: true });
+    const keys = webpush.generateVAPIDKeys();
+    const cron = randomBytes(12).toString("hex");
+    const set = checkEnv({ ...base, VAPID_PUBLIC_KEY: keys.publicKey, VAPID_PRIVATE_KEY: keys.privateKey, VAPID_SUBJECT: "mailto:a@giaoxu.vn", CRON_SECRET: cron }, { prod: true });
     expect(set.filter((c) => c.id.startsWith("OPTIONAL")).every((c) => c.level === "info")).toBe(true);
+    expect(set.find((c) => c.id === "OPTIONAL_PUSH")?.message).toContain("hợp lệ");
     const dump = JSON.stringify(set);
-    for (const v of [pub, priv, cron]) expect(dump).not.toContain(v);
+    for (const v of [keys.publicKey, keys.privateKey, cron]) expect(dump).not.toContain(v);
+  });
+
+  it("VAPID_* đặt thiếu hoặc sai thì cảnh báo (không fail), nêu tên biến nhưng không in giá trị", () => {
+    const [pub, priv] = [randomBytes(12).toString("hex"), randomBytes(12).toString("hex")];
+    const cs = checkEnv({ ...base, VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv }, { prod: true });
+    const push = cs.find((c) => c.id === "OPTIONAL_PUSH");
+    expect(push?.level).toBe("warn");
+    expect(push?.message).toMatch(/VAPID_PUBLIC_KEY[\s\S]*VAPID_PRIVATE_KEY[\s\S]*VAPID_SUBJECT/);
+    expect(summarize(cs).failed).toBe(false);
+    for (const v of [pub, priv]) expect(JSON.stringify(cs)).not.toContain(v);
   });
 });
 

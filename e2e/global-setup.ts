@@ -148,6 +148,15 @@ export default async function globalSetup() {
   }).returning();
   await db.insert(s.seatAssignments).values({ planId: planD.id, benchId: "b1", seatIndex: 0, studentId: kidsD[0].id });
 
+  // Khối L / Lớp L (lịch học) + GLV thông báo đẩy (mỗi project một người, để đăng ký của hai project không lẫn nhau).
+  // Khối riêng để số lớp/thống kê của các khối khác không đổi; trưởng khối L sửa được lịch học.
+  const [gradeL] = await db.insert(s.grades).values({ name: "Khối E2E L" }).returning();
+  await db.insert(s.users).values({ email: "head-l@e2e.vn", name: "Trưởng khối L", passwordHash: hash, gradeId: gradeL.id, isGradeHead: true });
+  const [classL] = await db.insert(s.classes).values({ gradeId: gradeL.id, name: "Lớp L" }).returning();
+  const lUsers = await db.insert(s.users).values(["glv-l@e2e.vn", "glv-push-phone-375@e2e.vn", "glv-push-tablet-768@e2e.vn"]
+    .map((email, i) => ({ email, name: `GLV L${i + 1}`, passwordHash: hash, gradeId: gradeL.id }))).returning();
+  await db.insert(s.classCatechists).values(lUsers.map((u) => ({ classId: classL.id, userId: u.id })));
+
   const kids = await db.insert(s.students).values(["An", "Bình", "Chi", "Dũng"].map((n) => ({ classId: classA.id, fullName: `Nguyễn ${n}` }))).returning();
   const [plan] = await db.insert(s.seatingPlans).values({
     classId: classA.id, name: "Sơ đồ E2E", isActive: true,
@@ -165,6 +174,6 @@ export default async function globalSetup() {
   writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, classN: classN.id, glvN: glvN.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id,
     gradeC: gradeC.id, classM: classM.id, kidMassWarn: kidMassWarn.id, kidMassOne: kidMassOne.id,
     gradeE: gradeE.id, classR: classR.id,
-    gradeD: gradeD.id, classD1: classD1.id, classD2: classD2.id, planD: planD.id }));
+    gradeD: gradeD.id, classD1: classD1.id, classD2: classD2.id, planD: planD.id, classL: classL.id }));
   await sql.end();
 }

@@ -140,13 +140,14 @@ describe("proxy matcher", () => {
     expect(matches("/api/health")).toBe(false);
   });
 
-  it.each(["/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/splash/iphone-1170x2532.png", "/icon-192.png", "/manifest.webmanifest"])("bỏ qua %s", (p) => {
+  it.each(["/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/splash/iphone-1170x2532.png", "/icon-192.png", "/manifest.webmanifest", "/sw.js"])("bỏ qua %s", (p) => {
     expect(matches(p)).toBe(false);
   });
 
   it.each([
     "/", "/login", "/lop/abc/diem-danh/2026-10-12/quet", "/splash-screen-page",
     "/apple-touch-icon-foo", "/apple-touch-icon.png/x", "/apple-touch-icon.pngx", "/splash", "/splash/", "/splash/a.html", "/splash/a.png/b", "/splash/x/y.png",
+    "/sw.js/x", "/sw.jsx", "/sw", "/lop/sw.js", "/a/sw.js",
   ])("vẫn chạy cho %s", (p) => {
     expect(matches(p)).toBe(true);
   });

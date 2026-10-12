@@ -1,9 +1,12 @@
 import { ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/nav/LogoutButton";
+import { PushToggle } from "@/components/push/PushToggle";
 import { Avatar } from "@/components/ui/Avatar";
 import { Pill } from "@/components/ui/Pill";
 import { deleteSession, requireUser } from "@/lib/auth/dal";
+import { vapidPublicKeyFromEnv } from "@/lib/push/vapid";
+import { sendTestPushAction, subscribePushAction, unsubscribePushAction } from "./actions";
 
 export default async function AccountPage() {
   const user = await requireUser();
@@ -23,6 +26,8 @@ export default async function AccountPage() {
           {user.isGradeHead && <Pill tone="action" icon={ShieldCheck} className="mt-2">Trưởng khối</Pill>}
         </div>
       </div>
+      {/* Khoá công khai đọc từ biến môi trường lúc chạy (không phải NEXT_PUBLIC_*): đổi khoá không cần build lại. */}
+      <PushToggle publicKey={vapidPublicKeyFromEnv()} subscribe={subscribePushAction} unsubscribe={unsubscribePushAction} sendTest={sendTestPushAction} />
       <LogoutButton userId={user.id} action={logout} />
     </section>
   );

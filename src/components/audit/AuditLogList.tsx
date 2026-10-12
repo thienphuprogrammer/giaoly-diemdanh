@@ -1,4 +1,4 @@
-import { ArrowUpRight, CalendarDays, CalendarRange, ClipboardCheck, LayoutGrid, ScanLine, SlidersHorizontal, UsersRound, type LucideIcon } from "lucide-react";
+import { AlarmClock, ArrowUpRight, CalendarDays, CalendarRange, ClipboardCheck, LayoutGrid, ScanLine, SlidersHorizontal, UsersRound, type LucideIcon } from "lucide-react";
 import { dateLabel } from "@/lib/date-label";
 
 /** Phần của `AuditLogItem` mà danh sách cần: toàn chuỗi đã dựng sẵn, không có `summary` thô nào đi qua đây. */
@@ -20,6 +20,7 @@ const ICONS: Record<string, LucideIcon> = {
   grade_settings: SlidersHorizontal,
   school_year: CalendarRange,
   promotion: ArrowUpRight,
+  class: AlarmClock,
   scan: ScanLine,
 };
 

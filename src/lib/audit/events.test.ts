@@ -12,7 +12,7 @@ describe("audit action table", () => {
   it("maps every action to one of the allowed entities, with the action prefix matching its entity", () => {
     const prefix: Record<string, string> = {
       attendance: "attendance", student: "student", seating_plan: "seating", session: "session", grade_settings: "grade",
-      school_year: "school_year", promotion: "promotion",
+      school_year: "school_year", promotion: "promotion", class: "class",
     };
     for (const [action, entity] of Object.entries(AUDIT_ACTIONS)) {
       expect(AUDIT_ENTITIES).toContain(entity);
@@ -26,13 +26,14 @@ describe("audit action table", () => {
       "student.create", "student.update", "student.deactivate", "student.reactivate", "student.import", "student.contact_update", "student.qr_rotate",
       "seating.create", "seating.apply_template", "seating.save_layout", "seating.activate", "seating.delete",
       "session.cancel", "session.reopen", "grade.mass_threshold", "grade.next_grade",
-      "school_year.create", "school_year.delete", "promotion.apply", "promotion.undo",
+      "school_year.create", "school_year.delete", "promotion.apply", "promotion.undo", "class.schedule",
     ]) expect(isAuditAction(a)).toBe(true);
     expect(isAuditAction("student.drop_table")).toBe(false);
     expect(isAuditAction("toString")).toBe(false);
     expect(entityOf("seating.create")).toBe("seating_plan");
     expect(entityOf("promotion.apply")).toBe("promotion");
     expect(entityOf("school_year.create")).toBe("school_year");
+    expect(entityOf("class.schedule")).toBe("class");
   });
 });
 

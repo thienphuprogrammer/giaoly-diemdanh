@@ -59,9 +59,10 @@ Vercel → Project → Settings → **Environment Variables** (áp cho **Product
 | `AUTH_SECRET` | chuỗi ngẫu nhiên | Bắt buộc, ≥ 32 ký tự. Sinh trên máy bạn bằng `openssl rand -base64 48` rồi dán vào Vercel. Không dùng lại khóa của máy dev. Đổi khóa này sẽ làm mọi người phải đăng nhập lại. |
 | `DB_PREPARE` | `false` | Chỉ khi dùng pooler giao dịch (cổng 6543). |
 | `DB_POOL_MAX` | ví dụ `3` | Tùy chọn (1–20, mặc định 5). Gói DB miễn phí có ít kết nối: giảm xuống nếu gặp "too many connections". |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | in ra bởi `pnpm push:keys` | Tùy chọn, để bật thông báo đẩy. Chạy `pnpm push:keys` **trên máy bạn**, chép ba dòng vào Vercel (đổi `VAPID_SUBJECT` thành `mailto:` email liên hệ của giáo xứ hoặc `https://` tên miền của app). `VAPID_PRIVATE_KEY` là bí mật: không commit, không gửi qua chat. Đổi khoá thì mọi thiết bị phải bật lại thông báo (trang Tài khoản tự đăng ký lại nếu quyền đã cấp). Không cần build lại khi đổi, chỉ cần deploy lại để biến có hiệu lực. |
 | `CSP_ALLOW_UNSAFE_EVAL` | `1` | Tùy chọn, **chỉ** khi có iPhone iOS 15 trở xuống (xem `docs/ios-checklist.md` mục 5). Mặc định bỏ trống. Phải deploy lại sau khi đổi. |
 
-**Không đặt** `NEXT_PUBLIC_E2E_SCAN_BRIDGE` (chỉ dành cho kiểm thử). `DATABASE_URL_UNPOOLED` chỉ cần trên máy bạn khi migrate, không cần đặt trên Vercel. `VAPID_*` và `CRON_SECRET` sẽ cần ở các bước sau (thông báo đẩy, tác vụ định kỳ); hiện chưa cần.
+**Không đặt** `NEXT_PUBLIC_E2E_SCAN_BRIDGE` (chỉ dành cho kiểm thử). `DATABASE_URL_UNPOOLED` chỉ cần trên máy bạn khi migrate, không cần đặt trên Vercel. `CRON_SECRET` sẽ cần ở bước tác vụ định kỳ (Task 39); hiện chưa cần. `pnpm preflight --prod` cho biết `VAPID_*` đã đủ và đúng dạng chưa (không in giá trị).
 
 ## 4. Chạy migration và tạo tài khoản đầu tiên (từ máy bạn)
 
@@ -160,5 +161,5 @@ Cách đọc kết quả:
 
 ## 9. Sau này
 
-- Bước tác vụ định kỳ (cron) và thông báo đẩy sẽ thêm `crons` vào `vercel.json` và các biến `VAPID_*`, `CRON_SECRET` (Task 39); khi đó tài liệu này sẽ được bổ sung.
+- Hạ tầng thông báo đẩy (`VAPID_*`, nút "Bật thông báo" ở Tài khoản, lịch học của lớp) đã có. Bước tác vụ định kỳ (cron) sẽ thêm `crons` vào `vercel.json` và biến `CRON_SECRET` (Task 39); khi đó tài liệu này sẽ được bổ sung.
 - Danh sách việc kiểm trước khi dùng thật: `docs/superpowers/qr-release-checklist.md`.

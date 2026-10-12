@@ -33,6 +33,9 @@ App là web app (PWA), không phải app App Store. Trên iPhone cài bằng Saf
 | ☐ | Hàng chờ khi mất mạng | Bật Chế độ máy bay, quét 2–3 thẻ → hiện "Mất mạng…", các lượt "Đang gửi"; tắt Chế độ máy bay → tự gửi, mỗi em ghi một lần. |
 | ☐ | Đóng hẳn app (vuốt lên khỏi trình chuyển app) khi còn lượt chưa gửi, rồi mở lại màn quét của buổi đó | Các lượt vẫn còn và tự gửi. |
 | ☐ | Đăng nhập còn giữ sau khi đóng hẳn app và mở lại hôm sau | Không phải đăng nhập lại (trong hạn phiên). |
+| ☐ | Thông báo: mở trang Tài khoản trong **tab Safari** | Thẻ "Thông báo" hiện "Cần thêm vào Màn hình chính" kèm 3 bước; không hỏi quyền. |
+| ☐ | Thông báo: trong app đã cài (iOS 16.4+), bấm "Bật thông báo" | iOS hỏi quyền **chỉ sau khi bấm** → Cho phép → "Đang bật"; bấm "Gửi thử" → thông báo "Điểm danh Giáo lý" hiện cả khi khoá máy; chạm vào mở app ở trang Tài khoản. |
+| ☐ | Thông báo: từ chối quyền rồi mở lại Tài khoản | Hiện "Bị chặn trong cài đặt" kèm hướng dẫn Cài đặt › Thông báo › Điểm danh. |
 | ☐ | Xoay ngang (nếu dùng) | Nội dung không nằm dưới tai thỏ. |
 
 ## 3. Giới hạn đã biết của iOS

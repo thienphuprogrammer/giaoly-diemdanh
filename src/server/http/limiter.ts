@@ -5,3 +5,9 @@ export const scanLimiter = createRateLimiter({ max: 180, windowMs: 60_000 });
 
 /** Bảng tra nặng (cả lớp + số buổi vắng); màn quét chỉ tải lại khi mở/kết nối lại, nên 30/phút là thừa. */
 export const rosterLimiter = createRateLimiter({ max: 30, windowMs: 60_000 });
+
+/** Bật/tắt thông báo và đồng bộ lặng lẽ khi mở trang Tài khoản: 20/phút/người là thừa cho dùng thật. */
+export const pushSubscribeLimiter = createRateLimiter({ max: 20, windowMs: 60_000 });
+
+/** "Gửi thử" thông báo: mỗi lần là một lượt gửi ra dịch vụ push bên ngoài. */
+export const pushTestLimiter = createRateLimiter({ max: 3, windowMs: 60_000 });

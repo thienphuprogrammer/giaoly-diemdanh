@@ -141,6 +141,15 @@ function describePromotionUndo(s: Bag): string {
   return `hoàn tác lên lớp ${from} → ${to}: trả ${restored} em về lớp cũ${missing ? `, ${missing} em không trả được` : ""}`;
 }
 
+/** Lịch học "Chủ nhật 08:00" (đã dựng sẵn lúc ghi); null = chưa đặt lịch. */
+function describeSchedule(s: Bag): string {
+  const cls = str(s.className);
+  const head = `đổi lịch học${cls ? ` của ${cls}` : ""}`;
+  if (!("before" in s) && !("after" in s)) return head;
+  const label = (v: unknown) => str(v) ?? "chưa đặt";
+  return s.after === null ? `xoá lịch học${cls ? ` của ${cls}` : ""} (trước đó: ${label(s.before)})` : `${head}: ${label(s.before)} → ${label(s.after)}`;
+}
+
 function describeImport(s: Bag): string {
   const count = num(s.count);
   const skipped = num(s.skipped);
@@ -181,6 +190,7 @@ function what(action: string, s: Bag): string {
     case "school_year.delete": return str(s.yearName) ? `xoá năm học ${str(s.yearName)}` : "xoá một năm học";
     case "promotion.apply": return describePromotion(s);
     case "promotion.undo": return describePromotionUndo(s);
+    case "class.schedule": return describeSchedule(s);
     default: return /^[a-z_]{1,32}\.[a-z_]{1,32}$/.test(action) ? `thực hiện một thay đổi (${action})` : "thực hiện một thay đổi";
   }
 }

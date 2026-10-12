@@ -21,6 +21,7 @@ Sao chép `.env.example` thành `.env.local` rồi điền giá trị. Không co
 | `DATABASE_URL_UNPOOLED` | Tùy chọn. Chuỗi kết nối trực tiếp/session (không qua pooler giao dịch), `pnpm db:migrate` ưu tiên dùng nó nếu có |
 | `DB_POOL_MAX` | Tùy chọn. Số kết nối tối đa mỗi instance, 1–20, mặc định 5 (giảm xuống ở DB gói miễn phí nếu thiếu kết nối) |
 | `DB_PREPARE` | Tùy chọn. Đặt `false` khi `DATABASE_URL` đi qua pooler chế độ giao dịch (pgbouncer, cổng 6543); mặc định bật |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Tùy chọn (thông báo đẩy). Sinh cặp khoá bằng `pnpm push:keys` (chỉ in ra màn hình, không ghi tệp); `VAPID_SUBJECT` là `mailto:email-liên-hệ` hoặc `https://tên-miền`. **`VAPID_PRIVATE_KEY` là bí mật: không commit.** Thiếu cả ba = thông báo đẩy tắt (nút ở Tài khoản hiện "Chưa sẵn sàng"); đặt thiếu/sai = `pnpm preflight` cảnh báo. Khoá công khai được trang đọc lúc chạy (không phải `NEXT_PUBLIC_*`), đổi khoá không cần build lại nhưng mọi thiết bị phải đăng ký lại (tự làm khi mở trang Tài khoản). |
 | `CSP_ALLOW_UNSAFE_EVAL` | Tùy chọn, mặc định tắt. Đặt `1` lúc build nếu cần hỗ trợ iPhone iOS 15 trở xuống (máy quét QR cần WebAssembly), đổi lại CSP yếu hơn (cho phép `'unsafe-eval'`). Mặc định máy quét cần iOS 16+. Xem `docs/ios-checklist.md`. |
 
 Các biến chỉ dùng cho `pnpm seed`: `SEED_EMAIL`, `SEED_PASSWORD` (tối thiểu 10 ký tự), và tùy chọn `SEED_NAME`, `SEED_GRADE`, `SEED_YEAR`, `SEED_T1_START`, `SEED_T1_END`, `SEED_T2_START`, `SEED_T2_END`.
@@ -118,6 +119,14 @@ Thẻ nên quét ở khoảng cách tay, tránh bóng loáng của lớp ép pla
 - **Giới hạn tốc độ**: quét/hoàn tác 180 lượt/phút/tài khoản, tải bảng tra lớp 30 lượt/phút/tài khoản. Bộ đếm nằm **trong bộ nhớ của từng instance** (không dùng chung giữa các instance serverless), nên giới hạn thực tế có thể cao hơn khi có nhiều instance. Khi vượt, API trả 429 và máy khách tự gửi lại.
 - **Phiên đăng nhập**: trượt 30 ngày (cấp lại cookie khi còn dưới 3 ngày), **trần tuyệt đối 90 ngày** kể từ lúc đăng nhập. **Đặt lại mật khẩu không thu hồi phiên đang có** (giới hạn đã biết: cookie cũ vẫn dùng được tới khi hết hạn; tài khoản bị xóa thì bị chặn ngay vì user được đọc lại từ DB ở mỗi request). Thiếu hoặc ngắn `AUTH_SECRET` (< 32 ký tự) khiến mọi trang trừ `/login` trả lỗi 500.
 - Hết phiên khi đang thao tác thì được đưa về `/login?next=<trang hiện tại>` và quay lại đúng trang sau khi đăng nhập; `next` chỉ nhận đường dẫn nội bộ an toàn.
+
+### Thông báo đẩy (Web Push) và lịch học
+
+- **Lịch học** của lớp (thứ + giờ bắt đầu, có thể để trống) sửa ở trang lớp, bởi GLV được phân công hoặc trưởng khối của lớp; mỗi lần đổi ghi nhật ký `class.schedule`. Dùng cho nhắc việc (Task 39); trống = không nhắc.
+- **Bật thông báo** ở trang Tài khoản: chỉ xin quyền khi bấm. iPhone/iPad cần **Thêm vào Màn hình chính** (iOS 16.4+), app hướng dẫn tại chỗ. Mỗi người tối đa 10 thiết bị (thiết bị cũ nhất bị bỏ); một thiết bị đổi tài khoản thì đăng ký chuyển sang tài khoản mới. "Gửi thử" chỉ gửi tới thiết bị của chính mình (3 lần/phút).
+- **`public/sw.js` chỉ xử lý push và bấm thông báo**: không có fetch handler, không cache dữ liệu điểm danh. Phục vụ với `Cache-Control: no-cache` và không qua proxy đăng nhập.
+- **Chống SSRF**: máy chủ chỉ gửi tới endpoint HTTPS của các dịch vụ push đã biết (`fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`; danh sách là hằng số trong `src/lib/push/endpoint.ts`, không mở rộng qua biến môi trường). Không IP, không localhost, không cổng lạ, không punycode.
+- Gửi trả 404/410 thì xoá đăng ký; 429/5xx/lỗi mạng tăng bộ đếm lỗi và xoá sau 5 lần liên tiếp; mã khác chỉ ghi log mã trạng thái. Log không bao giờ chứa endpoint hay khoá.
 
 ### Xác thực: mọi server action tự kiểm
 

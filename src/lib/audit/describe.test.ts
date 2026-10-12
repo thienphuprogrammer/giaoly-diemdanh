@@ -59,6 +59,10 @@ const CASES: [AuditAction, Record<string, unknown>, string][] = [
   ["promotion.undo", { fromClass: "Lớp A", toClass: "Lớp B", restored: 2, notRestored: 0, direction: "in" }, "GLV An hoàn tác lên lớp: 2 em rời Lớp B, về lại Lớp A"],
   ["promotion.undo", { fromClass: "Lớp A", toClass: "Lớp B", restored: 2, notRestored: 0 },
     "GLV An hoàn tác lên lớp Lớp A → Lớp B: trả 2 em về lớp cũ"],
+  ["class.schedule", { className: "Lớp A", before: null, after: "Chủ nhật 08:00" }, "GLV An đổi lịch học của Lớp A: chưa đặt → Chủ nhật 08:00"],
+  ["class.schedule", { className: "Lớp A", before: "Chủ nhật 08:00", after: "Thứ bảy 17:30" }, "GLV An đổi lịch học của Lớp A: Chủ nhật 08:00 → Thứ bảy 17:30"],
+  ["class.schedule", { className: "Lớp A", before: "Chủ nhật 08:00", after: null }, "GLV An xoá lịch học của Lớp A (trước đó: Chủ nhật 08:00)"],
+  ["class.schedule", {}, "GLV An đổi lịch học"],
 ];
 
 describe("describeAuditEvent", () => {

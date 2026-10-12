@@ -1,9 +1,12 @@
 import type { NextConfig } from "next";
-import { buildSecurityHeaders, cspOptionsFromEnv } from "./src/lib/security-headers";
+import { SERVICE_WORKER_HEADERS, buildSecurityHeaders, cspOptionsFromEnv } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: buildSecurityHeaders(cspOptionsFromEnv(process.env)) }];
+    return [
+      { source: "/:path*", headers: buildSecurityHeaders(cspOptionsFromEnv(process.env)) },
+      { source: "/sw.js", headers: [...SERVICE_WORKER_HEADERS] },
+    ];
   },
   turbopack: {
     rules: {

@@ -1,4 +1,5 @@
 import { parsePoolMax, strippedUrlParams } from "../../db/connection-options";
+import { checkVapid } from "../push/vapid";
 
 /** Kiểm tra trước triển khai (thuần, test được). Thông điệp tiếng Việt; không bao giờ chứa bí mật hay chuỗi kết nối đầy đủ. */
 export type CheckLevel = "ok" | "warn" | "fail" | "info";
@@ -75,6 +76,14 @@ function checkAuthSecret(env: Env): Check {
   return { id: "AUTH_SECRET", level: "ok", message: `AUTH_SECRET đạt (${s.length} ký tự).` };
 }
 
+/** Thông báo đẩy là tuỳ chọn: chưa đặt = thông tin; đặt thiếu/sai = cảnh báo (chỉ nêu tên biến); đủ và đúng = thông tin. */
+function pushCheck(env: Env): Check {
+  const vapid = checkVapid(env);
+  if (vapid.status === "unset") return { id: "OPTIONAL_PUSH", level: "info", message: "VAPID_*: chưa đặt (thông báo đẩy tắt). Sinh khoá bằng: pnpm push:keys" };
+  if (vapid.status === "invalid") return { id: "OPTIONAL_PUSH", level: "warn", message: `VAPID_*: thông báo đẩy sẽ không hoạt động. ${vapid.problems.join(" ")}` };
+  return { id: "OPTIONAL_PUSH", level: "info", message: "VAPID_*: đã đặt và hợp lệ (thông báo đẩy bật)." };
+}
+
 export function checkEnv(env: Env, opts: EnvOptions): Check[] {
   const checks: Check[] = [...checkDatabaseUrl(env, opts), checkAuthSecret(env)];
 
@@ -89,8 +98,7 @@ export function checkEnv(env: Env, opts: EnvOptions): Check[] {
   }
 
   // Chỉ thông tin cho các tác vụ sau (push, cron): chỉ báo có/không, không in giá trị.
-  const push = Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY);
-  checks.push({ id: "OPTIONAL_PUSH", level: "info", message: push ? "VAPID_*: đã đặt (thông báo đẩy)." : "VAPID_*: chưa đặt (chỉ cần khi bật thông báo đẩy ở bước sau)." });
+  checks.push(pushCheck(env));
   checks.push({ id: "OPTIONAL_CRON", level: "info", message: env.CRON_SECRET ? "CRON_SECRET: đã đặt." : "CRON_SECRET: chưa đặt (chỉ cần khi bật tác vụ định kỳ ở bước sau)." });
   return checks;
 }

@@ -66,3 +66,12 @@ export function buildSecurityHeaders({ isProd, allowUnsafeEval = false }: CspOpt
     ...(isProd ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }] : []),
   ];
 }
+
+/**
+ * `/sw.js` (chỉ cho thông báo đẩy): không cache để bản sửa đến ngay, đúng kiểu JavaScript (trình duyệt từ chối đăng ký
+ * service worker có MIME khác). Header bảo mật chung vẫn áp dụng (CSP `worker-src 'self'`).
+ */
+export const SERVICE_WORKER_HEADERS: readonly SecurityHeader[] = [
+  { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+  { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+];
