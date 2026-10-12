@@ -1,7 +1,6 @@
-import { LayoutGrid, Plus, Star } from "lucide-react";
+import { LayoutGrid, Star } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SimpleForm } from "@/components/forms/SimpleForm";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { db } from "@/db/client";
 import { getPlan, listPlans } from "@/db/queries/seating";
@@ -10,6 +9,8 @@ import { visibleAssignments } from "@/lib/seating/assignments";
 import { requireUser } from "@/lib/auth/dal";
 import { classPermissions } from "@/server/guard";
 import { createPlanAction } from "./actions";
+import { ApplyTemplate } from "./ApplyTemplate";
+import { NewPlanForm } from "./NewPlanForm";
 import { PlanActions } from "./PlanActions";
 import { SeatEditor } from "./SeatEditor";
 
@@ -18,10 +19,10 @@ export default async function SeatingPage({
   searchParams,
 }: {
   params: Promise<{ classId: string }>;
-  searchParams: Promise<{ plan?: string }>;
+  searchParams: Promise<{ plan?: string; v?: string }>;
 }) {
   const { classId } = await params;
-  const { plan: planParam } = await searchParams;
+  const { plan: planParam, v: version } = await searchParams;
   const user = await requireUser();
   const perms = await classPermissions(db, user, classId);
   if (!perms.canRead) notFound();
@@ -52,20 +53,20 @@ export default async function SeatingPage({
       )}
       {data && selected && (
         <>
-          <SeatEditor key={selected.id} classId={classId} planId={selected.id} initialLayout={data.plan.layout}
+          <SeatEditor key={`${selected.id}:${version ?? ""}`} classId={classId} planId={selected.id} initialLayout={data.plan.layout}
             initialAssignments={visibleAssignments(data.assignments, activeIds)} students={students} canWrite={perms.canWrite} />
+          {perms.canWrite && data.assignments.length === 0 && (
+            <ApplyTemplate classId={classId} planId={selected.id} studentCount={students.length} />
+          )}
           {perms.canWrite && !selected.isActive && <PlanActions classId={classId} planId={selected.id} />}
         </>
       )}
       {!data && (
         <EmptyState icon={LayoutGrid} title="Lớp chưa có sơ đồ">
-          {perms.canWrite ? "Đặt tên cho sơ đồ đầu tiên ở bên dưới, rồi thêm hàng và băng ghế." : "Giáo lý viên phụ trách lớp sẽ tạo sơ đồ chỗ ngồi."}
+          {perms.canWrite ? "Đặt tên cho sơ đồ đầu tiên ở bên dưới và chọn một mẫu bố cục." : "Giáo lý viên phụ trách lớp sẽ tạo sơ đồ chỗ ngồi."}
         </EmptyState>
       )}
-      {perms.canWrite && (
-        <SimpleForm title="Tạo sơ đồ mới" icon={<Plus aria-hidden size={20} />} description="Ví dụ: phòng học chính, phòng nhà thờ."
-          action={createPlanAction.bind(null, classId)} fields={[{ name: "name", label: "Tên sơ đồ" }]} />
-      )}
+      {perms.canWrite && <NewPlanForm action={createPlanAction.bind(null, classId)} studentCount={students.length} />}
     </section>
   );
 }

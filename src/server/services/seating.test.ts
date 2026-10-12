@@ -6,7 +6,7 @@ import type { BenchItem } from "@/lib/seating/types";
 import { parseLayout } from "@/lib/seating/layout";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
-import { activatePlan, assignSeat, createPlan, deletePlan, saveLayout } from "./seating";
+import { activatePlan, applyTemplate, assignSeat, createPlan, deletePlan, saveLayout } from "./seating";
 
 async function setup() {
   const db = await createTestDb();
@@ -148,5 +148,49 @@ describe("concurrency", () => {
     const data = (await getPlan(db, planId))!;
     const ids = new Set(data.plan.layout.flatMap((r) => r.items).map((i) => i.id));
     expect(data.assignments.every((a) => ids.has(a.benchId))).toBe(true);
+  });
+});
+
+describe("seating templates", () => {
+  it("createPlan with a templateId stores the server-built layout (ids unique per plan)", async () => {
+    const { db, b } = await setup();
+    const a = await createPlan(db, b.glv, { classId: b.classId, name: "Mẫu A", templateId: "vua-3-day" });
+    const c = await createPlan(db, b.glv, { classId: b.classId, name: "Mẫu B", templateId: "vua-3-day" });
+    if (!a.ok || !c.ok) throw new Error("setup");
+    const la = (await getPlan(db, a.data.id))!.plan.layout;
+    const lc = (await getPlan(db, c.data.id))!.plan.layout;
+    expect(la).toHaveLength(4);
+    expect(la.flatMap((r) => r.items).filter((i) => i.type === "bench").reduce((n, i) => n + (i as BenchItem).seats, 0)).toBe(36);
+    expect(parseLayout(la).ok).toBe(true);
+    expect(la[0].id).not.toBe(lc[0].id);
+  });
+
+  it("createPlan treats an empty templateId as the default layout and rejects unknown ones", async () => {
+    const { db, b } = await setup();
+    const blank = await createPlan(db, b.glv, { classId: b.classId, name: "Trống", templateId: "" });
+    if (!blank.ok) throw new Error("blank");
+    expect((await getPlan(db, blank.data.id))!.plan.layout).toHaveLength(3);
+    const bad = await createPlan(db, b.glv, { classId: b.classId, name: "Sai", templateId: "khong-co" });
+    expect(bad).toEqual({ ok: false, error: "Không tìm thấy mẫu sơ đồ" });
+    expect((await createPlan(db, b.glv, { classId: b.classId, name: "Sai", templateId: { layout: [] } })).ok).toBe(false);
+  });
+
+  it("applyTemplate replaces the layout of an empty plan", async () => {
+    const { db, b, planId } = await setup();
+    const r = await applyTemplate(db, b.glv, { planId, templateId: "nhom-bang-dai" });
+    expect(r.ok).toBe(true);
+    expect((await getPlan(db, planId))!.plan.layout).toHaveLength(2);
+  });
+
+  it("applyTemplate refuses a plan that already has seated students, and unknown templates or other classes", async () => {
+    const { db, b, planId, benches, kid } = await setup();
+    const k = await kid("Em A");
+    expect((await assignSeat(db, b.glv, { planId, benchId: benches[0].id, seatIndex: 0, studentId: k.id })).ok).toBe(true);
+    const before = (await getPlan(db, planId))!.plan.layout;
+    expect((await applyTemplate(db, b.glv, { planId, templateId: "vua-3-day" })).ok).toBe(false);
+    expect((await getPlan(db, planId))!.plan.layout).toEqual(before);
+    expect((await applyTemplate(db, b.glv, { planId, templateId: "khong-co" })).ok).toBe(false);
+    expect((await applyTemplate(db, b.otherGlv, { planId, templateId: "vua-3-day" })).ok).toBe(false);
+    expect((await applyTemplate(db, b.head, { planId, templateId: "vua-3-day" })).ok).toBe(false);
   });
 });

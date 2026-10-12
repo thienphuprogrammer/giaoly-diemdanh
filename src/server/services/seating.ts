@@ -7,12 +7,23 @@ import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { assignStudent, pruneAssignments, unassignSeat } from "@/lib/seating/assignments";
 import { defaultLayout, parseLayout } from "@/lib/seating/layout";
+import { buildTemplateLayout } from "@/lib/seating/templates";
 import type { Assignment, Layout } from "@/lib/seating/types";
 import { NOT_FOUND, guardClass } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
 
 const CANNOT_SEAT = "Không thể xếp em này";
 const NOT_FOUND_PLAN = "Không tìm thấy sơ đồ";
+const NOT_FOUND_TEMPLATE = "Không tìm thấy mẫu sơ đồ";
+const newId = () => crypto.randomUUID();
+
+/** Mẫu được dựng ở server từ id; trống/vắng = bố cục mặc định. Luôn kiểm bằng parseLayout. */
+function layoutFor(templateId: string | undefined): Layout | null {
+  const layout = templateId ? buildTemplateLayout(templateId, newId) : defaultLayout(newId);
+  if (!layout) return null;
+  const parsed = parseLayout(layout);
+  return parsed.ok ? parsed.layout : null;
+}
 const firstError = (e: z.ZodError) => e.issues[0]?.message ?? "Dữ liệu không hợp lệ";
 
 async function loadWritablePlan(db: Db, user: AppUser, planId: string) {
@@ -23,16 +34,22 @@ async function loadWritablePlan(db: Db, user: AppUser, planId: string) {
 }
 
 export async function createPlan(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ id: string }>> {
-  const p = z.object({ classId: z.string(), name: z.string().trim().min(1, "Nhập tên sơ đồ").max(60) }).safeParse(input);
+  const p = z.object({
+    classId: z.string(),
+    name: z.string().trim().min(1, "Nhập tên sơ đồ").max(60),
+    templateId: z.string().max(64).optional(),
+  }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));
   if (!(await guardClass(db, user, p.data.classId, "write"))) return fail(NOT_FOUND);
   const { classId, name } = p.data;
+  const layout = layoutFor(p.data.templateId || undefined);
+  if (!layout) return fail(NOT_FOUND_TEMPLATE);
   const row = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${classId}))`);
     const existing = await tx.select({ id: seatingPlans.id }).from(seatingPlans).where(eq(seatingPlans.classId, classId));
     const [created] = await tx
       .insert(seatingPlans)
-      .values({ classId, name, layout: defaultLayout(() => crypto.randomUUID()), isActive: existing.length === 0 })
+      .values({ classId, name, layout, isActive: existing.length === 0 })
       .returning({ id: seatingPlans.id });
     return created;
   });
@@ -95,6 +112,24 @@ export async function assignSeat(
     }
     await replaceAssignments(tx, locked.plan.id, next);
     return ok({ assignments: next });
+  });
+  return result;
+}
+
+/** Áp mẫu cho sơ đồ CHƯA có em nào ngồi; sơ đồ đã có phân ghế thì từ chối (không đổi nghĩa phân ghế). */
+export async function applyTemplate(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ layout: Layout }>> {
+  const p = z.object({ planId: z.string(), templateId: z.string().max(64) }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const layout = p.data.templateId ? layoutFor(p.data.templateId) : null;
+  if (!layout) return fail(NOT_FOUND_TEMPLATE);
+  const data = await loadWritablePlan(db, user, p.data.planId);
+  if (!data) return fail(NOT_FOUND_PLAN);
+  const result = await db.transaction(async (tx): Promise<ActionResult<{ layout: Layout }>> => {
+    const locked = await lockPlan(tx, data.plan.id);
+    if (!locked) return fail(NOT_FOUND_PLAN);
+    if (locked.assignments.length > 0) return fail("Sơ đồ đã có em ngồi, không thể áp dụng mẫu");
+    await tx.update(seatingPlans).set({ layout }).where(eq(seatingPlans.id, locked.plan.id));
+    return ok({ layout });
   });
   return result;
 }

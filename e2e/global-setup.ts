@@ -37,6 +37,7 @@ export default async function globalSetup() {
   const [classA] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp A" }).returning();
   const [classB] = await db.insert(s.classes).values({ gradeId: gradeB.id, name: "Lớp B" }).returning();
   const [classC] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp C" }).returning();
+  const [classT] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp T" }).returning();
   const [classQ] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp Q" }).returning();
   // GLV thứ hai của lớp A/Q cho project tablet: bảng tra quét giới hạn 30 lần/phút mỗi người, hai project chạy liền nhau với cùng một người sẽ chạm giới hạn.
   const [glvA2] = await db.insert(s.users).values({ email: "glv-a2@e2e.vn", name: "GLV A2", passwordHash: hash, gradeId: gradeA.id }).returning();
@@ -53,6 +54,10 @@ export default async function globalSetup() {
     { classId: classC.id, userId: glvReset.id }, { classId: classC.id, userId: headA.id },
   ]);
   await db.insert(s.students).values({ classId: classC.id, fullName: EDIT_NAME });
+  // Lớp T (30 em) và GLV riêng: test mẫu sơ đồ tạo/xóa sơ đồ của lớp này mà không đụng các lớp khác.
+  const [glvT] = await db.insert(s.users).values({ email: "glv-t@e2e.vn", name: "GLV T", passwordHash: hash, gradeId: gradeA.id }).returning();
+  await db.insert(s.classCatechists).values({ classId: classT.id, userId: glvT.id });
+  await db.insert(s.students).values(Array.from({ length: 30 }, (_, i) => ({ classId: classT.id, fullName: `Em T${String(i + 1).padStart(2, "0")}` })));
 
   const kids = await db.insert(s.students).values(["An", "Bình", "Chi", "Dũng"].map((n) => ({ classId: classA.id, fullName: `Nguyễn ${n}` }))).returning();
   const [plan] = await db.insert(s.seatingPlans).values({
@@ -68,6 +73,6 @@ export default async function globalSetup() {
   const [past] = await db.insert(s.sessions).values({ classId: classA.id, termId: term.id, heldOn: dayOffset(-7) }).returning();
   await db.insert(s.attendance).values({ sessionId: past.id, studentId: kids[0].id, status: "absent_unexcused" });
 
-  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id }));
+  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id }));
   await sql.end();
 }
