@@ -33,6 +33,18 @@ Quy ước: `[x]` = đã chạy thật ở bước này, kèm kết quả; `[ ]`
 - [ ] **Chạy `security-reviewer` và `code-reviewer` lần cuối trên toàn bộ diff nhánh** (bộ điều phối chạy ở bước kế tiếp, không thuộc bước này).
 - [ ] Đặt `AUTH_SECRET` (>= 32 ký tự) và `DATABASE_URL` trên môi trường triển khai; xác nhận không đặt `NEXT_PUBLIC_E2E_SCAN_BRIDGE`. (việc của chủ dự án)
 
+### Triển khai Vercel + Postgres (hướng dẫn: `docs/deploy-vercel-ios.md`)
+
+- [ ] Tạo Postgres ở Singapore (Neon hoặc Supabase), cùng vùng với Vercel `sin1`. (việc của chủ dự án)
+- [ ] Tạo dự án Vercel từ GitHub, nhập `DATABASE_URL`, `AUTH_SECRET` (>= 32 ký tự, `openssl rand -base64 48`), và `DB_PREPARE=false` nếu dùng pooler giao dịch; không đặt `NEXT_PUBLIC_E2E_SCAN_BRIDGE`. (việc của chủ dự án)
+- [ ] Sao lưu rồi chạy `pnpm db:migrate` từ máy bạn; `pnpm preflight --prod` báo "Sẵn sàng". (việc của chủ dự án)
+- [ ] Tạo tài khoản trưởng khối đầu tiên bằng `pnpm seed`. (việc của chủ dự án)
+- [ ] Deploy, `GET /api/health` trả `{"ok":true,"db":true,...}`, đăng nhập được. (việc của chủ dự án)
+- [ ] iPhone: Thêm vào Màn hình chính, đăng nhập, camera hoạt động ở chế độ app. (việc của chủ dự án)
+- [ ] Đo `pnpm bench:scan` trên hạ tầng thật (database `e2e` riêng, xem mục 7 của hướng dẫn) và điền bảng hosted trong `qr-baseline.md`. (việc của chủ dự án)
+- [ ] Bật sao lưu Postgres (PITR/hằng ngày) và thử khôi phục một lần. (việc của chủ dự án)
+- [ ] Xác nhận loại gói Vercel phù hợp (Hobby chỉ cho mục đích phi thương mại). (việc của chủ dự án)
+
 ## 3. Chưa làm (ghi nhận rõ, không phải lỗi sót)
 
 - **Ghi điểm danh ngoại tuyến thật trên máy chủ**: hàng chờ trên thiết bị chỉ giữ lượt quét tối đa 3 ngày và chỉ gửi được khi có mạng; thao tác trên bảng điểm danh cần kết nối ngay lúc bấm.

@@ -129,4 +129,10 @@ describe("checkRouteSource", () => {
     expect(checkRouteSource("r.ts", `export async function GET() { return new Response("x"); }`)).not.toBeNull();
     expect(checkRouteSource("r.ts", `// getCurrentUser()\nexport async function GET() { return new Response("x"); }`)).not.toBeNull();
   });
+  it("tệp trong danh sách cho phép (route công khai) được miễn, tệp khác thì không", () => {
+    const src = `export const GET = () => new Response("ok");`;
+    expect(checkRouteSource("src/app/api/health/route.ts", src, ["src/app/api/health/route.ts"])).toBeNull();
+    expect(checkRouteSource("src/app/api/other/route.ts", src, ["src/app/api/health/route.ts"])).not.toBeNull();
+    expect(checkRouteSource("src/app/api/health/route.ts", src)).not.toBeNull();
+  });
 });

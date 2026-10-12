@@ -10,7 +10,9 @@ import { checkRouteSource, checkServerActionSource } from "./auth-guard-check";
  * Danh sách cho phép phải nhỏ và có lý do:
  * - login: hành động đăng nhập, chưa có phiên; xác thực bằng email + mật khẩu (authenticate).
  * - logout nội tuyến ở /tai-khoan: trang đã gọi requireUser; hành động chỉ xóa cookie của chính request, không đụng dữ liệu.
+ * - route /api/health: kiểm tra sống công khai có chủ đích (giám sát, kiểm tra sau deploy); chỉ trả {ok, db, version}, không đọc phiên hay dữ liệu.
  */
+const ALLOW_ROUTES = ["src/app/api/health/route.ts"];
 const ALLOW = ["src/app/login/actions.ts::login", "src/app/(app)/tai-khoan/page.tsx::logout"];
 
 const SRC = path.resolve(__dirname, "..");
@@ -42,9 +44,13 @@ describe("ranh giới xác thực (cấu trúc)", () => {
   it("mọi route handler tham chiếu getCurrentUser hoặc handleScanApi", () => {
     const violations = files
       .filter((f) => /(^|\/)route\.ts$/.test(f.rel))
-      .map((f) => checkRouteSource(f.rel, f.src))
+      .map((f) => checkRouteSource(f.rel, f.src, ALLOW_ROUTES))
       .filter((v) => v !== null);
     expect(violations).toEqual([]);
+  });
+
+  it("route công khai được miễn đúng một tệp và vẫn còn tồn tại", () => {
+    for (const rel of ALLOW_ROUTES) expect(files.some((f) => f.rel === rel), `${rel} không còn`).toBe(true);
   });
 
   it("mục trong danh sách cho phép vẫn còn tồn tại (tránh danh sách thừa)", () => {

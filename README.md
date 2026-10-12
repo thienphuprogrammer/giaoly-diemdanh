@@ -18,6 +18,9 @@ Sao chép `.env.example` thành `.env.local` rồi điền giá trị. Không co
 |------|---------|
 | `DATABASE_URL` | Chuỗi kết nối Postgres |
 | `AUTH_SECRET` | Khóa ký phiên đăng nhập, tối thiểu 32 ký tự. Sinh bằng `openssl rand -base64 32` |
+| `DATABASE_URL_UNPOOLED` | Tùy chọn. Chuỗi kết nối trực tiếp/session (không qua pooler giao dịch), `pnpm db:migrate` ưu tiên dùng nó nếu có |
+| `DB_POOL_MAX` | Tùy chọn. Số kết nối tối đa mỗi instance, 1–20, mặc định 5 (giảm xuống ở DB gói miễn phí nếu thiếu kết nối) |
+| `DB_PREPARE` | Tùy chọn. Đặt `false` khi `DATABASE_URL` đi qua pooler chế độ giao dịch (pgbouncer, cổng 6543); mặc định bật |
 | `CSP_ALLOW_UNSAFE_EVAL` | Tùy chọn, mặc định tắt. Đặt `1` lúc build nếu cần hỗ trợ iPhone iOS 15 trở xuống (máy quét QR cần WebAssembly), đổi lại CSP yếu hơn (cho phép `'unsafe-eval'`). Mặc định máy quét cần iOS 16+. Xem `docs/ios-checklist.md`. |
 
 Các biến chỉ dùng cho `pnpm seed`: `SEED_EMAIL`, `SEED_PASSWORD` (tối thiểu 10 ký tự), và tùy chọn `SEED_NAME`, `SEED_GRADE`, `SEED_YEAR`, `SEED_T1_START`, `SEED_T1_END`, `SEED_T2_START`, `SEED_T2_END`.
@@ -44,6 +47,10 @@ pnpm dev
 ```
 
 Mở http://localhost:3000 và đăng nhập bằng tài khoản vừa tạo.
+
+## Triển khai
+
+Triển khai lên Vercel (vùng Singapore `sin1`) với Postgres hosted cùng vùng, rồi dùng trên iPhone: xem [`docs/deploy-vercel-ios.md`](docs/deploy-vercel-ios.md). Có sẵn `vercel.json`, route kiểm tra sống `GET /api/health` (công khai, chỉ trả `ok`/`db`/`version`) và `pnpm preflight [--prod]` (kiểm biến môi trường, kết nối DB và migration đã đủ chưa). Migration chạy có kiểm soát bằng `pnpm db:migrate` từ máy bạn, không tự chạy khi build.
 
 ## Quy trình sử dụng
 

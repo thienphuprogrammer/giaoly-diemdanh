@@ -1,0 +1,158 @@
+# Triển khai lên Vercel + Postgres và dùng trên iPhone
+
+Hướng dẫn từng bước cho chủ dự án (không cần rành kỹ thuật). Phần chuẩn bị mã (cấu hình Vercel, `/api/health`, `pnpm preflight`) đã có sẵn trong repo. **Các bước tạo tài khoản, tạo database, nhập biến môi trường và bấm Deploy là việc của bạn** vì cần đăng nhập tài khoản của bạn.
+
+Tổng quan: GitHub (mã) → Vercel (chạy web, vùng Singapore `sin1`) → Postgres (cùng vùng Singapore). Điện thoại mở link `https://…vercel.app` bằng Safari rồi thêm vào Màn hình chính.
+
+## 0. Chuẩn bị
+
+- Tài khoản GitHub (repo đã có), tài khoản Vercel (đăng nhập bằng GitHub là dễ nhất).
+- Máy tính có Node 22.9+ và pnpm 10 (`pnpm install` đã chạy trong thư mục dự án), cùng `openssl` (có sẵn trên macOS/Linux; Windows dùng Git Bash hoặc WSL).
+- **Đẩy mã lên GitHub bằng SSH**: remote `origin` đang là địa chỉ HTTPS, bạn đẩy bằng địa chỉ SSH, ví dụ `git push git@github.com:<tài-khoản>/<repo>.git feat/qr-attendance`. Trước khi push, hook `pre-push` tự chạy `pnpm build` nên push sẽ mất vài chục giây; build lỗi thì push bị chặn (đó là chủ ý).
+
+## 1. Tạo Postgres ở Singapore
+
+Chọn **một** trong hai (đều có gói miễn phí). **Quan trọng: chọn vùng Singapore**, cùng vùng với Vercel `sin1`. Mỗi lượt quét QR cần khoảng 7 lượt đi về tới database, nên nếu database ở xa (ví dụ Mỹ) mỗi lượt quét sẽ chậm gấp nhiều lần.
+
+**Cách A: Neon qua Vercel Marketplace (đơn giản nhất)**
+1. Vào Vercel → Storage (hoặc Marketplace) → **Neon** → tạo database, vùng **Singapore (ap-southeast-1)**.
+2. Neon cho hai chuỗi kết nối: **Pooled** (host có chữ `-pooler`) và **Direct/Unpooled**. Dùng:
+   - `DATABASE_URL` (cho app trên Vercel) = chuỗi **Pooled**.
+   - `DATABASE_URL_UNPOOLED` (để chạy migration từ máy bạn) = chuỗi **Unpooled/Direct**.
+3. Cả hai nên có đuôi `?sslmode=require`.
+
+**Cách B: Supabase**
+1. Tạo project tại supabase.com, Region **Southeast Asia (Singapore)**.
+2. Project Settings → Database → Connection string:
+   - **Direct connection** hoặc **Session pooler** (cổng 5432): dùng cho migration, đặt vào `DATABASE_URL_UNPOOLED`.
+   - **Transaction pooler** (cổng 6543): dùng cho app trên Vercel, đặt vào `DATABASE_URL`, **và bắt buộc đặt thêm `DB_PREPARE=false`** (xem mục "Pooler" dưới).
+3. Thêm `?sslmode=require` vào cuối chuỗi nếu chưa có.
+
+> Không bao giờ dán chuỗi kết nối (có mật khẩu) vào chat, ảnh chụp màn hình hay tệp trong repo.
+
+### Pooler: khi nào cần `DB_PREPARE=false`
+
+- Serverless (Vercel) mở nhiều kết nối ngắn, nên dùng chuỗi **pooled** cho app. App giữ tối đa `DB_POOL_MAX` kết nối mỗi instance (mặc định 5).
+- Pooler ở **chế độ giao dịch** (pgbouncer, cổng 6543 của Supabase; Neon pooled cũng là pgbouncer) không giữ "câu lệnh đã chuẩn bị" giữa các lượt. Khi dùng nó, đặt `DB_PREPARE=false`, nếu không sẽ có lỗi dạng `prepared statement ... does not exist`.
+- Với pooler chế độ giao dịch: các **giao dịch thường** (`begin … commit`) và khóa `pg_advisory_xact_lock` (loại khóa gắn với giao dịch, app dùng khi sắp xếp sơ đồ và nhập danh sách thiếu nhi) **chạy đúng**. Thứ có thể hỏng là tính năng gắn với **phiên**: `SET` kéo dài, `LISTEN/NOTIFY`, khóa `pg_advisory_lock` (không phải `_xact_`), bảng tạm. App không dùng các thứ này.
+- **Migration** (`drizzle-kit`) nên chạy qua kết nối trực tiếp/session, không qua pooler giao dịch. Vì vậy đặt `DATABASE_URL_UNPOOLED`; nếu có biến này, `pnpm db:migrate` dùng nó thay cho `DATABASE_URL`.
+
+## 2. Tạo dự án Vercel từ GitHub
+
+1. Vercel → **Add New… → Project** → chọn repo → **Import**.
+2. Framework tự nhận **Next.js**. Vùng chạy `sin1` (Singapore) đã đặt sẵn trong `vercel.json`, không cần chỉnh.
+3. **Chưa bấm Deploy**: làm mục 3 (biến môi trường) trước, vì build/chạy cần chúng.
+4. Nhánh triển khai production: mặc định là nhánh chính của repo; hãy chọn đúng nhánh bạn muốn (Settings → Git → Production Branch).
+5. Gói **Hobby (miễn phí) của Vercel chỉ dành cho mục đích phi thương mại**. Nếu giáo xứ/đoàn thể coi đây là dùng thương mại hoặc có thu phí, cần gói Pro. Hãy tự xác định theo điều khoản hiện hành của Vercel.
+
+## 3. Nhập biến môi trường
+
+Vercel → Project → Settings → **Environment Variables** (áp cho **Production**, và Preview nếu muốn dùng thử):
+
+| Biến | Giá trị | Ghi chú |
+|------|---------|---------|
+| `DATABASE_URL` | chuỗi kết nối của app (mục 1) | Bắt buộc. Có `?sslmode=require`. |
+| `AUTH_SECRET` | chuỗi ngẫu nhiên | Bắt buộc, ≥ 32 ký tự. Sinh trên máy bạn bằng `openssl rand -base64 48` rồi dán vào Vercel. Không dùng lại khóa của máy dev. Đổi khóa này sẽ làm mọi người phải đăng nhập lại. |
+| `DB_PREPARE` | `false` | Chỉ khi dùng pooler giao dịch (cổng 6543). |
+| `DB_POOL_MAX` | ví dụ `3` | Tùy chọn (1–20, mặc định 5). Gói DB miễn phí có ít kết nối: giảm xuống nếu gặp "too many connections". |
+| `CSP_ALLOW_UNSAFE_EVAL` | `1` | Tùy chọn, **chỉ** khi có iPhone iOS 15 trở xuống (xem `docs/ios-checklist.md` mục 5). Mặc định bỏ trống. Phải deploy lại sau khi đổi. |
+
+**Không đặt** `NEXT_PUBLIC_E2E_SCAN_BRIDGE` (chỉ dành cho kiểm thử). `DATABASE_URL_UNPOOLED` chỉ cần trên máy bạn khi migrate, không cần đặt trên Vercel. `VAPID_*` và `CRON_SECRET` sẽ cần ở các bước sau (thông báo đẩy, tác vụ định kỳ); hiện chưa cần.
+
+## 4. Chạy migration và tạo tài khoản đầu tiên (từ máy bạn)
+
+Migration **không tự chạy khi build**: bạn chạy có kiểm soát, một lần cho mỗi lần có migration mới. **Trước khi chạy, tạo bản sao lưu** (mục 8), nhất là khi database đã có dữ liệu thật.
+
+Tạo tệp `.env.local` ở thư mục dự án (tệp này không bị commit) chứa các dòng sau, điền giá trị thật của database production:
+
+```
+DATABASE_URL=<chuỗi pooled của app>
+DATABASE_URL_UNPOOLED=<chuỗi direct, dùng cho migrate>
+AUTH_SECRET=<đúng giá trị đã đặt trên Vercel>
+```
+
+Rồi chạy:
+
+```bash
+pnpm preflight --prod     # kiểm tra biến, kết nối; lúc này sẽ báo thiếu migration, đó là bình thường
+pnpm db:migrate           # áp dụng migration vào database (dùng DATABASE_URL_UNPOOLED nếu có)
+pnpm preflight --prod     # kiểm tra lại: phải "Sẵn sàng"
+```
+
+Tạo tài khoản trưởng khối đầu tiên (nhập mật khẩu ẩn, không lưu trong lịch sử lệnh):
+
+```bash
+read -rs SEED_PASSWORD && export SEED_PASSWORD
+SEED_EMAIL=<email-truong-khoi> pnpm seed
+unset SEED_PASSWORD
+```
+
+`pnpm seed` dùng `DATABASE_URL`. Khi xong, **xóa hoặc không giữ** `.env.local` chứa chuỗi production trên máy dùng chung.
+
+`pnpm preflight` kiểm: `DATABASE_URL` hợp lệ và không phải localhost (khi `--prod`), `AUTH_SECRET` đủ dài và không phải giá trị mẫu, không có `NEXT_PUBLIC_E2E_SCAN_BRIDGE`, kết nối được database, và số migration trong database khớp với mã. Nó che mật khẩu và che một phần máy chủ/người dùng khi in; thoát với mã lỗi khác 0 nếu có mục `[LỖI]`.
+
+## 5. Deploy và kiểm tra
+
+1. Vercel → Project → **Deploy** (hoặc push lên nhánh production).
+2. Khi xong, mở `https://<tên-dự-án>.vercel.app/api/health`. Mong đợi:
+   ```json
+   {"ok":true,"db":true,"version":"a1b2c3d"}
+   ```
+   `version` là 7 ký tự đầu của commit. Nếu thấy `"db":false` (mã HTTP 503): kiểm tra `DATABASE_URL`, `sslmode`, `DB_PREPARE`, và database có đang "ngủ" không (Neon gói miễn phí tự ngủ khi nhàn rỗi, lần gọi đầu có thể chậm vài giây, thử lại).
+3. Mở `https://<tên-dự-án>.vercel.app`, đăng nhập bằng tài khoản vừa tạo.
+4. Tạo khối/lớp/GLV theo mục "Quy trình sử dụng" trong `README.md`.
+
+## 6. Dùng trên iPhone
+
+Làm theo `docs/ios-checklist.md` (cài lên Màn hình chính, danh sách việc cần thử trên máy thật). Tóm tắt:
+
+1. Mở link bằng **Safari** (không mở trong Zalo/Messenger).
+2. Chia sẻ → **Thêm vào Màn hình chính** → Thêm.
+3. Mở app từ biểu tượng, **đăng nhập lại** (app cài và tab Safari không chung đăng nhập).
+4. Vào một buổi điểm danh → **Quét QR** → cho phép camera → quét thử một thẻ in. iOS hỏi quyền camera mỗi lần mở app, đó là bình thường.
+
+## 7. Đo độ trễ quét trên hạ tầng thật
+
+`pnpm bench:scan` đo đường quét qua HTTP. Nó **ghi vào database** (tạo rồi xóa một buổi tạm) và cần dữ liệu mẫu E2E, nên **không chạy trên database production**. Cách làm an toàn:
+
+1. Tạo một database **riêng, tên chứa `e2e`** (ví dụ `diemdanh_e2e`) cùng vùng Singapore (Neon: tạo database/branch mới; Supabase: project riêng).
+2. Nạp dữ liệu mẫu (lệnh này **xóa sạch** schema của database trỏ tới, vì vậy chỉ dùng cho database `e2e`; script từ chối nếu tên không chứa `e2e`):
+   ```bash
+   E2E_DATABASE_URL='<chuỗi kết nối của database e2e>' pnpm bench:seed
+   ```
+3. Tạo **dự án Vercel thứ hai** từ cùng repo (ví dụ `diemdanh-bench`), vùng `sin1`, với `DATABASE_URL` = chuỗi database e2e, `AUTH_SECRET` = một khóa riêng, và **tắt Deployment Protection** (Settings → Deployment Protection) để script gọi được không cần đăng nhập Vercel. Xóa dự án này sau khi đo.
+4. Chạy từ máy bạn (nhập khóa bằng `read -rs`, không dán lộ):
+   ```bash
+   read -rs AUTH_SECRET && export AUTH_SECRET
+   BENCH_BASE_URL='https://diemdanh-bench.vercel.app' E2E_DATABASE_URL='<chuỗi database e2e>' pnpm bench:scan
+   unset AUTH_SECRET
+   ```
+5. Chạy thêm `pnpm preflight --prod` (mục 4) bất cứ lúc nào để kiểm lại cấu hình.
+
+Cách đọc kết quả:
+
+- Mỗi lần chạy gồm ~63 lượt quét; **giới hạn 180 lượt/phút/tài khoản** (trả HTTP 429). Vì vậy đừng chạy liên tiếp quá 2 lần trong một phút, chờ một phút giữa các lần.
+- Một lượt quét tốn khoảng **7 lượt đi về tới database**, nên thời gian máy chủ ≈ **7 × RTT** (RTT = độ trễ mạng giữa app và database). App và database cùng vùng thì RTT vài ms, tức khoảng 35 ms cộng xử lý.
+- Số tốt: **p95 phía máy chủ dưới khoảng 300 ms** (mục tiêu chặt hơn trong `docs/superpowers/qr-baseline.md` là ≤ 100 ms khi cùng vùng). Cộng thêm độ trễ mạng từ điện thoại tới Vercel, người quét vẫn thấy dưới ~1 giây.
+- Nếu p95 cao hơn nhiều (ví dụ trên 300 ms): kiểm tra vùng app và vùng database có cùng Singapore không (nguyên nhân thường gặp nhất), chuỗi `DATABASE_URL` có đúng loại pooled không; lần chạy đầu sau khi database "ngủ" luôn chậm hơn.
+- Ghi kết quả vào bảng "hosted" ở cuối `docs/superpowers/qr-baseline.md`.
+
+## 8. Chi phí, sao lưu, quay lui
+
+**Chi phí.** Neon và Supabase đều có gói miễn phí đủ cho một giáo xứ nhỏ (giới hạn dung lượng, giờ chạy và kết nối; gói miễn phí có thể tự ngủ khi nhàn rỗi). Vercel Hobby miễn phí nhưng **chỉ cho mục đích phi thương mại**; xem điều khoản hiện hành và nâng lên Pro nếu cần. Kiểm trang giá của từng nhà cung cấp vì giới hạn thay đổi theo thời gian.
+
+**Sao lưu Postgres.**
+- Bật sao lưu của nhà cung cấp: Neon có khôi phục theo thời điểm (PITR) trong cửa sổ giới hạn của từng gói; Supabase có sao lưu hằng ngày ở gói trả phí. Gói miễn phí thường có ít hoặc không có, nên **tự xuất định kỳ**.
+- Xuất thủ công bằng `pg_dump` bằng chuỗi **Direct/Unpooled**: `pg_dump "$DATABASE_URL_UNPOOLED" --format=custom --file=diemdanh-$(date +%F).dump` (đặt biến trong shell, không gõ chuỗi trực tiếp vào lệnh). Lưu tệp ở nơi an toàn: có tên và số điện thoại thiếu nhi.
+- **Luôn sao lưu ngay trước khi chạy `pnpm db:migrate`.**
+- Thử khôi phục vào một database trống ít nhất một lần để biết bản sao lưu dùng được.
+
+**Quay lui (rollback).**
+- Mã: Vercel → Deployments → chọn bản trước đó → **Instant Rollback** (hoặc "Promote to Production"). Mất vài giây, không cần build lại.
+- Migration **chỉ đi tới** (không có lệnh lùi). Vì vậy: sao lưu trước khi migrate; viết migration tương thích ngược (thêm cột/bảng, không xóa ngay) để bản mã cũ vẫn chạy được trên database mới; nếu migration hỏng dữ liệu, khôi phục từ bản sao lưu (PITR hoặc dump), rồi mới rollback mã.
+- `pnpm preflight --prod` cho biết database đang ở số migration nào so với mã.
+
+## 9. Sau này
+
+- Bước tác vụ định kỳ (cron) và thông báo đẩy sẽ thêm `crons` vào `vercel.json` và các biến `VAPID_*`, `CRON_SECRET` (Task 39); khi đó tài liệu này sẽ được bổ sung.
+- Danh sách việc kiểm trước khi dùng thật: `docs/superpowers/qr-release-checklist.md`.

@@ -189,8 +189,9 @@ export function checkServerActionSource(file: string, src: string, allow: readon
   return checkInline(file, src, masked, allowSet);
 }
 
-/** Route handler phải tự xác thực: tham chiếu getCurrentUser hoặc đi qua handleScanApi (đã gọi getUser). */
-export function checkRouteSource(file: string, src: string): GuardViolation | null {
+/** Route handler phải tự xác thực: tham chiếu getCurrentUser hoặc đi qua handleScanApi (đã gọi getUser). `allow` là tệp route công khai có chủ đích (đường dẫn tương đối). */
+export function checkRouteSource(file: string, src: string, allow: readonly string[] = []): GuardViolation | null {
+  if (allow.includes(file)) return null;
   const masked = maskLiterals(src);
   if (/\bgetCurrentUser\b/.test(masked) || /\bhandleScanApi\b/.test(masked)) return null;
   return { file, name: "route", reason: "route handler không tham chiếu getCurrentUser hoặc handleScanApi" };

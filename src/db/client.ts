@@ -1,6 +1,7 @@
 import "server-only";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { postgresOptionsFromEnv } from "./connection-options";
 import * as schema from "./schema";
 import type { Db } from "./types";
 
@@ -9,7 +10,7 @@ const globalForSql = globalThis as unknown as { __sql?: ReturnType<typeof postgr
 function connect(): Db {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("Thiếu biến môi trường DATABASE_URL");
-  const sql = globalForSql.__sql ?? postgres(url, { max: 5 });
+  const sql = globalForSql.__sql ?? postgres(url, postgresOptionsFromEnv(process.env));
   if (process.env.NODE_ENV !== "production") globalForSql.__sql = sql;
   return drizzle(sql, { schema });
 }

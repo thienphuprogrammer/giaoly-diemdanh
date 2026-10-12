@@ -136,6 +136,10 @@ describe("proxy matcher", () => {
   // Next ghép matcher thành ^/(...)$; iOS tải icon/ảnh khởi động không kèm cookie nên chúng phải bỏ qua proxy.
   const matches = (p: string) => config.matcher.some((m) => new RegExp(`^${m}$`).test(p));
 
+  it("/api/health nằm ngoài proxy (không bị chuyển về /login khi chưa đăng nhập)", () => {
+    expect(matches("/api/health")).toBe(false);
+  });
+
   it.each(["/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/splash/iphone-1170x2532.png", "/icon-192.png", "/manifest.webmanifest"])("bỏ qua %s", (p) => {
     expect(matches(p)).toBe(false);
   });
