@@ -202,6 +202,7 @@ describe("schoolYearOverview", () => {
     await create(db, b.head, VALID);
     const after = await schoolYearOverview(db, b.head, "2026-10-12");
     expect(after?.years.map((y) => y.name)).toEqual(["2027-2028", "2026-2027"]);
-    expect(after?.defaults.name).toBe("2028-2029");
+    // Năm sau đã tạo sớm: dời thêm một năm thì quá 550 ngày => mặc định lùi về tháng 9 kế tiếp (luôn trong giới hạn).
+    expect(after?.defaults.term1.startsOn).toBe("2027-09-01");
   });
 });

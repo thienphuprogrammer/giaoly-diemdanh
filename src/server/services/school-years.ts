@@ -6,7 +6,7 @@ import type { AppUser } from "@/lib/access/can-access";
 import { redactText } from "@/lib/audit/events";
 import { shortDate } from "@/lib/date-label";
 import { todayInVietnam } from "@/lib/dates";
-import { START_WINDOW, defaultSchoolYear, startWindow, termsOverlap, validateTermRanges, type SchoolYearDraft, type TermInput } from "@/lib/school-year/defaults";
+import { START_WINDOW, startWindow, suggestSchoolYear, termsOverlap, validateTermRanges, type SchoolYearDraft, type TermInput } from "@/lib/school-year/defaults";
 import type { AuditEvent } from "../audit";
 import { recordAudit } from "../audit";
 import { fail, ok, type ActionResult } from "../result";
@@ -64,7 +64,7 @@ async function listSchoolYears(db: Reader): Promise<SchoolYearSummary[]> {
 export async function schoolYearOverview(db: Db, user: AppUser, today: string): Promise<{ years: SchoolYearSummary[]; defaults: SchoolYearDraft } | null> {
   if (!isHead(user)) return null;
   const years = await listSchoolYears(db);
-  return { years, defaults: defaultSchoolYear(years[0] ?? null, today) };
+  return { years, defaults: suggestSchoolYear(years[0] ?? null, today) };
 }
 
 function overlapError(years: SchoolYearSummary[], label: string, term: TermInput): string | null {

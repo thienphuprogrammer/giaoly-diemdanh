@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { attendance, classes, sessions, students, terms } from "../schema";
 import type { Db } from "../types";
+import { membershipOf, type Membership } from "@/lib/promotion";
 import { studentColumns } from "./students";
 
 export const listTerms = (db: Db) => db.select().from(terms).orderBy(desc(terms.startsOn));
@@ -26,29 +27,30 @@ export async function rosterOf(db: Db, classIds: string[]) {
 /** Học kỳ đã kết thúc trước hôm nay (ngày Việt Nam). */
 export const isPastTerm = (term: { endsOn: string }, today: string): boolean => term.endsOn < today;
 
-export type RosterEntry = Awaited<ReturnType<typeof rosterOf>>[number] & {
-  /** Em đã chuyển sang lớp khác (lên lớp) nhưng có dòng điểm danh ở lớp này trong học kỳ đã qua. */
-  former: boolean;
-};
+/** `former`/`inactive` theo quy tắc chung `membershipOf` (src/lib/promotion.ts). */
+export type RosterEntry = Awaited<ReturnType<typeof rosterOf>>[number] & Membership;
 
 /**
  * Danh sách em để thống kê một học kỳ:
  * - học kỳ hiện tại/tương lai: em ĐANG học ở lớp (theo lớp hiện tại);
  * - học kỳ đã qua: em đang học ở lớp ∪ em có dòng điểm danh (buổi học hoặc đi lễ) ở các buổi của lớp trong học kỳ đó,
- *   để em đã lên lớp không biến mất khỏi số liệu cũ. `classId` của dòng là lớp đang thống kê, không phải lớp hiện tại.
+ *   để em đã lên lớp (hoặc đã nghỉ) không biến mất khỏi số liệu cũ. `classId` của dòng là lớp đang thống kê; nhãn
+ *   `former`/`inactive` theo `membershipOf` (lớp hiện tại của em ≠ lớp của buổi => `former`).
  * Không bao giờ chọn `qr_token`.
  */
 export async function termRoster(db: Db, classIds: string[], term: { id: string; endsOn: string }, today: string): Promise<RosterEntry[]> {
-  const current = (await rosterOf(db, classIds)).map((s) => ({ ...s, former: false }));
+  const current = (await rosterOf(db, classIds)).map((s) => ({ ...s, ...membershipOf({ currentClassId: s.classId, active: s.active }, s.classId) }));
   if (!isPastTerm(term, today) || classIds.length === 0) return current;
   const pairs = await db
-    .selectDistinct({ ...studentColumns, classId: sessions.classId })
+    .selectDistinct({ ...studentColumns, currentClassId: students.classId, classId: sessions.classId })
     .from(attendance)
     .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
     .innerJoin(students, eq(students.id, attendance.studentId))
     .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, term.id)));
   const have = new Set(current.map((s) => `${s.classId}:${s.id}`));
-  const former = pairs.filter((p) => !have.has(`${p.classId}:${p.id}`)).map((p) => ({ ...p, former: true }));
+  const former = pairs
+    .filter((p) => !have.has(`${p.classId}:${p.id}`))
+    .map(({ currentClassId, ...p }) => ({ ...p, ...membershipOf({ currentClassId, active: p.active }, p.classId) }));
   return [...current, ...former].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
 }
 

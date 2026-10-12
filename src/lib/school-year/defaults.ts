@@ -94,3 +94,13 @@ export const START_WINDOW = { before: 400, after: 550 } as const;
 export function startWindow(today: string): { min: string; max: string } {
   return { min: addDays(today, -START_WINDOW.before), max: addDays(today, START_WINDOW.after) };
 }
+
+/**
+ * Giá trị mặc định của form "Tạo năm học" luôn nằm trong `startWindow(today)`: năm trước dời một năm nếu hợp lệ, nếu không
+ * (năm gần nhất quá cũ, hoặc năm sau đã được tạo sớm nên dời nữa thì quá xa) thì tháng 9 kế tiếp tính từ hôm nay.
+ */
+export function suggestSchoolYear(previous: { name: string; terms: readonly TermInput[] } | null, today: string): SchoolYearDraft {
+  const shifted = defaultSchoolYear(previous, today);
+  const { min, max } = startWindow(today);
+  return shifted.term1.startsOn >= min && shifted.term1.startsOn <= max ? shifted : defaultSchoolYear(null, today);
+}

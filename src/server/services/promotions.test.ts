@@ -1,5 +1,6 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { resolveTerm } from "@/db/queries/stats";
 import { attendance, classCatechists, classes, grades, promotions, seatAssignments, seatingPlans, sessions, students, users } from "@/db/schema";
 import { auditRows, breakAuditInserts, dataSnapshot } from "@/test/audit";
 import { createTestDb } from "@/test/db";
@@ -7,7 +8,7 @@ import { seedBasics } from "@/test/fixtures";
 import { setNextGrade } from "./grade-settings";
 import { applyPromotion, incomingNotices, listPromotions, previewPromotion, promotionTargets, undoPromotion } from "./promotions";
 import { applyScan } from "./scan";
-import { massStats } from "./mass-stats";
+import { massAttentionList, massStats } from "./mass-stats";
 import { attentionList, classStats, gradeOverview } from "./stats";
 import { getStudentProfile } from "./student-profile";
 
@@ -237,7 +238,8 @@ describe("after a promotion: history, stats and scanning", () => {
     ]);
     expect(JSON.stringify(stats)).not.toContain(an.qrToken);
     expect(JSON.stringify(stats)).not.toContain(stranger.id);
-    expect((await attentionList(db, b.glv, b.termId, LATER)).map((a) => [a.fullName, a.classId])).toEqual([["An", b.classId]]);
+    // Danh sách cần hành động không bao giờ có em đã lên lớp khác (vẫn có trong thống kê với nhãn).
+    expect(await attentionList(db, b.glv, b.termId, LATER)).toEqual([]);
     const overview = await gradeOverview(db, b.head, b.termId, LATER);
     expect(overview?.find((r) => r.classId === b.classId)).toMatchObject({ studentCount: 3, sessions: 3, warningCount: 1 });
     expect(overview?.find((r) => r.classId === cls2.id)).toMatchObject({ studentCount: 2, sessions: 0 });
@@ -276,6 +278,58 @@ describe("after a promotion: history, stats and scanning", () => {
       applyScan(db, user, { eventId: crypto.randomUUID(), sessionId, kind: "scan", token: an.qrToken, mode: "present" });
     expect(await scan(b.glv, oldS.id)).toMatchObject({ ok: false, code: "invalid_card" });
     expect(await scan(glv2, newS.id)).toMatchObject({ ok: true, data: { result: "applied", studentId: an.id, status: "present" } });
+  });
+});
+
+describe("past term after promotions: one labelling rule, attention lists stay actionable", () => {
+  const LATER = "2027-03-01"; // hè: không học kỳ nào chứa ngày => resolveTerm trả học kỳ vừa kết thúc
+
+  async function scenario() {
+    const s = await setup();
+    const { db, b, cls2, an, binh, nghi } = s;
+    const [cls3] = await db.insert(classes).values({ gradeId: b.gradeId, name: "Lớp A3" }).returning();
+    const old = await db.insert(sessions).values(["2026-09-20", "2026-09-27", "2026-10-04"].map((heldOn) => ({ classId: b.classId, termId: b.termId, heldOn }))).returning();
+    const [mass] = await db.insert(sessions).values({ classId: b.classId, termId: b.termId, heldOn: "2026-10-04", kind: "mass" }).returning();
+    await db.insert(attendance).values([
+      ...old.map((o) => ({ sessionId: o.id, studentId: an.id, status: "absent_unexcused" as const })),
+      ...old.map((o) => ({ sessionId: o.id, studentId: binh.id, status: "present" as const })),
+      ...old.map((o) => ({ sessionId: o.id, studentId: nghi.id, status: "absent_unexcused" as const })), // đã nghỉ, vẫn ở lớp A
+      { sessionId: mass.id, studentId: an.id, status: "present" as const },
+      { sessionId: mass.id, studentId: nghi.id, status: "absent_unexcused" as const },
+    ]);
+    await s.apply(b.head, [an.id, binh.id]); // An, Bình: A -> A2
+    const [s2] = await db.insert(sessions).values({ classId: cls2.id, termId: b.termId, heldOn: "2026-10-11" }).returning();
+    await db.insert(attendance).values({ sessionId: s2.id, studentId: binh.id, status: "absent_unexcused" });
+    await applyPromotion(db, b.head, { fromClassId: cls2.id, toClassId: cls3.id, studentIds: [binh.id] }); // Bình chuyển lần hai: A2 -> A3
+    await db.update(grades).set({ massThreshold: 1 }).where(eq(grades.id, b.gradeId));
+    return { ...s, cls3 };
+  }
+  const labels = (rows: { fullName: string; former: boolean; inactive: boolean }[] | undefined) =>
+    rows?.map((r) => [r.fullName, r.former, r.inactive]);
+
+  it("labels former only when the current class differs from the class that held the session (class sheet = mass sheet)", async () => {
+    const { db, b, cls2 } = await scenario();
+    const term = await resolveTerm(db, undefined, LATER);
+    expect(term?.id).toBe(b.termId);
+    const stats = await classStats(db, b.head, b.classId, b.termId, LATER);
+    expect(labels(stats?.rows)).toEqual([["An", true, false], ["Bình", true, false], ["Chi", false, false], ["Nghỉ", false, true]]);
+    const mass = await massStats(db, b.head, { classId: b.classId, termId: b.termId, today: LATER });
+    expect(labels(mass?.rows)).toEqual(labels(stats?.rows));
+    // Lớp A2: Bình (đã chuyển tiếp sang A3) mang nhãn ở A2; An là thành viên hiện tại của A2.
+    const a2 = await classStats(db, b.head, cls2.id, b.termId, LATER);
+    expect(a2?.rows.map((r) => [r.fullName, r.former, r.summary.marked])).toEqual([["An", false, 0], ["Bình", true, 1]]);
+    const overview = await gradeOverview(db, b.head, b.termId, LATER);
+    expect(overview?.find((r) => r.classId === b.classId)?.studentCount).toBe(4);
+    expect(overview?.find((r) => r.classId === cls2.id)?.studentCount).toBe(2);
+  });
+
+  it("attention lists (home, Cần chú ý) never list former or inactive students, even in the summer-gap default term", async () => {
+    const { db, b, glv2 } = await scenario();
+    const term = await resolveTerm(db, undefined, LATER);
+    for (const user of [b.head, b.glv, glv2]) {
+      expect(await attentionList(db, user, term!.id, LATER)).toEqual([]);
+      expect(await massAttentionList(db, user, term!.id, LATER)).toEqual([]);
+    }
   });
 });
 

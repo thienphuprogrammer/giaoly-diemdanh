@@ -83,25 +83,23 @@ export async function setNextGrade(db: Db, user: AppUser, input: unknown): Promi
   if (!p.success) return fail("Dữ liệu không hợp lệ");
   const { gradeId } = p.data;
   if (!z.uuid().safeParse(gradeId).success || !canManageGrade(user, gradeId)) return fail(FORBIDDEN);
-  const grade = await getGrade(db, gradeId);
-  if (!grade) return fail(FORBIDDEN);
   const raw = p.data.nextGradeId.trim();
-  let next: { id: string; name: string } | null = null;
-  if (raw !== "") {
-    if (raw === gradeId) return fail("Khối kế tiếp phải là một khối khác");
-    next = z.uuid().safeParse(raw).success ? await getGrade(db, raw) : null;
-    if (!next) return fail(NO_GRADE);
-  }
-  if ((next?.id ?? null) === grade.nextGradeId) return ok(undefined);
-  const before = grade.nextGradeId ? await getGrade(db, grade.nextGradeId) : null;
-  const summary = { gradeName: redactText(grade.name), before: before ? redactText(before.name) : null, after: next ? redactText(next.name) : null };
-  // Một dòng cho khối nguồn và cho mỗi khối bị chọn/bỏ chọn, để trưởng khối đó thấy (băng báo màn "Năm học").
-  const gradeIds = [...new Set([gradeId, next?.id, before?.id].filter((id): id is string => Boolean(id)))];
-  await db.transaction(async (tx) => {
+  if (raw === gradeId) return fail("Khối kế tiếp phải là một khối khác");
+  const next = raw === "" ? null : z.uuid().safeParse(raw).success ? await getGrade(db, raw) : null;
+  if (raw !== "" && !next) return fail(NO_GRADE);
+  // Đọc giá trị hiện tại TRONG transaction và khoá dòng khối (FOR UPDATE): hai lần đổi song song không ghi "trước" cũ.
+  return db.transaction(async (tx) => {
+    const [grade] = await tx.select().from(grades).where(eq(grades.id, gradeId)).for("update");
+    if (!grade) return fail(FORBIDDEN);
+    if ((next?.id ?? null) === grade.nextGradeId) return ok(undefined);
+    const before = grade.nextGradeId ? await getGrade(tx, grade.nextGradeId) : null;
+    const summary = { gradeName: redactText(grade.name), before: before ? redactText(before.name) : null, after: next ? redactText(next.name) : null };
+    // Một dòng cho khối nguồn và cho mỗi khối bị chọn/bỏ chọn, để trưởng khối đó thấy (băng báo màn "Năm học").
+    const gradeIds = [...new Set([gradeId, next?.id, before?.id].filter((id): id is string => Boolean(id)))];
     await tx.update(grades).set({ nextGradeId: next?.id ?? null }).where(eq(grades.id, gradeId));
     for (const scope of gradeIds) {
       await recordAudit(tx, { actorId: user.id, gradeId: scope, entity: "grade_settings", entityId: gradeId, action: "grade.next_grade", summary });
     }
+    return ok(undefined);
   });
-  return ok(undefined);
 }

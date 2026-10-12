@@ -8,6 +8,7 @@ import { db } from "@/db/client";
 import { listTerms, resolveTerm } from "@/db/queries/stats";
 import { requireUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
+import { membershipNote } from "@/lib/promotion";
 import { classStats, type StatRow } from "@/server/services/stats";
 
 const ROW = "grid grid-cols-4 items-center gap-x-2 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_repeat(4,4.5rem)_8rem]";
@@ -24,7 +25,7 @@ function StatLine({ row }: { row: StatRow }) {
     <div role="row" className={ROW}>
       <div role="cell" className="order-first col-span-3 break-words font-medium sm:order-none sm:col-span-1">
         {row.fullName}
-        {row.former && <span className="ml-1.5 text-xs font-normal text-ink-soft">(đã lên lớp khác)</span>}
+        {membershipNote(row) && <span className="ml-1.5 text-xs font-normal text-ink-soft">{membershipNote(row)}</span>}
       </div>
       {COLUMNS.map((c) => (
         <div role="cell" key={c.key} className="flex flex-col items-center rounded-control bg-surface-muted py-1.5 sm:bg-transparent sm:py-0">

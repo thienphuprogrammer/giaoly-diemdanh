@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { tallyMass, type MassWeek } from "@/lib/attendance/mass-tally";
+import { membershipOf } from "@/lib/promotion";
 import { attendance, classes, grades, sessions, students } from "../schema";
 import type { Db } from "../types";
 
@@ -21,8 +22,9 @@ export interface MassGridStudent {
   threshold: number;
   /** Các buổi đi lễ đã ghi nhận mà em có đi (present/late). */
   attended: ReadonlySet<string>;
-  /** Em đã lên lớp khác, chỉ còn trong số liệu học kỳ đã qua của lớp này (`includeFormer`). */
+  /** Nhãn theo `membershipOf` (src/lib/promotion.ts): đã lên lớp khác / đã nghỉ (chỉ gặp với `includeFormer`). */
   former: boolean;
+  inactive: boolean;
 }
 
 export interface MassGrid {
@@ -78,7 +80,8 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
     .as("pairs");
   const formerQuery = includeFormer
     ? db.select({
-      id: students.id, classId: pairs.classId, fullName: students.fullName, saintName: students.saintName,
+      id: students.id, classId: pairs.classId, currentClassId: students.classId, active: students.active,
+      fullName: students.fullName, saintName: students.saintName,
       parentPhone: students.parentPhone, firstSeen: first.firstSeen, threshold: grades.massThreshold,
     })
       .from(pairs)
@@ -86,7 +89,7 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
       .leftJoin(first, and(eq(first.studentId, pairs.studentId), eq(first.classId, pairs.classId)))
       .innerJoin(classes, eq(classes.id, pairs.classId))
       .innerJoin(grades, eq(grades.id, classes.gradeId))
-      .where(and(ne(students.classId, pairs.classId), studentId ? eq(students.id, studentId) : undefined))
+      .where(studentId ? eq(students.id, studentId) : undefined)
     : Promise.resolve([]);
   const [rows, roster, formerRows] = await Promise.all([
     db.select({ classId: sessions.classId, sessionId: sessions.id, heldOn: sessions.heldOn, studentId: attendance.studentId, status: attendance.status })
@@ -101,7 +104,8 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
       ))
       .orderBy(asc(sessions.heldOn)),
     db.select({
-      id: students.id, classId: students.classId, fullName: students.fullName, saintName: students.saintName,
+      id: students.id, classId: students.classId, currentClassId: students.classId, active: students.active,
+      fullName: students.fullName, saintName: students.saintName,
       parentPhone: students.parentPhone, firstSeen: first.firstSeen, threshold: grades.massThreshold,
     })
       .from(students)
@@ -129,13 +133,18 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
   }
   return {
     weeks,
-    students: [
-      ...roster.map((s) => ({ ...s, former: false })),
-      ...formerRows.map((s) => ({ ...s, former: true })),
-    ]
-      .sort((a, b) => (formerRows.length === 0 ? 0 : a.fullName.localeCompare(b.fullName, "vi")))
-      .map((s) => ({ ...s, attended: attendedBy.get(s.id) ?? new Set<string>() })),
+    students: mergeRoster(roster, formerRows)
+      .map(({ currentClassId, active, ...s }) => ({
+        ...s, ...membershipOf({ currentClassId, active }, s.classId), attended: attendedBy.get(s.id) ?? new Set<string>(),
+      })),
   };
+}
+
+/** Danh sách hiện tại + các cặp (em, lớp của buổi) chưa có trong đó (học kỳ đã qua); sắp theo tên khi có thêm em. */
+function mergeRoster<T extends { id: string; classId: string; fullName: string }>(roster: T[], extra: T[]): T[] {
+  const have = new Set(roster.map((s) => `${s.classId}:${s.id}`));
+  const added = extra.filter((s) => !have.has(`${s.classId}:${s.id}`));
+  return added.length === 0 ? roster : [...roster, ...added].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
 }
 
 /**

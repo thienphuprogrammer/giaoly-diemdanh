@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, addYears, defaultSchoolYear, startWindow, nextYearName, termsOverlap, validateTermRanges } from "./defaults";
+import { addDays, addYears, defaultSchoolYear, startWindow, suggestSchoolYear, nextYearName, termsOverlap, validateTermRanges } from "./defaults";
 
 describe("addYears", () => {
   it.each([
@@ -114,5 +114,31 @@ describe("addDays / startWindow", () => {
   });
   it("allows a start between 400 days before and 550 days after today", () => {
     expect(startWindow("2026-10-12")).toEqual({ min: "2025-09-07", max: "2028-04-14" });
+  });
+});
+
+describe("suggestSchoolYear (form defaults always inside the start window)", () => {
+  const year = (name: string, start: number) => ({
+    name, terms: [
+      { name: "HK1", startsOn: `${start}-09-01`, endsOn: `${start + 1}-01-15` },
+      { name: "HK2", startsOn: `${start + 1}-01-16`, endsOn: `${start + 1}-05-31` },
+    ],
+  });
+  it("keeps the shifted previous year when it starts inside the window", () => {
+    expect(suggestSchoolYear(year("2026-2027", 2026), "2026-10-12").term1.startsOn).toBe("2027-09-01");
+  });
+  it("falls back to the coming September when the latest year is very old", () => {
+    expect(suggestSchoolYear(year("2019-2020", 2019), "2026-10-12")).toEqual(defaultSchoolYear(null, "2026-10-12"));
+  });
+  it("falls back to the coming September when next year was already created early (shift would be too far)", () => {
+    const d = suggestSchoolYear(year("2027-2028", 2027), "2026-10-12");
+    expect(d.term1.startsOn).toBe("2027-09-01");
+    const w = startWindow("2026-10-12");
+    expect(d.term1.startsOn >= w.min && d.term1.startsOn <= w.max).toBe(true);
+  });
+  it("on the window's last day the shifted start is still accepted", () => {
+    // 2027-09-01 + 0: hôm nay = 2027-09-01 - 550 ngày
+    expect(suggestSchoolYear(year("2026-2027", 2026), addDays("2027-09-01", -550)).term1.startsOn).toBe("2027-09-01");
+    expect(suggestSchoolYear(year("2026-2027", 2026), addDays("2027-09-01", -551)).term1.startsOn).not.toBe("2027-09-01");
   });
 });

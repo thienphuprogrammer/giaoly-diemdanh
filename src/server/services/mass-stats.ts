@@ -7,6 +7,7 @@ import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { isMassWarning, tallyMass, type MassCell, type MassWeek } from "@/lib/attendance/mass-tally";
 import { todayInVietnam } from "@/lib/dates";
+import { isActionable } from "@/lib/promotion";
 import { guardClass } from "../guard";
 
 export interface MassStatRow {
@@ -19,8 +20,9 @@ export interface MassStatRow {
   warning: boolean;
   /** Cùng thứ tự với `MassStats.weeks`. */
   cells: readonly MassCell[];
-  /** Em đã lên lớp khác, chỉ còn trong số liệu học kỳ đã qua của lớp này. */
+  /** Nhãn theo `membershipOf`: đã lên lớp khác / đã nghỉ (chỉ ở học kỳ đã qua). */
   former: boolean;
+  inactive: boolean;
 }
 
 export interface MassStats {
@@ -43,7 +45,7 @@ function statRow(weeks: readonly MassWeek[], s: MassGridStudent, threshold: numb
   return {
     studentId: s.id, fullName: s.fullName, saintName: s.saintName,
     recordedWeeksCounted: t.counted, attendedWeeks: t.attended, missedWeeks: t.missed,
-    warning: isMassWarning(t.missed, threshold), cells: t.cells, former: s.former,
+    warning: isMassWarning(t.missed, threshold), cells: t.cells, former: s.former, inactive: s.inactive,
   };
 }
 
@@ -100,6 +102,7 @@ export async function massAttentionList(db: Db, user: AppUser, termId: string, t
   const names = new Map(visible.map((c) => [c.id, c.name]));
   const grid = await massGrid(db, { classIds: visible.map((c) => c.id), termId, includeFormer: isPastTerm(term, today) });
   return grid.students
+    .filter((s) => isActionable(s)) // không bao giờ liệt kê em đã lên lớp khác/đã nghỉ
     .map((s) => ({ s, missed: tallyMass(grid.weeks.get(s.classId) ?? [], s.firstSeen, s.attended).missed }))
     .filter(({ s, missed }) => isMassWarning(missed, s.threshold))
     .map(({ s, missed }) => ({

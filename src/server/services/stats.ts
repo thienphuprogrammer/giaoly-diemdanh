@@ -5,6 +5,7 @@ import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { summarize, type StudentSummary } from "@/lib/attendance/summary";
 import { todayInVietnam } from "@/lib/dates";
+import { isActionable } from "@/lib/promotion";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { guardClass } from "../guard";
 
@@ -14,8 +15,9 @@ export interface StatRow {
   fullName: string;
   saintName: string | null;
   summary: StudentSummary;
-  /** Em đã lên lớp khác, chỉ còn trong số liệu học kỳ đã qua của lớp này. */
+  /** Nhãn theo `membershipOf`: đã lên lớp khác / đã nghỉ (chỉ ở học kỳ đã qua). */
   former: boolean;
+  inactive: boolean;
 }
 
 const key = (classId: string, studentId: string) => `${classId}:${studentId}`;
@@ -28,7 +30,7 @@ function buildRows(roster: RosterEntry[], records: { classId: string; studentId:
     byStudent.set(k, [...(byStudent.get(k) ?? []), { status: r.status }]);
   }
   return roster.map((s) => ({
-    studentId: s.id, classId: s.classId, fullName: s.fullName, saintName: s.saintName, former: s.former,
+    studentId: s.id, classId: s.classId, fullName: s.fullName, saintName: s.saintName, former: s.former, inactive: s.inactive,
     summary: summarize(byStudent.get(key(s.classId, s.id)) ?? []),
   }));
 }
@@ -66,8 +68,9 @@ export async function attentionList(db: Db, user: AppUser, termId: string, today
   const names = new Map(visible.map((c) => [c.id, c.name]));
   const [roster, records] = await Promise.all([termRoster(db, ids, term, today), termRecords(db, ids, term.id)]);
   const phones = new Map(roster.map((s) => [s.id, s.parentPhone]));
+  // Danh sách cần hành động: chỉ em đang học ở lớp (bỏ em đã lên lớp khác/đã nghỉ của học kỳ đã qua).
   return buildRows(roster, records)
-    .filter((r) => r.summary.warning.level !== "none")
+    .filter((r) => isActionable(r) && r.summary.warning.level !== "none")
     .map((r) => ({
       classId: r.classId, className: names.get(r.classId) ?? "", studentId: r.studentId, fullName: r.fullName,
       level: r.summary.warning.level as "watch" | "warning", unexcused: r.summary.unexcused, parentPhone: phones.get(r.studentId) ?? null,

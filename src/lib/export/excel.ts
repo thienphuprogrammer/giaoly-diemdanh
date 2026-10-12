@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { MassCell } from "@/lib/attendance/mass-tally";
 import { shortDate } from "@/lib/date-label";
+import { membershipNote, type Membership } from "@/lib/promotion";
 import type { MassStats } from "@/server/services/mass-stats";
 import type { StatRow } from "@/server/services/stats";
 
@@ -13,8 +14,11 @@ export function safeCell(value: string): string {
 
 const sheetName = (name: string) => name.replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim().slice(0, 31) || "Thống kê";
 
-/** Em đã lên lớp khác vẫn có trong số liệu học kỳ đã qua của lớp cũ: ghi chú ngay sau tên. */
-const nameOf = (r: { fullName: string; former: boolean }) => safeCell(r.former ? `${r.fullName} (đã lên lớp khác)` : r.fullName);
+/** Em đã lên lớp khác / đã nghỉ vẫn có trong số liệu học kỳ đã qua: ghi chú ngay sau tên (quy tắc chung `membershipNote`). */
+const nameOf = (r: { fullName: string } & Membership) => {
+  const note = membershipNote(r);
+  return safeCell(note ? `${r.fullName} ${note}` : r.fullName);
+};
 
 const LEVEL_LABEL = { none: "", watch: "Cần chú ý", warning: "Cảnh báo" } as const;
 

@@ -16,8 +16,8 @@ describe("safeCell", () => {
 describe("buildStatsWorkbook", () => {
   it("writes a header, one row per student and sanitises text cells", async () => {
     const rows = [
-      { studentId: "1", classId: "c", fullName: "=HYPERLINK(\"http://x\")", saintName: "Phêrô", former: false, summary: summarize([{ status: "present" }, { status: "absent_unexcused" }, { status: "absent_unexcused" }]) },
-      { studentId: "2", classId: "c", fullName: "Trần Bình", saintName: null, former: false, summary: summarize([]) },
+      { studentId: "1", classId: "c", fullName: "=HYPERLINK(\"http://x\")", saintName: "Phêrô", former: false, inactive: false, summary: summarize([{ status: "present" }, { status: "absent_unexcused" }, { status: "absent_unexcused" }]) },
+      { studentId: "2", classId: "c", fullName: "Trần Bình", saintName: null, former: false, inactive: false, summary: summarize([]) },
     ];
     const buffer = await buildStatsWorkbook({ className: "Lớp A/B?", termName: "Học kỳ 1", rows });
     const wb = new ExcelJS.Workbook();
@@ -34,14 +34,14 @@ describe("buildStatsWorkbook", () => {
 
 describe("buildStatsWorkbook: Đi lễ sheet", () => {
   const classRows = [
-    { studentId: "1", classId: "c", fullName: "An", saintName: "Phêrô", former: false, summary: summarize([{ status: "present" }]) },
+    { studentId: "1", classId: "c", fullName: "An", saintName: "Phêrô", former: false, inactive: false, summary: summarize([{ status: "present" }]) },
   ];
   const mass = {
     threshold: 2,
     weeks: [{ sessionId: "w1", heldOn: "2026-10-04" }, { sessionId: "w2", heldOn: "2026-10-11" }],
     rows: [
-      { studentId: "1", fullName: "An", saintName: "Phêrô", recordedWeeksCounted: 2, attendedWeeks: 0, missedWeeks: 2, warning: true, cells: ["missed", "missed"] as const, former: false },
-      { studentId: "2", fullName: "+Bình", saintName: null, recordedWeeksCounted: 1, attendedWeeks: 1, missedWeeks: 0, warning: false, cells: ["not_counted", "attended"] as const, former: false },
+      { studentId: "1", fullName: "An", saintName: "Phêrô", recordedWeeksCounted: 2, attendedWeeks: 0, missedWeeks: 2, warning: true, cells: ["missed", "missed"] as const, former: false, inactive: false },
+      { studentId: "2", fullName: "+Bình", saintName: null, recordedWeeksCounted: 1, attendedWeeks: 1, missedWeeks: 0, warning: false, cells: ["not_counted", "attended"] as const, former: false, inactive: false },
     ],
   };
   const load = async (buffer: Buffer) => {
@@ -75,9 +75,16 @@ describe("buildStatsWorkbook: Đi lễ sheet", () => {
 });
 
 describe("buildStatsWorkbook: promoted students in a past term", () => {
+  it("notes 'đã nghỉ' for an inactive student of the same class", async () => {
+    const rows = [{ studentId: "1", classId: "c", fullName: "Bé", saintName: null, former: false, inactive: true, summary: summarize([]) }];
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildStatsWorkbook({ className: "Lớp A", termName: "HK1", rows })) as unknown as ArrayBuffer);
+    expect(wb.worksheets[0].getRow(2).getCell(3).value).toBe("Bé (đã nghỉ)");
+  });
+
   it("notes 'đã lên lớp khác' after the name on both sheets", async () => {
-    const rows = [{ studentId: "1", classId: "c", fullName: "An", saintName: null, former: true, summary: summarize([{ status: "present" }]) }];
-    const mass = { threshold: 2, weeks: [], rows: [{ studentId: "1", fullName: "An", saintName: null, recordedWeeksCounted: 0, attendedWeeks: 0, missedWeeks: 0, warning: false, cells: [] as const, former: true }] };
+    const rows = [{ studentId: "1", classId: "c", fullName: "An", saintName: null, former: true, inactive: false, summary: summarize([{ status: "present" }]) }];
+    const mass = { threshold: 2, weeks: [], rows: [{ studentId: "1", fullName: "An", saintName: null, recordedWeeksCounted: 0, attendedWeeks: 0, missedWeeks: 0, warning: false, cells: [] as const, former: true, inactive: false }] };
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await buildStatsWorkbook({ className: "Lớp A", termName: "HK1", rows, mass })) as unknown as ArrayBuffer);
     expect(wb.worksheets[0].getRow(2).getCell(3).value).toBe("An (đã lên lớp khác)");
