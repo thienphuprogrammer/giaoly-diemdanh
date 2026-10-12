@@ -3,10 +3,15 @@ import { Bell, BellOff, BellRing, Send, Share, SquarePlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Notice } from "@/components/ui/Notice";
 import { Pill } from "@/components/ui/Pill";
-import { PUSH_STATE_LABEL, base64UrlToBytes, isIosDevice, pushUiState, sameKey, type PushEnv, type PushUiState } from "@/lib/push/client-state";
+import {
+  PUSH_STATE_LABEL, base64UrlToBytes, isIosDevice, planSync, pushUiState, readOptOut, sameKey, writeOptOut,
+  type OptOutStorage, type PushEnv, type PushUiState,
+} from "@/lib/push/client-state";
 import type { ActionResult } from "@/server/result";
 
 interface Props {
+  /** Cờ "đã tắt trên thiết bị này" lưu theo tài khoản. */
+  userId: string;
   /** Khoá VAPID công khai do server đọc từ biến môi trường lúc chạy; null = máy chủ chưa cấu hình thông báo đẩy. */
   publicKey: string | null;
   subscribe: (subscription: unknown) => Promise<ActionResult>;
@@ -32,6 +37,14 @@ function readEnv(configured: boolean): Omit<PushEnv, "subscribed"> {
   };
 }
 
+function optOutStore(): OptOutStorage {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 async function currentSubscription(): Promise<PushSubscription | null> {
   const reg = await navigator.serviceWorker.getRegistration("/");
   return reg ? reg.pushManager.getSubscription() : null;
@@ -44,10 +57,11 @@ async function subscribeDevice(publicKey: string): Promise<PushSubscription> {
 }
 
 /**
- * Nút "Bật thông báo" (spec §4). Chỉ xin quyền khi người dùng bấm. Khi mở trang mà quyền đã cấp: đăng ký lại lặng lẽ
- * nếu mất đăng ký/đổi khoá, và gửi lại đăng ký lên máy chủ (thiết bị đổi tài khoản, hoặc máy chủ đã xoá vì hết hạn).
+ * Nút "Bật thông báo" (spec §4). Chỉ xin quyền khi người dùng bấm. Khi mở trang mà quyền đã cấp: gửi lại đăng ký đang có
+ * lên máy chủ (thiết bị đổi tài khoản, hoặc máy chủ đã xoá vì hết hạn), bỏ đăng ký khoá cũ, và chỉ TỰ đăng ký mới khi người
+ * dùng chưa bấm "Tắt thông báo" trên thiết bị này (cờ theo tài khoản trong localStorage).
  */
-export function PushToggle({ publicKey, subscribe, unsubscribe, sendTest }: Props) {
+export function PushToggle({ userId, publicKey, subscribe, unsubscribe, sendTest }: Props) {
   const [state, setState] = useState<PushUiState>("loading");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
@@ -62,20 +76,24 @@ export function PushToggle({ publicKey, subscribe, unsubscribe, sendTest }: Prop
     }
     let sub = await currentSubscription().catch(() => null);
     const key = base64UrlToBytes(publicKey);
+    const plan = planSync({ optedOut: readOptOut(optOutStore(), userId), hasSubscription: sub !== null, keyMatches: sameKey(sub?.options.applicationServerKey, key) });
     try {
-      if (sub && !sameKey(sub.options.applicationServerKey, key)) {
+      if (plan.dropStale && sub) {
         await sub.unsubscribe();
         sub = null;
       }
-      if (!sub) sub = await subscribeDevice(publicKey);
-      const saved = await subscribe(sub.toJSON());
-      if (!saved.ok) sub = null;
+      if (plan.subscribe) sub = await subscribeDevice(publicKey);
+      if (plan.resend && sub) {
+        const saved = await subscribe(sub.toJSON());
+        if (!saved.ok) sub = null;
+      }
     } catch {
-      // Lặng lẽ: trạng thái hiện "Chưa bật", người dùng bấm lại để thử.
+      // Lặng lẽ với người dùng (hiện "Chưa bật", bấm lại để thử); ghi lại cho người hỗ trợ, không kèm endpoint/khoá.
+      console.warn("push: silent resync failed");
       sub = null;
     }
     setState(pushUiState({ ...env, subscribed: sub !== null }));
-  }, [publicKey, subscribe]);
+  }, [publicKey, subscribe, userId]);
 
   useEffect(() => {
     if (synced.current) return;
@@ -102,6 +120,7 @@ export function PushToggle({ publicKey, subscribe, unsubscribe, sendTest }: Prop
         setMessage({ tone: "error", text: saved.error });
         return;
       }
+      writeOptOut(optOutStore(), userId, false);
       setState("on");
       setMessage({ tone: "success", text: "Đã bật thông báo trên thiết bị này." });
     } catch {
@@ -115,6 +134,8 @@ export function PushToggle({ publicKey, subscribe, unsubscribe, sendTest }: Prop
   async function disable() {
     setBusy(true);
     setMessage(null);
+    // Đặt cờ trước: dù gỡ đăng ký có lỗi, lần mở trang sau cũng không tự bật lại.
+    writeOptOut(optOutStore(), userId, true);
     try {
       const sub = await currentSubscription();
       if (sub) {

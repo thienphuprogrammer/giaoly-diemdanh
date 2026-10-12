@@ -8,7 +8,7 @@ import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import type { PushMessage } from "@/lib/push/payload";
 import type { PushOutcome } from "@/lib/push/send";
-import { PUSH_MAX_FAILURES, PUSH_MAX_PER_USER, sendTestPush, sendToUser, subscribePush, unsubscribePush } from "./push";
+import { PUSH_MAX_AUTH_FAILURES, PUSH_MAX_FAILURES, PUSH_MAX_PER_USER, sendTestPush, sendToUser, subscribePush, unsubscribePush } from "./push";
 
 const keys = () => ({ p256dh: Buffer.concat([Buffer.from([4]), randomBytes(64)]).toString("base64url"), auth: randomBytes(16).toString("base64url") });
 const endpointOf = (n: string | number) => `https://fcm.googleapis.com/fcm/send/dev-${n}`;
@@ -146,6 +146,37 @@ describe("sendToUser", () => {
     const last = await sendToUser(db, b.glv.id, { title: "t", body: "b", url: "/" }, { vapid, send });
     expect(last).toEqual({ sent: 0, removed: 1, failed: 1 });
     expect(await rows()).toEqual([]);
+  });
+
+  it(`counts 401/403 (rotated VAPID key) separately and deletes after ${PUSH_MAX_AUTH_FAILURES} in a row; success resets both counters`, async () => {
+    const { db, b, rows } = await setup();
+    await seeded(db, b.glv.id, ["stale"]);
+    const auth = fakeSend({ [endpointOf("stale")]: "auth" });
+    for (let i = 1; i < PUSH_MAX_AUTH_FAILURES; i++) await sendToUser(db, b.glv.id, { title: "t", body: "b", url: "/" }, { vapid, send: auth });
+    expect((await rows())[0]).toMatchObject({ authFailureCount: PUSH_MAX_AUTH_FAILURES - 1, failureCount: 0 });
+    await db.update(pushSubscriptions).set({ failureCount: 3 });
+    await sendToUser(db, b.glv.id, { title: "t", body: "b", url: "/" }, { vapid, send: fakeSend({}) });
+    expect((await rows())[0]).toMatchObject({ authFailureCount: 0, failureCount: 0 });
+    for (let i = 0; i < PUSH_MAX_AUTH_FAILURES; i++) await sendToUser(db, b.glv.id, { title: "t", body: "b", url: "/" }, { vapid, send: auth });
+    expect(await rows()).toEqual([]);
+  });
+
+  it("local errors never count toward deleting a subscription", async () => {
+    const { db, b, rows } = await setup();
+    await seeded(db, b.glv.id, ["buggy"]);
+    const send = fakeSend({ [endpointOf("buggy")]: "error" });
+    for (let i = 0; i < PUSH_MAX_AUTH_FAILURES + 2; i++) await sendToUser(db, b.glv.id, { title: "t", body: "b", url: "/" }, { vapid, send });
+    expect((await rows())[0]).toMatchObject({ failureCount: 0, authFailureCount: 0 });
+  });
+
+  it("deletes a stored row whose endpoint is no longer allowed, without contacting it (real sender)", async () => {
+    const { db, b, rows } = await setup();
+    await db.insert(pushSubscriptions).values({ userId: b.glv.id, endpoint: "https://169.254.169.254/latest/meta-data", ...keys() });
+    const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(await sendToUser(db, b.glv.id, { title: "t", body: "b", url: "/" }, { vapid })).toEqual({ sent: 0, removed: 1, failed: 0 });
+    expect(await rows()).toEqual([]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("169.254");
+    log.mockRestore();
   });
 
   it("does nothing for a user without subscriptions", async () => {

@@ -20,7 +20,7 @@ async function setup() {
 describe("setClassSchedule: authorisation matrix", () => {
   it.each([
     ["assigned catechist", "glv", true],
-    ["head of the class's grade", "head", true],
+    ["head of the class's grade (read-only by the global constraint)", "head", false],
     ["head of another grade", "otherHead", false],
     ["catechist of another class", "otherGlv", false],
     ["unassigned catechist of the same grade", "unassigned", false],
@@ -73,7 +73,7 @@ describe("setClassSchedule: values and audit", () => {
     const { db, b, schedule } = await setup();
     await setClassSchedule(db, b.glv, { classId: b.classId, meetsOn: "0", meetsAt: "08:00" });
     await setClassSchedule(db, b.glv, { classId: b.classId, meetsOn: 0, meetsAt: "08:00" });
-    await setClassSchedule(db, b.head, { classId: b.classId, meetsOn: "", meetsAt: "" });
+    await setClassSchedule(db, b.glv, { classId: b.classId, meetsOn: "", meetsAt: "" });
     expect(await schedule()).toEqual({ on: null, at: null });
     const rows = await auditRows(db);
     expect(rows).toHaveLength(2);
@@ -81,7 +81,7 @@ describe("setClassSchedule: values and audit", () => {
       actorId: b.glv.id, classId: b.classId, gradeId: null, entity: "class", entityId: b.classId, action: "class.schedule",
       summary: { className: "Lớp A", before: null, after: "Chủ nhật 08:00" },
     });
-    expect(rows[1]).toMatchObject({ actorId: b.head.id, summary: { className: "Lớp A", before: "Chủ nhật 08:00", after: null } });
+    expect(rows[1]).toMatchObject({ actorId: b.glv.id, summary: { className: "Lớp A", before: "Chủ nhật 08:00", after: null } });
   });
 
   it("rolls the change back when the audit insert fails", async () => {
@@ -93,11 +93,11 @@ describe("setClassSchedule: values and audit", () => {
 });
 
 describe("getClassSchedule", () => {
-  it("returns the schedule with canEdit for writers and the grade head, read-only for none else, null outside read access", async () => {
+  it("returns the schedule with canEdit for assigned catechists only; the grade head reads it; null outside read access", async () => {
     const { db, b, unassigned } = await setup();
     await setClassSchedule(db, b.glv, { classId: b.classId, meetsOn: 6, meetsAt: "17:30" });
     expect(await getClassSchedule(db, b.glv, b.classId)).toEqual({ meetsOn: 6, meetsAt: "17:30", label: "Thứ bảy 17:30", canEdit: true });
-    expect((await getClassSchedule(db, b.head, b.classId))?.canEdit).toBe(true);
+    expect(await getClassSchedule(db, b.head, b.classId)).toEqual({ meetsOn: 6, meetsAt: "17:30", label: "Thứ bảy 17:30", canEdit: false });
     expect(await getClassSchedule(db, unassigned, b.classId)).toBeNull();
     expect(await getClassSchedule(db, b.otherGlv, b.classId)).toBeNull();
     expect(await getClassSchedule(db, b.glv, "bad")).toBeNull();

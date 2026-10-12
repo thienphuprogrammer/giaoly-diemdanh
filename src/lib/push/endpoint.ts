@@ -11,7 +11,8 @@
  * Không nhận `android.googleapis.com` (GCM cũ, đã ngừng) hay `*.push.microsoft.com` (không phải endpoint Web Push).
  */
 
-export const PUSH_ENDPOINT_MAX = 512;
+/** Endpoint thật thường 150–500 ký tự; WNS có thể dài hơn. 2048 vẫn chặn dữ liệu rác. */
+export const PUSH_ENDPOINT_MAX = 2048;
 
 export const PUSH_SERVICE_HOSTS = Object.freeze({
   exact: Object.freeze(["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"] as const),

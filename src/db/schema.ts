@@ -69,6 +69,7 @@ export const classes = pgTable(
   (t) => [
     uniqueIndex("classes_grade_name_uq").on(t.gradeId, t.name),
     check("classes_meets_on_range", sql`${t.meetsOn} between 0 and 6`),
+    check("classes_schedule_both_or_neither", sql`(${t.meetsOn} is null) = (${t.meetsAt} is null)`),
   ],
 );
 
@@ -236,7 +237,8 @@ export const promotions = pgTable(
 /**
  * Đăng ký Web Push của một thiết bị (spec §4). `endpoint` là URL của dịch vụ push (đã qua danh sách cho phép, xem
  * `src/lib/push/endpoint.ts`) và là duy nhất: một thiết bị đổi tài khoản thì dòng chuyển sang tài khoản mới.
- * `failure_count` đếm lần gửi lỗi tạm thời liên tiếp (429/5xx); đủ ngưỡng thì xoá đăng ký.
+ * `failure_count` đếm lần gửi lỗi tạm thời liên tiếp (429/5xx/lỗi mạng); đủ ngưỡng thì xoá đăng ký. `created_at` được đặt lại
+ * mỗi lần thiết bị đồng bộ (mở trang Tài khoản), nên khi vượt trần 10 thiết bị thì thiết bị lâu nhất chưa đồng bộ bị bỏ.
  */
 export const pushSubscriptions = pgTable(
   "push_subscriptions",
@@ -250,6 +252,8 @@ export const pushSubscriptions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
     failureCount: integer("failure_count").notNull().default(0),
+    /** 401/403 liên tiếp (khoá VAPID đã đổi): đếm riêng, ngưỡng xoá cao hơn. Lỗi cục bộ không được đếm. */
+    authFailureCount: integer("auth_failure_count").notNull().default(0),
   },
   (t) => [
     unique("push_subscriptions_endpoint_unique").on(t.endpoint),

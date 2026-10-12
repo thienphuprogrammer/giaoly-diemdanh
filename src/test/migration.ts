@@ -41,3 +41,6 @@ export const PROMOTIONS_MIGRATION = "0007_promotions";
 
 /** Migration nhắc việc: `classes.meets_on/meets_at`, bảng `push_subscriptions`, `notification_log`, loại nhật ký `class`. */
 export const PUSH_MIGRATION = "0008_push";
+
+/** Migration: CHECK lịch học có đủ cả thứ và giờ (hoặc trống cả hai), `push_subscriptions.auth_failure_count`. */
+export const PUSH_FIX_MIGRATION = "0009_push_fixes";

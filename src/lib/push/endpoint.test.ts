@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { parse as legacyParse } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PUSH_ENDPOINT_MAX, PUSH_SERVICE_HOSTS, parsePushSubscription, validatePushEndpoint, validatePushKeys } from "./endpoint";
 
@@ -87,6 +88,25 @@ describe("validatePushEndpoint: attack table", () => {
     const r = validatePushEndpoint(secretish);
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).not.toContain(secretish);
+  });
+
+  it("allows endpoints up to 2048 characters", () => expect(PUSH_ENDPOINT_MAX).toBe(2048));
+
+  it("gives the same hostname to legacy url.parse (used by the https request in web-push) for every accepted href", () => {
+    for (const raw of [
+      "https://fcm.googleapis.com/fcm/send/abc:APA91bDEF-ghi_jkl",
+      "https://FCM.GOOGLEAPIS.COM:443/fcm/send/x",
+      "https://updates.push.services.mozilla.com/wpush/v2/gAAAAABk?x=1",
+      "https://web.push.apple.com/QGx1ZkV2c2R0",
+      "https://wns2-bl2p.notify.windows.com/w/?token=BQYAAAB%2Bx",
+      "https://fcm.googleapis.com/a@b/c",
+    ]) {
+      const r = validatePushEndpoint(raw);
+      expect(r.ok, raw).toBe(true);
+      if (!r.ok) continue;
+      expect(legacyParse(r.endpoint).hostname).toBe(new URL(r.endpoint).hostname);
+      expect(legacyParse(r.endpoint).port ?? null).toBeNull();
+    }
   });
 
   it("accepts exactly the maximum length", () => {

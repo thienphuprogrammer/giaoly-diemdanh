@@ -2,15 +2,21 @@
 import { LogOut } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
+import { releasePushDevice } from "@/components/push/release-device";
 import { clearUserQueues, countUnsentForUser, localStore } from "@/lib/attendance/persist-queue";
+import type { ActionResult } from "@/server/result";
 
 /**
  * Đăng xuất: nếu máy còn lượt quét chưa gửi của người này thì hỏi trước (đăng xuất sẽ xóa chúng).
- * Khi đăng xuất, xóa mọi hàng quét của người này khỏi máy (cùng mã thẻ trong đó).
+ * Khi đăng xuất, xóa mọi hàng quét của người này khỏi máy (cùng mã thẻ trong đó) và gỡ thông báo đẩy của thiết bị này
+ * (cố gắng hết sức, tối đa 2 giây, lỗi không chặn đăng xuất).
  */
-export function LogoutButton({ userId, action }: { userId: string; action: () => Promise<void> }) {
+export function LogoutButton({ userId, action, unsubscribePush }: {
+  userId: string; action: () => Promise<void>; unsubscribePush?: (endpoint: unknown) => Promise<ActionResult>;
+}) {
   const form = useRef<HTMLFormElement>(null);
   const confirmed = useRef(false);
+  const pushReleased = useRef(false);
   const [unsent, setUnsent] = useState(0);
   const close = useCallback(() => setUnsent(0), []);
 
@@ -22,6 +28,14 @@ export function LogoutButton({ userId, action }: { userId: string; action: () =>
         setUnsent(n);
         return;
       }
+    }
+    if (unsubscribePush && !pushReleased.current) {
+      e.preventDefault();
+      void releasePushDevice(unsubscribePush).finally(() => {
+        pushReleased.current = true;
+        form.current?.requestSubmit();
+      });
+      return;
     }
     clearUserQueues(localStore(), userId);
   };

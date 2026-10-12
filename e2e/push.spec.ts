@@ -46,26 +46,35 @@ async function fakePush(page: Page, initial: NotificationPermission = "default")
   await page.addInitScript((start) => {
     const w = window as unknown as { __permissionAsks: number };
     w.__permissionAsks = 0;
-    let permission: NotificationPermission = start;
+    // Quyền được nhớ qua lần tải lại trong tab (như trình duyệt thật).
+    let permission = (sessionStorage.getItem("e2e-permission") as NotificationPermission | null) ?? start;
     Object.defineProperty(Notification, "permission", { configurable: true, get: () => permission });
     Notification.requestPermission = (async () => {
       w.__permissionAsks += 1;
       permission = "granted";
+      sessionStorage.setItem("e2e-permission", permission);
       return permission;
     }) as typeof Notification.requestPermission;
     const rand = (n: number) => crypto.getRandomValues(new Uint8Array(n));
     const b64 = (a: Uint8Array) => btoa(String.fromCharCode(...a)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    let current: PushSubscription | null = null;
+    // Đăng ký cũng được nhớ qua lần tải lại (như trình duyệt thật), lưu ở sessionStorage của tab.
+    const make = (json: { endpoint: string; keys: Record<string, string> }, serverKey: number[]): PushSubscription => ({
+      endpoint: json.endpoint, expirationTime: null,
+      options: { applicationServerKey: new Uint8Array(serverKey).buffer, userVisibleOnly: true },
+      toJSON: () => ({ ...json, expirationTime: null }),
+      unsubscribe: async () => { current = null; sessionStorage.removeItem("e2e-sub"); return true; },
+      getKey: () => null,
+    }) as unknown as PushSubscription;
+    const saved = sessionStorage.getItem("e2e-sub");
+    let current: PushSubscription | null = saved ? make(JSON.parse(saved).json, JSON.parse(saved).key) : null;
     PushManager.prototype.subscribe = async function (options?: PushSubscriptionOptionsInit) {
       const key = rand(65);
       key[0] = 4;
       const endpoint = `https://fcm.googleapis.com/fcm/send/e2e-${b64(rand(12))}`;
-      const serverKey = options?.applicationServerKey as Uint8Array;
-      const json = { endpoint, expirationTime: null, keys: { p256dh: b64(key), auth: b64(rand(16)) } };
-      current = {
-        endpoint, expirationTime: null, options: { applicationServerKey: serverKey.slice().buffer, userVisibleOnly: true },
-        toJSON: () => json, unsubscribe: async () => { current = null; return true; }, getKey: () => null,
-      } as unknown as PushSubscription;
+      const serverKey = [...(options?.applicationServerKey as Uint8Array)];
+      const json = { endpoint, keys: { p256dh: b64(key), auth: b64(rand(16)) } };
+      sessionStorage.setItem("e2e-sub", JSON.stringify({ json, key: serverKey }));
+      current = make(json, serverKey);
       return current;
     };
     PushManager.prototype.getSubscription = async function () { return current; };
@@ -111,6 +120,32 @@ test("Tài khoản: không xin quyền khi mở; bấm Bật thông báo -> Đan
   await expect(card(page)).toHaveAttribute("data-push-state", "off");
   await expect.poll(() => subscriptionsOf(pushUser())).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+
+  // "Tắt" phải giữ nguyên sau khi tải lại: quyền vẫn "granted" nhưng trang không tự đăng ký lại.
+  await page.reload();
+  expect(await page.evaluate(() => Notification.permission)).toBe("granted");
+  await expect(card(page)).toHaveAttribute("data-push-state", "off");
+  await page.waitForLoadState("networkidle");
+  expect(await subscriptionsOf(pushUser())).toEqual([]);
+
+  // Bật lại thì xoá cờ tắt: lần tải sau tự đồng bộ lại.
+  await card(page).getByRole("button", { name: "Bật thông báo" }).click();
+  await expect(card(page)).toHaveAttribute("data-push-state", "on");
+  await page.reload();
+  await expect(card(page)).toHaveAttribute("data-push-state", "on");
+  await expect.poll(() => subscriptionsOf(pushUser())).toHaveLength(1);
+});
+
+test("Đăng xuất gỡ thông báo của thiết bị này (không chặn đăng xuất)", async ({ page }) => {
+  await fakePush(page);
+  await login(page, pushUser());
+  await page.goto("/tai-khoan");
+  await card(page).getByRole("button", { name: "Bật thông báo" }).click();
+  await expect(card(page)).toHaveAttribute("data-push-state", "on");
+  await expect.poll(() => subscriptionsOf(pushUser())).toHaveLength(1);
+  await page.getByRole("button", { name: "Đăng xuất" }).click();
+  await expect(page).toHaveURL(/\/login/);
+  expect(await subscriptionsOf(pushUser())).toEqual([]);
 });
 
 test("Tài khoản: quyền đã cấp nhưng mất đăng ký -> tự đăng ký lại lặng lẽ khi mở trang", async ({ page }) => {
@@ -146,7 +181,7 @@ test("Tài khoản trên iPhone (tab Safari, chưa cài) -> hướng dẫn Thêm
   }
 });
 
-test("Lịch học: GLV đặt Chủ nhật 08:00 rồi xoá; trưởng khối cũng sửa được", async ({ page }) => {
+test("Lịch học: GLV đặt Chủ nhật 08:00 rồi xoá; trưởng khối chỉ xem", async ({ page }) => {
   await login(page, "glv-l@e2e.vn");
   await page.goto(`/lop/${state().classL}`);
   await page.getByText("Lịch học: chưa đặt").click();
@@ -165,12 +200,19 @@ test("Lịch học: GLV đặt Chủ nhật 08:00 rồi xoá; trưởng khối c
   await expect(page.getByText("Lịch học: chưa đặt")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
 
-  await page.context().clearCookies();
-  await login(page, "head-l@e2e.vn");
-  await page.goto(`/lop/${state().classL}`);
+  // Đặt lại để trưởng khối thấy lịch, nhưng không có form sửa.
+  await page.reload();
   await page.getByText("Lịch học: chưa đặt").click();
   await page.getByRole("combobox", { name: /^Thứ/ }).selectOption({ label: "Thứ bảy" });
   await page.getByLabel("Giờ bắt đầu").fill("17:30");
   await page.getByRole("button", { name: "Lưu lịch" }).click();
   await expect(page.getByText("Lịch học: Thứ bảy 17:30")).toBeVisible();
+
+  await page.context().clearCookies();
+  await login(page, "head-l@e2e.vn");
+  await page.goto(`/lop/${state().classL}`);
+  await expect(page.getByText("Lịch học: Thứ bảy 17:30")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /^Thứ/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Lưu lịch" })).toHaveCount(0);
+  await expect(page.locator("details summary", { hasText: "Lịch học" })).toHaveCount(0);
 });

@@ -56,3 +56,38 @@ export function sameKey(current: ArrayBuffer | null | undefined, expected: Uint8
   const a = new Uint8Array(current);
   return a.length === expected.length && a.every((v, i) => v === expected[i]);
 }
+
+/** Kho lưu kiểu localStorage (có thể null hoặc ném lỗi ở chế độ riêng tư/chặn dữ liệu trang). */
+export type OptOutStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
+
+/** Cờ "đã tự tắt thông báo trên thiết bị này" theo từng tài khoản: trang không tự đăng ký lại khi cờ còn. */
+export const pushOptOutKey = (userId: string) => `dd-push-optout:${userId}`;
+
+export function readOptOut(storage: OptOutStorage, userId: string): boolean {
+  try {
+    return storage?.getItem(pushOptOutKey(userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeOptOut(storage: OptOutStorage, userId: string, optedOut: boolean): void {
+  try {
+    if (optedOut) storage?.setItem(pushOptOutKey(userId), "1");
+    else storage?.removeItem(pushOptOutKey(userId));
+  } catch {
+    // Không lưu được cờ: lần mở sau có thể tự bật lại; không chặn thao tác.
+  }
+}
+
+export interface SyncInput { optedOut: boolean; hasSubscription: boolean; keyMatches: boolean }
+export interface SyncPlan { dropStale: boolean; subscribe: boolean; resend: boolean }
+
+/**
+ * Đồng bộ lặng lẽ khi mở trang (quyền đã cấp): đăng ký đang có (đúng khoá) luôn được gửi lại máy chủ (dọn 410, đổi tài
+ * khoản); đăng ký khoá cũ thì bỏ; chỉ TỰ đăng ký mới khi người dùng chưa bấm "Tắt thông báo" trên thiết bị này.
+ */
+export function planSync({ optedOut, hasSubscription, keyMatches }: SyncInput): SyncPlan {
+  if (hasSubscription && keyMatches) return { dropStale: false, subscribe: false, resend: true };
+  return { dropStale: hasSubscription, subscribe: !optedOut, resend: !optedOut };
+}

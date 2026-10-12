@@ -1,6 +1,6 @@
 import webpush from "web-push";
 import { describe, expect, it } from "vitest";
-import { PUSH_STATE_LABEL, base64UrlToBytes, isIosDevice, pushUiState, sameKey, type PushEnv } from "./client-state";
+import { PUSH_STATE_LABEL, base64UrlToBytes, isIosDevice, planSync, pushOptOutKey, pushUiState, readOptOut, sameKey, writeOptOut, type PushEnv } from "./client-state";
 
 const base: PushEnv = {
   configured: true, hasServiceWorker: true, hasPushManager: true, hasNotification: true,
@@ -53,4 +53,38 @@ describe("base64UrlToBytes / sameKey", () => {
     expect(sameKey(b.buffer, a)).toBe(false);
     expect(sameKey(null, a)).toBe(false);
   });
+});
+
+describe("opt-out flag and silent sync plan", () => {
+  const memory = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), m };
+  };
+
+  it("stores the opt-out per user id and clears it", () => {
+    const s = memory();
+    expect(readOptOut(s, "u1")).toBe(false);
+    writeOptOut(s, "u1", true);
+    expect(readOptOut(s, "u1")).toBe(true);
+    expect(readOptOut(s, "u2")).toBe(false);
+    expect([...s.m.keys()]).toEqual([pushOptOutKey("u1")]);
+    writeOptOut(s, "u1", false);
+    expect(readOptOut(s, "u1")).toBe(false);
+  });
+
+  it("survives storage that throws or is missing", () => {
+    const broken = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("quota"); }, removeItem: () => { throw new Error("x"); } };
+    expect(readOptOut(broken, "u1")).toBe(false);
+    expect(() => writeOptOut(broken, "u1", true)).not.toThrow();
+    expect(readOptOut(null, "u1")).toBe(false);
+  });
+
+  it.each([
+    ["no subscription, not opted out", { optedOut: false, hasSubscription: false, keyMatches: false }, { dropStale: false, subscribe: true, resend: true }],
+    ["no subscription, opted out: stay off", { optedOut: true, hasSubscription: false, keyMatches: false }, { dropStale: false, subscribe: false, resend: false }],
+    ["existing subscription: re-send", { optedOut: false, hasSubscription: true, keyMatches: true }, { dropStale: false, subscribe: false, resend: true }],
+    ["existing subscription while opted out: still re-send", { optedOut: true, hasSubscription: true, keyMatches: true }, { dropStale: false, subscribe: false, resend: true }],
+    ["rotated key: drop and re-subscribe", { optedOut: false, hasSubscription: true, keyMatches: false }, { dropStale: true, subscribe: true, resend: true }],
+    ["rotated key while opted out: drop only", { optedOut: true, hasSubscription: true, keyMatches: false }, { dropStale: true, subscribe: false, resend: false }],
+  ])("%s", (_n, input, plan) => expect(planSync(input)).toEqual(plan));
 });

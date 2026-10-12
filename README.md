@@ -8,7 +8,7 @@ Công nghệ: Next.js 16 (App Router), React 19, Postgres (Drizzle ORM), Tailwin
 
 - Node.js >= 22.9 (mã dùng `Map.groupBy`; script `seed` và `db:migrate` dùng `--env-file-if-exists`)
 - pnpm 10
-- Một database Postgres 16 (Neon, Supabase hoặc tự dựng)
+- Một database Postgres 16 (Neon, Supabase hoặc tự dựng); tối thiểu Postgres ≥ 15 (bảng `notification_log` dùng `UNIQUE NULLS NOT DISTINCT`)
 
 ## Biến môi trường
 
@@ -122,11 +122,11 @@ Thẻ nên quét ở khoảng cách tay, tránh bóng loáng của lớp ép pla
 
 ### Thông báo đẩy (Web Push) và lịch học
 
-- **Lịch học** của lớp (thứ + giờ bắt đầu, có thể để trống) sửa ở trang lớp, bởi GLV được phân công hoặc trưởng khối của lớp; mỗi lần đổi ghi nhật ký `class.schedule`. Dùng cho nhắc việc (Task 39); trống = không nhắc.
-- **Bật thông báo** ở trang Tài khoản: chỉ xin quyền khi bấm. iPhone/iPad cần **Thêm vào Màn hình chính** (iOS 16.4+), app hướng dẫn tại chỗ. Mỗi người tối đa 10 thiết bị (thiết bị cũ nhất bị bỏ); một thiết bị đổi tài khoản thì đăng ký chuyển sang tài khoản mới. "Gửi thử" chỉ gửi tới thiết bị của chính mình (3 lần/phút).
+- **Lịch học** của lớp (thứ + giờ bắt đầu, có thể để trống) sửa ở trang lớp, chỉ bởi GLV được phân công (trưởng khối chỉ xem); thứ và giờ phải cùng có hoặc cùng trống (CHECK trong DB); mỗi lần đổi ghi nhật ký `class.schedule`. Dùng cho nhắc việc (Task 39); trống = không nhắc.
+- **Bật thông báo** ở trang Tài khoản: chỉ xin quyền khi bấm. iPhone/iPad cần **Thêm vào Màn hình chính** (iOS 16.4+), app hướng dẫn tại chỗ. Mỗi người tối đa 10 thiết bị: mỗi lần mở trang Tài khoản thiết bị đồng bộ lại và mốc thời gian được đặt lại, nên khi vượt trần thì thiết bị **lâu nhất chưa đồng bộ** bị bỏ. Một thiết bị đổi tài khoản thì đăng ký chuyển sang tài khoản mới. "Tắt thông báo" được nhớ trên thiết bị (theo tài khoản): trang không tự bật lại cho tới khi bấm "Bật thông báo". Đăng xuất gỡ đăng ký của thiết bị đó (cố gắng hết sức, tối đa 2 giây, không chặn đăng xuất). "Gửi thử" chỉ gửi tới thiết bị của chính mình (3 lần/phút).
 - **`public/sw.js` chỉ xử lý push và bấm thông báo**: không có fetch handler, không cache dữ liệu điểm danh. Phục vụ với `Cache-Control: no-cache` và không qua proxy đăng nhập.
 - **Chống SSRF**: máy chủ chỉ gửi tới endpoint HTTPS của các dịch vụ push đã biết (`fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`; danh sách là hằng số trong `src/lib/push/endpoint.ts`, không mở rộng qua biến môi trường). Không IP, không localhost, không cổng lạ, không punycode.
-- Gửi trả 404/410 thì xoá đăng ký; 429/5xx/lỗi mạng tăng bộ đếm lỗi và xoá sau 5 lần liên tiếp; mã khác chỉ ghi log mã trạng thái. Log không bao giờ chứa endpoint hay khoá.
+- Endpoint được kiểm lại theo danh sách cho phép ngay lúc gửi (dòng không hợp lệ bị xoá, không liên lạc). Gửi trả 404/410 thì xoá đăng ký; 429/5xx/lỗi mạng (mất kết nối, hết giờ) tăng bộ đếm và xoá sau 5 lần liên tiếp; 401/403 (thường do đổi khoá VAPID) đếm riêng và xoá sau 10 lần liên tiếp; lỗi cục bộ (khoá hỏng, lỗi thư viện) và mã khác chỉ ghi log mã, không bao giờ làm xoá đăng ký. Gửi nhiều (`sendMany`): tối đa 5 lượt cùng lúc, mỗi lượt hạn chót 15 giây. Log không bao giờ chứa endpoint hay khoá.
 
 ### Xác thực: mọi server action tự kiểm
 

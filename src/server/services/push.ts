@@ -4,18 +4,22 @@ import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { INVALID_SUBSCRIPTION, parsePushSubscription, validatePushEndpoint } from "@/lib/push/endpoint";
 import type { PushMessage } from "@/lib/push/payload";
-import { sendPush } from "@/lib/push/send";
+import type { PushOutcome } from "@/lib/push/send";
+import { sendMany, type PushSender } from "@/lib/push/send-many";
 import type { VapidConfig } from "@/lib/push/vapid";
 import type { RateLimiter } from "@/lib/rate-limit";
 import { fail, ok, type ActionResult } from "../result";
 
 /**
  * Đăng ký/huỷ/gửi Web Push (spec §4). Người dùng chỉ đăng ký/huỷ cho CHÍNH MÌNH (`user` lấy từ phiên, không từ client).
+ * Mỗi lần đăng ký/đồng bộ đặt lại `created_at`, nên trần 10 thiết bị bỏ thiết bị LÂU NHẤT CHƯA ĐỒNG BỘ.
  * Endpoint là duy nhất: thiết bị đổi tài khoản thì dòng chuyển sang tài khoản mới (không ghi nhật ký thay đổi: đây là
  * cài đặt thiết bị, không phải dữ liệu lớp). Không bao giờ ghi log endpoint hay khoá.
  */
 export const PUSH_MAX_PER_USER = 10;
 export const PUSH_MAX_FAILURES = 5;
+/** 401/403 liên tiếp (khoá VAPID đã đổi) trước khi xoá: cao hơn để một lần cấu hình sai tạm thời không xoá hết đăng ký. */
+export const PUSH_MAX_AUTH_FAILURES = 10;
 const UA_MAX = 200;
 const RATE_LIMITED = "Thao tác quá nhanh, vui lòng thử lại sau ít phút";
 
@@ -54,43 +58,49 @@ export async function unsubscribePush(db: Db, user: AppUser, input: unknown, dep
   return ok(undefined);
 }
 
-export type PushSend = typeof sendPush;
+export type PushSend = PushSender;
 export interface SendDeps { vapid: VapidConfig; send?: PushSend }
 export interface SendSummary { sent: number; removed: number; failed: number }
 
 type SubscriptionRow = typeof pushSubscriptions.$inferSelect;
+type Counter = typeof pushSubscriptions.failureCount | typeof pushSubscriptions.authFailureCount;
 
-/** Áp kết quả gửi lên một đăng ký; trả về đăng ký có bị xoá không. */
-async function applyOutcome(db: Db, row: SubscriptionRow, outcome: string): Promise<boolean> {
+/** Tăng một bộ đếm lỗi liên tiếp; đủ ngưỡng thì xoá đăng ký. Trả về có xoá không. */
+async function bump(db: Db, row: SubscriptionRow, counter: Counter, limit: number): Promise<boolean> {
   const byId = eq(pushSubscriptions.id, row.id);
-  if (outcome === "ok") {
-    await db.update(pushSubscriptions).set({ lastOkAt: sql`now()`, failureCount: 0 }).where(byId);
-    return false;
-  }
-  if (outcome === "gone") {
-    await db.delete(pushSubscriptions).where(byId);
-    return true;
-  }
-  if (outcome !== "retry") return false;
-  await db.update(pushSubscriptions).set({ failureCount: sql`${pushSubscriptions.failureCount} + 1` }).where(byId);
-  const removed = await db.delete(pushSubscriptions)
-    .where(and(byId, gte(pushSubscriptions.failureCount, PUSH_MAX_FAILURES))).returning({ id: pushSubscriptions.id });
+  const field = counter === pushSubscriptions.failureCount ? "failureCount" : "authFailureCount";
+  await db.update(pushSubscriptions).set({ [field]: sql`${counter} + 1` }).where(byId);
+  const removed = await db.delete(pushSubscriptions).where(and(byId, gte(counter, limit))).returning({ id: pushSubscriptions.id });
   return removed.length > 0;
 }
 
-/** Gửi tới mọi thiết bị của một người dùng và dọn đăng ký hết hạn/lỗi lặp lại. Dùng chung cho Task 39 (nhắc việc). */
+/** Áp kết quả gửi lên một đăng ký; trả về đăng ký có bị xoá không. `error` (lỗi cục bộ) không đổi gì. */
+async function applyOutcome(db: Db, row: SubscriptionRow, outcome: PushOutcome): Promise<boolean> {
+  const byId = eq(pushSubscriptions.id, row.id);
+  switch (outcome) {
+    case "ok":
+      await db.update(pushSubscriptions).set({ lastOkAt: sql`now()`, failureCount: 0, authFailureCount: 0 }).where(byId);
+      return false;
+    case "gone":
+      await db.delete(pushSubscriptions).where(byId);
+      return true;
+    case "retry": return bump(db, row, pushSubscriptions.failureCount, PUSH_MAX_FAILURES);
+    case "auth": return bump(db, row, pushSubscriptions.authFailureCount, PUSH_MAX_AUTH_FAILURES);
+    case "error": return false;
+  }
+}
+
+/** Gửi tới mọi thiết bị của một người dùng (qua `sendMany`: tối đa 5 cùng lúc, hạn chót mỗi lượt) và dọn đăng ký. */
 export async function sendToUser(db: Db, userId: string, message: PushMessage, deps: SendDeps): Promise<SendSummary> {
-  const send = deps.send ?? sendPush;
   const rows = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
-  const results = await Promise.all(rows.map(async (row) => {
-    const { outcome } = await send({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, message, { vapid: deps.vapid });
-    return { outcome, removed: await applyOutcome(db, row, outcome) };
-  }));
+  const sent = await sendMany(rows.map((row) => ({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth }, row })), message,
+    { vapid: deps.vapid, send: deps.send });
+  const results = await Promise.all(sent.map(async (r) => ({ outcome: r.outcome, removed: await applyOutcome(db, r.target.row, r.outcome) })));
   return {
     sent: results.filter((r) => r.outcome === "ok").length,
     removed: results.filter((r) => r.removed).length,
-    // Lỗi gửi (tạm thời hoặc khác); đăng ký hết hạn (404/410) chỉ tính vào `removed`.
-    failed: results.filter((r) => r.outcome === "retry" || r.outcome === "error").length,
+    // Lỗi gửi (tạm thời, xác thực hoặc cục bộ); đăng ký hết hạn (404/410, endpoint không còn hợp lệ) chỉ tính vào `removed`.
+    failed: results.filter((r) => r.outcome !== "ok" && r.outcome !== "gone").length,
   };
 }
 

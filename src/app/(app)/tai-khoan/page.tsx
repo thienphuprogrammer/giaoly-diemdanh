@@ -27,8 +27,8 @@ export default async function AccountPage() {
         </div>
       </div>
       {/* Khoá công khai đọc từ biến môi trường lúc chạy (không phải NEXT_PUBLIC_*): đổi khoá không cần build lại. */}
-      <PushToggle publicKey={vapidPublicKeyFromEnv()} subscribe={subscribePushAction} unsubscribe={unsubscribePushAction} sendTest={sendTestPushAction} />
-      <LogoutButton userId={user.id} action={logout} />
+      <PushToggle userId={user.id} publicKey={vapidPublicKeyFromEnv()} subscribe={subscribePushAction} unsubscribe={unsubscribePushAction} sendTest={sendTestPushAction} />
+      <LogoutButton userId={user.id} action={logout} unsubscribePush={unsubscribePushAction} />
     </section>
   );
 }

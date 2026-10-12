@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAccessClass } from "@/db/queries/access";
 import { classes } from "@/db/schema";
 import type { Db } from "@/db/types";
-import { canAccess, canManageGrade, type AccessClass, type AppUser } from "@/lib/access/can-access";
+import { canAccess, type AccessClass, type AppUser } from "@/lib/access/can-access";
 import { redactText } from "@/lib/audit/events";
 import { parseScheduleInput, scheduleLabel, toHhMm, type ClassSchedule } from "@/lib/class-schedule";
 import { recordAudit } from "../audit";
@@ -12,10 +12,9 @@ import { fail, ok, type ActionResult } from "../result";
 const FORBIDDEN = "Bạn không có quyền thực hiện thao tác này";
 
 /**
- * Ai sửa được lịch học: GLV được phân công lớp (quyền ghi) và trưởng khối của lớp. Lịch học là cài đặt của lớp (dùng để
- * nhắc việc, Task 39) chứ không phải dữ liệu điểm danh, nên trưởng khối — người sắp xếp lớp trong khối — cũng chỉnh được.
+ * Ai sửa được lịch học: chỉ GLV được phân công lớp (quyền ghi). Trưởng khối chỉ đọc (ràng buộc chung của Mốc 9).
  */
-const canEditSchedule = (user: AppUser, cls: AccessClass) => canAccess(user, cls, "write") || canManageGrade(user, cls.gradeId);
+const canEditSchedule = (user: AppUser, cls: AccessClass) => canAccess(user, cls, "write");
 
 export interface ClassScheduleView extends ClassSchedule { label: string | null; canEdit: boolean }
 
