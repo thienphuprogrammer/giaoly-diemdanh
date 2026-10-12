@@ -42,10 +42,25 @@ describe("checkEnv: DATABASE_URL", () => {
     expect(levels(checkEnv(env, { prod: true }), "DATABASE_SSL")).toEqual(["warn"]);
     expect(levels(checkEnv({ ...base, DATABASE_URL: DB }, { prod: true }), "DATABASE_SSL")).toEqual([]);
   });
-  it("cổng 6543 hoặc 'pooler' mà chưa DB_PREPARE=false thì cảnh báo", () => {
-    const env = { ...base, DATABASE_URL: "postgres://u:p@aws-0.pooler.supabase.com:6543/d?sslmode=require" };
-    expect(levels(checkEnv(env, { prod: true }), "DB_PREPARE")).toEqual(["warn"]);
-    expect(levels(checkEnv({ ...env, DB_PREPARE: "false" }, { prod: true }), "DB_PREPARE")).toEqual([]);
+  it("Supabase pooler (host pooler.supabase.com hoặc cổng 6543) mà chưa DB_PREPARE=false thì cảnh báo", () => {
+    for (const u of ["postgres://u:p@aws-0.pooler.supabase.com:5432/d?sslmode=require", "postgres://u:p@db.example.com:6543/d?sslmode=require"]) {
+      const env = { ...base, DATABASE_URL: u };
+      expect(levels(checkEnv(env, { prod: true }), "DB_PREPARE")).toEqual(["warn"]);
+      expect(levels(checkEnv({ ...env, DB_PREPARE: "false" }, { prod: true }), "DB_PREPARE")).toEqual([]);
+    }
+  });
+  it("Neon pooled (-pooler) không cần DB_PREPARE=false nên không cảnh báo", () => {
+    const env = { ...base, DATABASE_URL: "postgres://u:p@ep-x-pooler.ap-southeast-1.aws.neon.tech/d?sslmode=require" };
+    expect(levels(checkEnv(env, { prod: true }), "DB_PREPARE")).toEqual([]);
+  });
+  it("tham số URL sẽ bị bỏ (channel_binding, pgbouncer) thì cảnh báo, chỉ nêu tên", () => {
+    const env = { ...base, DATABASE_URL: "postgres://u:p@h.example.com/d?sslmode=require&channel_binding=require&pgbouncer=true" };
+    const cs = checkEnv(env, { prod: true });
+    expect(levels(cs, "DATABASE_PARAMS")).toEqual(["warn"]);
+    const msg = cs.find((c) => c.id === "DATABASE_PARAMS")?.message ?? "";
+    expect(msg).toContain("channel_binding");
+    expect(msg).toContain("pgbouncer");
+    expect(levels(checkEnv({ ...base, DATABASE_URL: DB }, { prod: true }), "DATABASE_PARAMS")).toEqual([]);
   });
 });
 
@@ -70,8 +85,9 @@ describe("checkEnv: AUTH_SECRET", () => {
 
 describe("checkEnv: cờ nguy hiểm và tùy chọn", () => {
   const base = { DATABASE_URL: DB, AUTH_SECRET: goodSecret() };
-  it("cầu nối E2E được đặt thì cảnh báo", () => {
-    expect(levels(checkEnv({ ...base, NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1" }, { prod: true }), "E2E_BRIDGE")).toEqual(["warn"]);
+  it("cầu nối E2E được đặt: prod thì LỖI, dev thì cảnh báo", () => {
+    expect(levels(checkEnv({ ...base, NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1" }, { prod: true }), "E2E_BRIDGE")).toEqual(["fail"]);
+    expect(levels(checkEnv({ ...base, NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1" }, { prod: false }), "E2E_BRIDGE")).toEqual(["warn"]);
     expect(levels(checkEnv(base, { prod: true }), "E2E_BRIDGE")).toEqual([]);
   });
   it("CSP_ALLOW_UNSAFE_EVAL=1 thì cảnh báo kèm giải thích", () => {
@@ -89,9 +105,11 @@ describe("checkEnv: cờ nguy hiểm và tùy chọn", () => {
     expect(levels(cs, "OPTIONAL_PUSH")).toEqual(["info"]);
     expect(levels(cs, "OPTIONAL_CRON")).toEqual(["info"]);
     expect(summarize(cs).failed).toBe(false);
-    const set = checkEnv({ ...base, VAPID_PUBLIC_KEY: "a", VAPID_PRIVATE_KEY: "b", CRON_SECRET: "c" }, { prod: true });
+    const [pub, priv, cron] = [randomBytes(12).toString("hex"), randomBytes(12).toString("hex"), randomBytes(12).toString("hex")];
+    const set = checkEnv({ ...base, VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, CRON_SECRET: cron }, { prod: true });
     expect(set.filter((c) => c.id.startsWith("OPTIONAL")).every((c) => c.level === "info")).toBe(true);
-    expect(JSON.stringify(set)).not.toMatch(/"message":"[^"]*\b(b|c)\b"/);
+    const dump = JSON.stringify(set);
+    for (const v of [pub, priv, cron]) expect(dump).not.toContain(v);
   });
 });
 

@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { hashPassword } from "../src/lib/auth/password";
 import * as schema from "../src/db/schema";
+import { databaseUrlFromEnv, postgresOptionsFromEnv, sanitizeDatabaseUrl } from "../src/db/connection-options";
 
 const need = (k: string) => {
   const v = process.env[k];
@@ -14,7 +15,10 @@ async function main() {
   const email = need("SEED_EMAIL").trim().toLowerCase();
   const password = need("SEED_PASSWORD");
   if (password.length < 10) throw new Error("SEED_PASSWORD phải có ít nhất 10 ký tự");
-  const sql = postgres(need("DATABASE_URL"), { max: 1 });
+  // Ưu tiên kết nối trực tiếp (DATABASE_URL_UNPOOLED); vẫn áp DB_PREPARE khi chỉ có chuỗi pooler.
+  const url = databaseUrlFromEnv(process.env);
+  if (!url) throw new Error("Thiếu biến DATABASE_URL");
+  const sql = postgres(sanitizeDatabaseUrl(url), { ...postgresOptionsFromEnv(process.env), max: 1 });
   const db = drizzle(sql, { schema });
   const gradeName = process.env.SEED_GRADE ?? "Khối 1";
   const yearName = process.env.SEED_YEAR ?? "2026-2027";

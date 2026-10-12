@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
-import { postgresOptionsFromEnv } from "../src/db/connection-options";
+import { postgresOptionsFromEnv, sanitizeDatabaseUrl } from "../src/db/connection-options";
 import { errorSummary } from "../src/lib/error-summary";
 import { checkEnv, migrationStatus, summarize, type Check } from "../src/lib/preflight/checks";
 import { appliedMigrationCount, journalCount } from "../src/lib/preflight/db";
@@ -15,7 +15,7 @@ const ICON = { ok: "[ĐẠT]", warn: "[CẢNH BÁO]", fail: "[LỖI]", info: "[G
 
 async function dbChecks(): Promise<Check[]> {
   const url = process.env.DATABASE_URL as string;
-  const sql = postgres(url, { ...postgresOptionsFromEnv(process.env), max: 1 });
+  const sql = postgres(sanitizeDatabaseUrl(url), { ...postgresOptionsFromEnv(process.env), max: 1 });
   try {
     await sql`select 1`;
     const out: Check[] = [{ id: "DB_CONNECT", level: "ok", message: "Kết nối database thành công." }];
@@ -41,7 +41,7 @@ async function main() {
     console.log("CHƯA SẴN SÀNG: sửa các mục [LỖI] ở trên rồi chạy lại.");
     process.exit(1);
   }
-  console.log("Sẵn sàng.");
+  console.log(s.warn > 0 ? `Sẵn sàng (không có lỗi), nhưng có ${s.warn} cảnh báo: hãy đọc lại các mục [CẢNH BÁO].` : "Sẵn sàng.");
 }
 
 main().catch((e) => {

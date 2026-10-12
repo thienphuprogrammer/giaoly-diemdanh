@@ -1,4 +1,4 @@
-import { parsePoolMax } from "../../db/connection-options";
+import { parsePoolMax, strippedUrlParams } from "../../db/connection-options";
 
 /** Kiểm tra trước triển khai (thuần, test được). Thông điệp tiếng Việt; không bao giờ chứa bí mật hay chuỗi kết nối đầy đủ. */
 export type CheckLevel = "ok" | "warn" | "fail" | "info";
@@ -53,9 +53,15 @@ function checkDatabaseUrl(env: Env, { prod }: EnvOptions): Check[] {
     checks.push({ id: "DATABASE_SSL", level: "warn", message: "DATABASE_URL chưa có ?sslmode=require. Postgres trên mạng (Neon/Supabase) cần SSL; hãy thêm ?sslmode=require vào cuối chuỗi." });
   }
 
-  const pooled = url.port === "6543" || /pooler|pgbouncer/i.test(url.hostname);
-  if (pooled && env.DB_PREPARE !== "false" && env.DB_PREPARE !== "0") {
-    checks.push({ id: "DB_PREPARE", level: "warn", message: "Có vẻ đang dùng pooler giao dịch (cổng 6543/pooler). Hãy đặt DB_PREPARE=false, nếu không có thể gặp lỗi 'prepared statement does not exist'." });
+  const stripped = strippedUrlParams(raw);
+  if (stripped.length > 0) {
+    checks.push({ id: "DATABASE_PARAMS", level: "warn", message: `DATABASE_URL có tham số sẽ bị bỏ khi kết nối (${stripped.join(", ")}). App chỉ giữ sslmode vì các tham số khác làm kết nối thất bại; nên xóa chúng khỏi chuỗi cho gọn.` });
+  }
+
+  // Chỉ Supabase pooler giao dịch bắt buộc; Neon pooled (-pooler) hỗ trợ câu lệnh đã chuẩn bị nên không cảnh báo.
+  const supabasePooler = url.port === "6543" || /pooler\.supabase\.com$/i.test(url.hostname);
+  if (supabasePooler && env.DB_PREPARE !== "false" && env.DB_PREPARE !== "0") {
+    checks.push({ id: "DB_PREPARE", level: "warn", message: "Có vẻ đang dùng pooler giao dịch của Supabase (cổng 6543 hoặc pooler.supabase.com). Hãy đặt DB_PREPARE=false, nếu không có thể gặp lỗi 'prepared statement does not exist'." });
   }
   return checks;
 }
@@ -73,7 +79,7 @@ export function checkEnv(env: Env, opts: EnvOptions): Check[] {
   const checks: Check[] = [...checkDatabaseUrl(env, opts), checkAuthSecret(env)];
 
   if (env.NEXT_PUBLIC_E2E_SCAN_BRIDGE) {
-    checks.push({ id: "E2E_BRIDGE", level: "warn", message: "NEXT_PUBLIC_E2E_SCAN_BRIDGE đang được đặt. Biến này chỉ dành cho E2E; không đặt trên Vercel/production." });
+    checks.push({ id: "E2E_BRIDGE", level: opts.prod ? "fail" : "warn", message: "NEXT_PUBLIC_E2E_SCAN_BRIDGE đang được đặt. Biến này chỉ dành cho E2E; không đặt trên Vercel/production." });
   }
   if (env.CSP_ALLOW_UNSAFE_EVAL === "1") {
     checks.push({ id: "CSP_UNSAFE_EVAL", level: "warn", message: "CSP_ALLOW_UNSAFE_EVAL=1 làm yếu chính sách bảo mật (cho phép 'unsafe-eval') để máy quét chạy trên iPhone iOS 15 trở xuống. Chỉ bật nếu thật sự có máy iOS 15; mặc định nên tắt." });

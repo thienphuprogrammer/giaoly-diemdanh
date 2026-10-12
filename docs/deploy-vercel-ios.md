@@ -19,23 +19,27 @@ Chọn **một** trong hai (đều có gói miễn phí). **Quan trọng: chọn
 2. Neon cho hai chuỗi kết nối: **Pooled** (host có chữ `-pooler`) và **Direct/Unpooled**. Dùng:
    - `DATABASE_URL` (cho app trên Vercel) = chuỗi **Pooled**.
    - `DATABASE_URL_UNPOOLED` (để chạy migration từ máy bạn) = chuỗi **Unpooled/Direct**.
-3. Cả hai nên có đuôi `?sslmode=require`.
+3. Cả hai nên có đuôi `?sslmode=require`. Neon hay thêm `&channel_binding=require`: **không cần**, app tự bỏ mọi tham số trừ `sslmode` (xem "Tham số lạ trên chuỗi kết nối" dưới), nhưng nên xóa cho gọn.
 
 **Cách B: Supabase**
 1. Tạo project tại supabase.com, Region **Southeast Asia (Singapore)**.
 2. Project Settings → Database → Connection string:
    - **Direct connection** hoặc **Session pooler** (cổng 5432): dùng cho migration, đặt vào `DATABASE_URL_UNPOOLED`.
    - **Transaction pooler** (cổng 6543): dùng cho app trên Vercel, đặt vào `DATABASE_URL`, **và bắt buộc đặt thêm `DB_PREPARE=false`** (xem mục "Pooler" dưới).
-3. Thêm `?sslmode=require` vào cuối chuỗi nếu chưa có.
+3. Thêm `?sslmode=require` vào cuối chuỗi nếu chưa có. Không cần `?pgbouncer=true` (app tự bỏ).
 
 > Không bao giờ dán chuỗi kết nối (có mật khẩu) vào chat, ảnh chụp màn hình hay tệp trong repo.
 
 ### Pooler: khi nào cần `DB_PREPARE=false`
 
 - Serverless (Vercel) mở nhiều kết nối ngắn, nên dùng chuỗi **pooled** cho app. App giữ tối đa `DB_POOL_MAX` kết nối mỗi instance (mặc định 5).
-- Pooler ở **chế độ giao dịch** (pgbouncer, cổng 6543 của Supabase; Neon pooled cũng là pgbouncer) không giữ "câu lệnh đã chuẩn bị" giữa các lượt. Khi dùng nó, đặt `DB_PREPARE=false`, nếu không sẽ có lỗi dạng `prepared statement ... does not exist`.
+- Pooler **giao dịch của Supabase** (cổng 6543) không giữ "câu lệnh đã chuẩn bị" giữa các lượt: **bắt buộc** đặt `DB_PREPARE=false`, nếu không sẽ có lỗi dạng `prepared statement ... does not exist`. Neon pooled (host có `-pooler`) **hỗ trợ** câu lệnh đã chuẩn bị nên **không bắt buộc** (đặt `false` cũng không sao, chỉ chậm hơn chút). `pnpm preflight` chỉ cảnh báo khi thấy Supabase pooler.
 - Với pooler chế độ giao dịch: các **giao dịch thường** (`begin … commit`) và khóa `pg_advisory_xact_lock` (loại khóa gắn với giao dịch, app dùng khi sắp xếp sơ đồ và nhập danh sách thiếu nhi) **chạy đúng**. Thứ có thể hỏng là tính năng gắn với **phiên**: `SET` kéo dài, `LISTEN/NOTIFY`, khóa `pg_advisory_lock` (không phải `_xact_`), bảng tạm. App không dùng các thứ này.
 - **Migration** (`drizzle-kit`) nên chạy qua kết nối trực tiếp/session, không qua pooler giao dịch. Vì vậy đặt `DATABASE_URL_UNPOOLED`; nếu có biến này, `pnpm db:migrate` dùng nó thay cho `DATABASE_URL`.
+
+### Tham số lạ trên chuỗi kết nối
+
+Driver Postgres của app chuyển mọi tham số lạ trên chuỗi (ví dụ Neon `channel_binding=require`, Supabase `pgbouncer=true`) thành tham số khởi động của Postgres, và kết nối bị từ chối. Vì vậy app, `pnpm db:migrate`, `pnpm seed` và `pnpm preflight` đều **chỉ giữ `sslmode`** và bỏ phần còn lại trước khi kết nối. `pnpm preflight` báo `[CẢNH BÁO]` kèm tên tham số bị bỏ (không in giá trị). Công cụ ngoài repo (ví dụ `pg_dump`, `psql`) thì hiểu các tham số này bình thường.
 
 ## 2. Tạo dự án Vercel từ GitHub
 
@@ -63,20 +67,22 @@ Vercel → Project → Settings → **Environment Variables** (áp cho **Product
 
 Migration **không tự chạy khi build**: bạn chạy có kiểm soát, một lần cho mỗi lần có migration mới. **Trước khi chạy, tạo bản sao lưu** (mục 8), nhất là khi database đã có dữ liệu thật.
 
-Tạo tệp `.env.local` ở thư mục dự án (tệp này không bị commit) chứa các dòng sau, điền giá trị thật của database production:
+Tạo tệp `.env.local` ở thư mục dự án (tệp này không bị commit) chứa các dòng sau, điền giá trị thật của database production. **Không** đặt `AUTH_SECRET` production vào tệp này (migrate và seed không cần nó):
 
 ```
-DATABASE_URL=<chuỗi pooled của app>
-DATABASE_URL_UNPOOLED=<chuỗi direct, dùng cho migrate>
-AUTH_SECRET=<đúng giá trị đã đặt trên Vercel>
+DATABASE_URL=<chuỗi của app (pooled)>
+DATABASE_URL_UNPOOLED=<chuỗi direct/session, dùng cho migrate và seed>
+DB_PREPARE=false          # chỉ khi DATABASE_URL là Supabase pooler cổng 6543; Neon thì bỏ dòng này
 ```
 
-Rồi chạy:
+Rồi chạy. `pnpm preflight` cần `AUTH_SECRET` để kiểm độ mạnh: nhập tạm bằng `read -rs` chỉ cho lần chạy đó (nhập đúng giá trị đã đặt trên Vercel, hoặc dán khóa vừa sinh):
 
 ```bash
+read -rs AUTH_SECRET && export AUTH_SECRET
 pnpm preflight --prod     # kiểm tra biến, kết nối; lúc này sẽ báo thiếu migration, đó là bình thường
 pnpm db:migrate           # áp dụng migration vào database (dùng DATABASE_URL_UNPOOLED nếu có)
-pnpm preflight --prod     # kiểm tra lại: phải "Sẵn sàng"
+pnpm preflight --prod     # kiểm tra lại: không còn mục [LỖI] ("Sẵn sàng"); đọc kỹ các [CẢNH BÁO] nếu có
+unset AUTH_SECRET
 ```
 
 Tạo tài khoản trưởng khối đầu tiên (nhập mật khẩu ẩn, không lưu trong lịch sử lệnh):
@@ -87,7 +93,7 @@ SEED_EMAIL=<email-truong-khoi> pnpm seed
 unset SEED_PASSWORD
 ```
 
-`pnpm seed` dùng `DATABASE_URL`. Khi xong, **xóa hoặc không giữ** `.env.local` chứa chuỗi production trên máy dùng chung.
+`pnpm seed` ưu tiên `DATABASE_URL_UNPOOLED` (nếu có), và tôn trọng `DB_PREPARE` khi chỉ có chuỗi pooler. Khi xong, **xóa hoặc không giữ** `.env.local` chứa chuỗi production trên máy dùng chung.
 
 `pnpm preflight` kiểm: `DATABASE_URL` hợp lệ và không phải localhost (khi `--prod`), `AUTH_SECRET` đủ dài và không phải giá trị mẫu, không có `NEXT_PUBLIC_E2E_SCAN_BRIDGE`, kết nối được database, và số migration trong database khớp với mã. Nó che mật khẩu và che một phần máy chủ/người dùng khi in; thoát với mã lỗi khác 0 nếu có mục `[LỖI]`.
 
@@ -115,7 +121,7 @@ Làm theo `docs/ios-checklist.md` (cài lên Màn hình chính, danh sách việ
 
 `pnpm bench:scan` đo đường quét qua HTTP. Nó **ghi vào database** (tạo rồi xóa một buổi tạm) và cần dữ liệu mẫu E2E, nên **không chạy trên database production**. Cách làm an toàn:
 
-1. Tạo một database **riêng, tên chứa `e2e`** (ví dụ `diemdanh_e2e`) cùng vùng Singapore (Neon: tạo database/branch mới; Supabase: project riêng).
+1. Tạo một database **riêng, tên chứa `e2e`** (ví dụ `diemdanh_e2e`) cùng vùng Singapore. Neon: tạo database mới tên `diemdanh_e2e` trong cùng project (hoặc một branch). Supabase: database mặc định luôn tên `postgres` (không chứa `e2e` nên script từ chối), vì vậy vào SQL Editor của project **bench** (không phải project thật) chạy `create database diemdanh_e2e;` rồi dùng chuỗi **direct** của database đó (đổi tên database ở cuối chuỗi thành `diemdanh_e2e`).
 2. Nạp dữ liệu mẫu (lệnh này **xóa sạch** schema của database trỏ tới, vì vậy chỉ dùng cho database `e2e`; script từ chối nếu tên không chứa `e2e`):
    ```bash
    E2E_DATABASE_URL='<chuỗi kết nối của database e2e>' pnpm bench:seed

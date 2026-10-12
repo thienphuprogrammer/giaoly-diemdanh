@@ -30,3 +30,36 @@ export function postgresOptionsFromEnv(env: Record<string, string | undefined>):
     connect_timeout: 10, // giây: lỗi nhanh thay vì treo hàm serverless
   };
 }
+
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * postgres-js chuyển MỌI tham số lạ trên URL thành tham số khởi động của Postgres (ví dụ Neon `channel_binding=require`,
+ * Supabase `pgbouncer=true`) và kết nối thất bại. Chỉ giữ `sslmode` (postgres-js tự hiểu). Chuỗi không đọc được trả nguyên.
+ */
+export function sanitizeDatabaseUrl(raw: string): string {
+  const u = parseUrl(raw);
+  if (!u) return raw;
+  const sslmode = u.searchParams.get("sslmode");
+  u.search = "";
+  if (sslmode !== null) u.searchParams.set("sslmode", sslmode);
+  return u.toString();
+}
+
+/** Tên (không có giá trị) các tham số URL mà `sanitizeDatabaseUrl` sẽ bỏ. */
+export function strippedUrlParams(raw: string): string[] {
+  const u = parseUrl(raw);
+  if (!u) return [];
+  return [...new Set([...u.searchParams.keys()].filter((k) => k !== "sslmode"))];
+}
+
+/** Chuỗi kết nối cho migration/seed: ưu tiên kết nối trực tiếp `DATABASE_URL_UNPOOLED` (chuỗi rỗng coi như không đặt). */
+export function databaseUrlFromEnv(env: Record<string, string | undefined>): string {
+  return env.DATABASE_URL_UNPOOLED || env.DATABASE_URL || "";
+}
