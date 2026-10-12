@@ -1,3 +1,6 @@
+-- Ghi chú: Postgres không cho DÙNG giá trị enum vừa thêm (ALTER TYPE ... ADD VALUE) trong cùng transaction với lệnh thêm.
+-- drizzle migrate chạy mọi migration đang chờ trong MỘT transaction, nên không migration nào trong cùng đợt (kể cả các
+-- bản sau 0007) được chèn/so sánh 'school_year' hoặc 'promotion' của audit_entity; chỉ code ứng dụng dùng chúng sau khi migrate xong.
 ALTER TYPE "public"."audit_entity" ADD VALUE 'school_year';--> statement-breakpoint
 ALTER TYPE "public"."audit_entity" ADD VALUE 'promotion';--> statement-breakpoint
 CREATE TABLE "promotions" (

@@ -6,7 +6,7 @@ import type { Db } from "@/db/types";
 import { canManageGrade, type AppUser } from "@/lib/access/can-access";
 import { redactText } from "@/lib/audit/events";
 import { MASS_THRESHOLD_MAX, MASS_THRESHOLD_MIN } from "@/lib/attendance/mass-tally";
-import { writeWithAudit } from "../audit";
+import { recordAudit, writeWithAudit } from "../audit";
 import { fail, ok, type ActionResult } from "../result";
 
 const FORBIDDEN = "Bạn không có quyền thực hiện thao tác này";
@@ -94,9 +94,14 @@ export async function setNextGrade(db: Db, user: AppUser, input: unknown): Promi
   }
   if ((next?.id ?? null) === grade.nextGradeId) return ok(undefined);
   const before = grade.nextGradeId ? await getGrade(db, grade.nextGradeId) : null;
-  await writeWithAudit(db, db.update(grades).set({ nextGradeId: next?.id ?? null }).where(eq(grades.id, gradeId)).returning({ id: grades.id }), {
-    actorId: user.id, gradeId, entity: "grade_settings", entityId: gradeId, action: "grade.next_grade",
-    summary: { gradeName: redactText(grade.name), before: before ? redactText(before.name) : null, after: next ? redactText(next.name) : null },
+  const summary = { gradeName: redactText(grade.name), before: before ? redactText(before.name) : null, after: next ? redactText(next.name) : null };
+  // Một dòng cho khối nguồn và cho mỗi khối bị chọn/bỏ chọn, để trưởng khối đó thấy (băng báo màn "Năm học").
+  const gradeIds = [...new Set([gradeId, next?.id, before?.id].filter((id): id is string => Boolean(id)))];
+  await db.transaction(async (tx) => {
+    await tx.update(grades).set({ nextGradeId: next?.id ?? null }).where(eq(grades.id, gradeId));
+    for (const scope of gradeIds) {
+      await recordAudit(tx, { actorId: user.id, gradeId: scope, entity: "grade_settings", entityId: gradeId, action: "grade.next_grade", summary });
+    }
   });
   return ok(undefined);
 }

@@ -13,6 +13,9 @@ export function safeCell(value: string): string {
 
 const sheetName = (name: string) => name.replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim().slice(0, 31) || "Thống kê";
 
+/** Em đã lên lớp khác vẫn có trong số liệu học kỳ đã qua của lớp cũ: ghi chú ngay sau tên. */
+const nameOf = (r: { fullName: string; former: boolean }) => safeCell(r.former ? `${r.fullName} (đã lên lớp khác)` : r.fullName);
+
 const LEVEL_LABEL = { none: "", watch: "Cần chú ý", warning: "Cảnh báo" } as const;
 
 const MASS_SHEET = "Đi lễ";
@@ -28,7 +31,7 @@ function addMassSheet(wb: ExcelJS.Workbook, classSheet: string, mass: MassSheet)
   ws.addRow(["STT", "Tên thánh", "Họ tên", ...mass.weeks.map((w) => shortDate(w.heldOn)), "Tuần đã tính", "Đi lễ", "Vắng lễ", "Cảnh báo"]);
   ws.getRow(1).font = { bold: true };
   mass.rows.forEach((r, i) => {
-    ws.addRow([i + 1, safeCell(r.saintName ?? ""), safeCell(r.fullName), ...r.cells.map((c) => MASS_MARK[c]),
+    ws.addRow([i + 1, safeCell(r.saintName ?? ""), nameOf(r), ...r.cells.map((c) => MASS_MARK[c]),
       r.recordedWeeksCounted, r.attendedWeeks, r.missedWeeks, r.warning ? "Cảnh báo" : ""]);
   });
   const total = ws.addRow(["", "", "Tổng", ...mass.weeks.map((_, w) => mass.rows.filter((r) => r.cells[w] === "attended").length),
@@ -46,7 +49,7 @@ export async function buildStatsWorkbook(input: { className: string; termName: s
   ws.getRow(1).font = { bold: true };
   input.rows.forEach((r, i) => {
     const s = r.summary;
-    ws.addRow([i + 1, safeCell(r.saintName ?? ""), safeCell(r.fullName), s.present, s.late, s.excused, s.unexcused, LEVEL_LABEL[s.warning.level]]);
+    ws.addRow([i + 1, safeCell(r.saintName ?? ""), nameOf(r), s.present, s.late, s.excused, s.unexcused, LEVEL_LABEL[s.warning.level]]);
   });
   [6, 14, 28, 10, 10, 14, 18, 12].forEach((width, i) => { ws.getColumn(i + 1).width = width; });
   ws.getCell("J1").value = safeCell(`${input.className} — ${input.termName}`);

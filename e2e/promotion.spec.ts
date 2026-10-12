@@ -17,7 +17,7 @@ async function resetGradeD() {
   await withSql(async (sql) => {
     const { gradeD, classD1, classD2, planD } = state();
     await sql`delete from promotions where from_class_id in (${classD1}, ${classD2})`;
-    await sql`delete from audit_events where grade_id = ${gradeD}`;
+    await sql`delete from audit_events where grade_id = ${gradeD} or (action = 'grade.next_grade' and entity_id = ${gradeD})`;
     await sql`update students set class_id = ${classD1} where class_id in (${classD1}, ${classD2})`;
     await sql`update grades set next_grade_id = null where id = ${gradeD}`;
     await sql`delete from school_years where name like 'E2E mới%'`;
@@ -55,20 +55,24 @@ test("trưởng khối tạo năm học mới từ trang Khối", async ({ page 
   // Mặc định đã điền sẵn (năm học trước chỉ có một học kỳ nên đề xuất tháng 9 → tháng 5).
   await expect(form.getByLabel("Tên học kỳ").first()).toHaveValue("Học kỳ 1");
   await expect(form.locator("input[name=term1Start]")).toHaveValue(/^\d{4}-09-01$/);
-  // Tháng 9 năm sau nữa để không trùng với năm học tạo ở project trước nếu dọn dẹp chậm.
-  const start = info.project.name === "phone-375" ? 2031 : 2033;
+  // Giữ ngày mặc định (trong giới hạn 400 ngày trước / 550 ngày sau hôm nay), chỉ đặt tên riêng cho project.
   await form.getByLabel("Tên năm học").fill(name);
-  await form.locator("input[name=term1Start]").fill(`${start}-09-01`);
-  await form.locator("input[name=term1End]").fill(`${start + 1}-01-15`);
-  await form.locator("input[name=term2Start]").fill(`${start + 1}-01-16`);
-  await form.locator("input[name=term2End]").fill(`${start + 1}-05-31`);
+  const dates = ["term1Start", "term1End", "term2Start", "term2End"] as const;
+  const used = await Promise.all(dates.map((d) => form.locator(`input[name=${d}]`).inputValue()));
   await form.getByRole("button", { name: "Tạo năm học" }).click();
   await expect(form.getByRole("status")).toHaveText("Đã tạo năm học");
   await expect(page.getByRole("list", { name: "Các năm học" }).getByText(name)).toBeVisible();
-  // Tạo lại cùng tên bị từ chối.
+  // Tạo lại cùng tên (cùng ngày) bị từ chối.
   await form.getByLabel("Tên năm học").fill(name);
+  for (const [i, d] of dates.entries()) await form.locator(`input[name=${d}]`).fill(used[i]);
   await form.getByRole("button", { name: "Tạo năm học" }).click();
   await expect(form.getByRole("alert")).toHaveText("Đã có năm học tên này");
+  // Năm học chưa có buổi nào xoá được (hỏi lại một lần); năm học E2E đã có buổi thì không có nút xoá.
+  await expect(page.getByRole("button", { name: "Xoá năm học E2E", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: `Xoá năm học ${name}` }).click();
+  await page.getByRole("list", { name: "Các năm học" }).getByRole("button", { name: "Xoá năm học", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: `Đã xoá năm học ${name}` })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Các năm học" }).getByText(name)).toHaveCount(0);
 });
 
 test("lên lớp 2 em sang lớp khác: giữ thẻ QR, rời lớp cũ, hoàn tác được", async ({ page, browser }) => {
@@ -141,7 +145,7 @@ test("hoàn tác ngay sau khi lên lớp từ màn kết quả", async ({ page }
   expect(rows[0].n).toBe(3);
 });
 
-test("khối kế tiếp: hỏi xác nhận rồi mở thêm lớp của khối đó làm lớp đích", async ({ page }) => {
+test("khối kế tiếp: hỏi xác nhận rồi mở thêm lớp của khối đó làm lớp đích", async ({ page, browser }) => {
   await login(page, "head-d@e2e.vn");
   await page.goto("/khoi/nam-hoc");
   const form = page.locator("form").filter({ has: page.getByRole("heading", { name: /Khối kế tiếp/ }) });
@@ -152,6 +156,15 @@ test("khối kế tiếp: hỏi xác nhận rồi mở thêm lớp của khối 
   await expect(form.getByRole("status").filter({ hasText: "Đã lưu khối kế tiếp" })).toBeVisible();
   await page.getByLabel("Lớp hiện tại").selectOption({ label: "Lớp D1 (3 em)" });
   await expect(page.getByRole("combobox", { name: /^Lên lớp/ }).locator("optgroup[label='Khối E2E C'] option")).toHaveText(["Lớp M"]);
+
+  // Trưởng khối được chọn thấy băng báo trên màn "Năm học" của mình.
+  const other = await browser.newContext({ viewport: page.viewportSize() ?? undefined });
+  const otherPage = await other.newPage();
+  await login(otherPage, "head-c@e2e.vn");
+  await otherPage.goto("/khoi/nam-hoc");
+  await expect(otherPage.getByRole("complementary", { name: "Thay đổi từ khối khác" }))
+    .toContainText("Trưởng khối D đặt khối kế tiếp của Khối E2E D: chưa có → Khối E2E C");
+  await other.close();
 });
 
 test("giáo lý viên không vào được màn năm học", async ({ page }) => {

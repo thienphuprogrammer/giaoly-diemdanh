@@ -16,8 +16,8 @@ describe("safeCell", () => {
 describe("buildStatsWorkbook", () => {
   it("writes a header, one row per student and sanitises text cells", async () => {
     const rows = [
-      { studentId: "1", classId: "c", fullName: "=HYPERLINK(\"http://x\")", saintName: "Phêrô", summary: summarize([{ status: "present" }, { status: "absent_unexcused" }, { status: "absent_unexcused" }]) },
-      { studentId: "2", classId: "c", fullName: "Trần Bình", saintName: null, summary: summarize([]) },
+      { studentId: "1", classId: "c", fullName: "=HYPERLINK(\"http://x\")", saintName: "Phêrô", former: false, summary: summarize([{ status: "present" }, { status: "absent_unexcused" }, { status: "absent_unexcused" }]) },
+      { studentId: "2", classId: "c", fullName: "Trần Bình", saintName: null, former: false, summary: summarize([]) },
     ];
     const buffer = await buildStatsWorkbook({ className: "Lớp A/B?", termName: "Học kỳ 1", rows });
     const wb = new ExcelJS.Workbook();
@@ -34,14 +34,14 @@ describe("buildStatsWorkbook", () => {
 
 describe("buildStatsWorkbook: Đi lễ sheet", () => {
   const classRows = [
-    { studentId: "1", classId: "c", fullName: "An", saintName: "Phêrô", summary: summarize([{ status: "present" }]) },
+    { studentId: "1", classId: "c", fullName: "An", saintName: "Phêrô", former: false, summary: summarize([{ status: "present" }]) },
   ];
   const mass = {
     threshold: 2,
     weeks: [{ sessionId: "w1", heldOn: "2026-10-04" }, { sessionId: "w2", heldOn: "2026-10-11" }],
     rows: [
-      { studentId: "1", fullName: "An", saintName: "Phêrô", recordedWeeksCounted: 2, attendedWeeks: 0, missedWeeks: 2, warning: true, cells: ["missed", "missed"] as const },
-      { studentId: "2", fullName: "+Bình", saintName: null, recordedWeeksCounted: 1, attendedWeeks: 1, missedWeeks: 0, warning: false, cells: ["not_counted", "attended"] as const },
+      { studentId: "1", fullName: "An", saintName: "Phêrô", recordedWeeksCounted: 2, attendedWeeks: 0, missedWeeks: 2, warning: true, cells: ["missed", "missed"] as const, former: false },
+      { studentId: "2", fullName: "+Bình", saintName: null, recordedWeeksCounted: 1, attendedWeeks: 1, missedWeeks: 0, warning: false, cells: ["not_counted", "attended"] as const, former: false },
     ],
   };
   const load = async (buffer: Buffer) => {
@@ -71,5 +71,16 @@ describe("buildStatsWorkbook: Đi lễ sheet", () => {
   it("names the Mass sheet so it never collides with a class literally called 'Đi lễ'", async () => {
     const wb = await load(await buildStatsWorkbook({ className: "Đi lễ", termName: "HK1", rows: classRows, mass }));
     expect(wb.worksheets.map((w) => w.name)).toEqual(["Đi lễ", "Đi lễ (thống kê)"]);
+  });
+});
+
+describe("buildStatsWorkbook: promoted students in a past term", () => {
+  it("notes 'đã lên lớp khác' after the name on both sheets", async () => {
+    const rows = [{ studentId: "1", classId: "c", fullName: "An", saintName: null, former: true, summary: summarize([{ status: "present" }]) }];
+    const mass = { threshold: 2, weeks: [], rows: [{ studentId: "1", fullName: "An", saintName: null, recordedWeeksCounted: 0, attendedWeeks: 0, missedWeeks: 0, warning: false, cells: [] as const, former: true }] };
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildStatsWorkbook({ className: "Lớp A", termName: "HK1", rows, mass })) as unknown as ArrayBuffer);
+    expect(wb.worksheets[0].getRow(2).getCell(3).value).toBe("An (đã lên lớp khác)");
+    expect(wb.worksheets[1].getRow(2).getCell(3).value).toBe("An (đã lên lớp khác)");
   });
 });

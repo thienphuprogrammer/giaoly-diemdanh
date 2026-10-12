@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addYears, defaultSchoolYear, nextYearName, termsOverlap, validateTermRanges } from "./defaults";
+import { addDays, addYears, defaultSchoolYear, startWindow, nextYearName, termsOverlap, validateTermRanges } from "./defaults";
 
 describe("addYears", () => {
   it.each([
@@ -103,5 +103,16 @@ describe("termsOverlap", () => {
     [t("2027-03-01", "2027-04-01"), t("2027-01-01", "2027-12-31"), true],
   ])("%o vs %o -> %s", (a, b, expected) => {
     expect(termsOverlap(a, b)).toBe(expected);
+  });
+});
+
+describe("addDays / startWindow", () => {
+  it("adds and subtracts days across months and leap years", () => {
+    expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
+    expect(addDays("2027-03-01", -1)).toBe("2027-02-28");
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+  });
+  it("allows a start between 400 days before and 550 days after today", () => {
+    expect(startWindow("2026-10-12")).toEqual({ min: "2025-09-07", max: "2028-04-14" });
   });
 });

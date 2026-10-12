@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS = {
   "grade.mass_threshold": "grade_settings",
   "grade.next_grade": "grade_settings",
   "school_year.create": "school_year",
+  "school_year.delete": "school_year",
   "promotion.apply": "promotion",
   "promotion.undo": "promotion",
 } as const satisfies Record<string, AuditEntity>;

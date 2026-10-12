@@ -6,7 +6,7 @@ import { toFormState, type FormState } from "@/server/form-state";
 import type { ActionResult } from "@/server/result";
 import { setNextGrade } from "@/server/services/grade-settings";
 import { applyPromotion, previewPromotion, undoPromotion, type PromotionPreview, type PromotionResult } from "@/server/services/promotions";
-import { createSchoolYear } from "@/server/services/school-years";
+import { createSchoolYear, deleteSchoolYear } from "@/server/services/school-years";
 
 const PAGE = "/khoi/nam-hoc";
 const text = (fd: FormData, key: string) => {
@@ -53,6 +53,16 @@ export async function applyPromotionAction(input: {
 export async function undoPromotionAction(input: { promotionId: string }): Promise<ActionResult<{ restored: number; notRestored: number }>> {
   const user = await requireUser();
   const result = await undoPromotion(db, user, input);
+  if (result.ok) {
+    revalidatePath(PAGE);
+    revalidatePath("/khoi");
+  }
+  return result;
+}
+
+export async function deleteSchoolYearAction(input: { schoolYearId: string }): Promise<ActionResult<undefined>> {
+  const user = await requireUser();
+  const result = await deleteSchoolYear(db, user, input);
   if (result.ok) {
     revalidatePath(PAGE);
     revalidatePath("/khoi");

@@ -1,11 +1,13 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { classesOfGrades, findPromotionByToken, getPromotion, getPromotionClass, listGradePromotions, type PromotionClass } from "@/db/queries/promotions";
+import { classesOfGrades, findPromotionByToken, getPromotion, getPromotionClass, hasLaterPromotion, listGradePromotions, recentNextGradeEvents, type PromotionClass } from "@/db/queries/promotions";
 import { getGrade } from "@/db/queries/grades";
 import { promotions, seatAssignments, seatingPlans, students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import { canManageGrade, type AppUser } from "@/lib/access/can-access";
+import { describeAuditEvent } from "@/lib/audit/describe";
 import { redactText } from "@/lib/audit/events";
+import { MAX_PROMOTION, STALE_PROMOTION } from "@/lib/promotion";
 import { recordAudit } from "../audit";
 import { NOT_FOUND } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
@@ -18,9 +20,8 @@ import { fail, ok, type ActionResult } from "../result";
  * (`grades.next_grade_id` của khối nguồn). Mọi trường hợp ngoài quyền trả về như lớp không tồn tại.
  */
 
-export const MAX_PROMOTION = 200;
 export const PROMOTION_NOT_FOUND = "Không tìm thấy lượt lên lớp";
-const STALE = "Có em không còn ở lớp nguồn hoặc đã nghỉ học. Tải lại danh sách rồi thử lại.";
+const STALE = STALE_PROMOTION;
 const UNIQUE_VIOLATION = "23505";
 
 const isUniqueViolation = (e: unknown): boolean => {
@@ -116,7 +117,7 @@ async function clearSeats(tx: Tx, classId: string, studentIds: string[]): Promis
 }
 
 /** Kết quả của lượt đã ghi với cùng `clientToken` (bấm hai lần / gửi lại). */
-async function replay(db: Db, user: AppUser, pair: Pair, clientToken: string | undefined, requested: number): Promise<ActionResult<PromotionResult> | null> {
+async function replay(db: Db | Tx, user: AppUser, pair: Pair, clientToken: string | undefined, requested: number): Promise<ActionResult<PromotionResult> | null> {
   if (!clientToken) return null;
   const prev = await findPromotionByToken(db, user.id, clientToken);
   if (!prev) return null;
@@ -131,7 +132,11 @@ async function movePromotion(tx: Tx, user: AppUser, pair: Pair, ids: string[], c
   const inTarget = rows.filter((s) => s.classId === pair.to.id);
   const movable = rows.filter((s) => s.classId === pair.from.id && s.active);
   if (inTarget.length + movable.length !== ids.length) return fail(STALE);
-  if (movable.length === 0) return ok({ promotionId: null, moved: 0, skipped: inTarget.length, seatsRemoved: 0 });
+  if (movable.length === 0) {
+    // Hai lần gửi cùng mã chạy song song: lần sau chờ khoá dòng của lần trước, thấy mọi em đã ở lớp đích => trả lại kết quả lần trước.
+    const previous = await replay(tx, user, pair, clientToken, ids.length);
+    return previous ?? ok({ promotionId: null, moved: 0, skipped: inTarget.length, seatsRemoved: 0 });
+  }
 
   const moved = await tx.update(students).set({ classId: pair.to.id })
     .where(and(inArray(students.id, movable.map((s) => s.id)), eq(students.classId, pair.from.id), eq(students.active, true)))
@@ -141,13 +146,12 @@ async function movePromotion(tx: Tx, user: AppUser, pair: Pair, ids: string[], c
   const [promo] = await tx.insert(promotions).values({
     actorId: user.id, fromClassId: pair.from.id, toClassId: pair.to.id, studentIds: movedIds, removedSeats, clientToken: clientToken ?? null,
   }).returning({ id: promotions.id });
-  await recordAudit(tx, {
-    actorId: user.id, classId: pair.from.id, gradeId: pair.from.gradeId, entity: "promotion", entityId: promo.id, action: "promotion.apply",
-    summary: {
-      fromClass: redactText(pair.from.name), toClass: redactText(pair.to.name),
-      count: movedIds.length, skipped: inTarget.length, seatsRemoved: removedSeats.length,
-    },
-  });
+  const names = { fromClass: redactText(pair.from.name), toClass: redactText(pair.to.name) };
+  const base = { actorId: user.id, entity: "promotion" as const, entityId: promo.id, action: "promotion.apply" as const };
+  // Một dòng cho mỗi lớp liên quan: lớp cũ (chi tiết) và lớp mới ("chuyển vào"), để Nhật ký của cả hai lớp đều thấy.
+  await recordAudit(tx, { ...base, classId: pair.from.id, gradeId: pair.from.gradeId,
+    summary: { ...names, count: movedIds.length, skipped: inTarget.length, seatsRemoved: removedSeats.length } });
+  await recordAudit(tx, { ...base, classId: pair.to.id, gradeId: pair.to.gradeId, summary: { ...names, count: movedIds.length, direction: "in" } });
   return ok({ promotionId: promo.id, moved: movedIds.length, skipped: inTarget.length, seatsRemoved: removedSeats.length });
 }
 
@@ -178,6 +182,7 @@ export async function applyPromotion(db: Db, user: AppUser, input: unknown): Pro
 }
 
 const ALREADY_UNDONE = "Lượt lên lớp này đã được hoàn tác";
+const LATER = "Có em trong lượt này đã được chuyển tiếp ở một lượt lên lớp sau. Hãy hoàn tác lượt sau trước.";
 const EXPIRED = "Đã quá 24 giờ, không hoàn tác được nữa";
 
 /**
@@ -194,6 +199,7 @@ export async function undoPromotion(db: Db, user: AppUser, input: unknown): Prom
   if (!promo.fresh) return fail(EXPIRED);
 
   return db.transaction(async (tx) => {
+    if (await hasLaterPromotion(tx, promo.id, [...promo.studentIds])) return fail(LATER);
     const [claimed] = await tx.update(promotions).set({ undoneAt: sql`now()`, undoneBy: user.id })
       .where(and(eq(promotions.id, promo.id), sql`${promotions.undoneAt} is null`, sql`${promotions.createdAt} > now() - interval '24 hours'`))
       .returning({ id: promotions.id });
@@ -204,10 +210,10 @@ export async function undoPromotion(db: Db, user: AppUser, input: unknown): Prom
       .returning({ id: students.id });
     await clearSeats(tx, promo.toClassId, back.map((s) => s.id));
     const result = { restored: back.length, notRestored: ids.length - back.length };
-    await recordAudit(tx, {
-      actorId: user.id, classId: promo.fromClassId, gradeId: promo.fromGradeId, entity: "promotion", entityId: promo.id, action: "promotion.undo",
-      summary: { fromClass: redactText(promo.fromClassName), toClass: redactText(promo.toClassName), ...result },
-    });
+    const base = { actorId: user.id, entity: "promotion" as const, entityId: promo.id, action: "promotion.undo" as const };
+    const summary = { fromClass: redactText(promo.fromClassName), toClass: redactText(promo.toClassName), ...result };
+    await recordAudit(tx, { ...base, classId: promo.fromClassId, gradeId: promo.fromGradeId, summary });
+    await recordAudit(tx, { ...base, classId: promo.toClassId, gradeId: promo.toGradeId, summary: { ...summary, direction: "in" } });
     return ok(result);
   });
 }
@@ -221,14 +227,50 @@ export interface PromotionItem {
   actorName: string | null;
   undone: boolean;
   canUndo: boolean;
+  /** Lượt từ khối khác chuyển em VÀO lớp của khối này: chỉ xem, trưởng khối đích không hoàn tác được. */
+  incoming: boolean;
 }
 
-/** 20 lượt lên lớp gần nhất của khối (theo lớp nguồn). null nếu không phải trưởng khối. */
+/**
+ * 20 lượt lên lớp gần nhất liên quan tới khối: lớp nguồn hoặc lớp đích thuộc khối (lượt từ khối khác chuyển vào hiện ra
+ * để trưởng khối đích biết, nhưng chỉ đọc). null nếu không phải trưởng khối.
+ */
 export async function listPromotions(db: Db, user: AppUser): Promise<PromotionItem[] | null> {
   if (!user.isGradeHead || !user.gradeId) return null;
   const rows = await listGradePromotions(db, user.gradeId, 20);
-  return rows.map((r) => ({
-    id: r.id, fromClassName: r.fromClassName, toClassName: r.toClassName, count: r.studentIds.length,
-    createdAt: r.createdAt, actorName: r.actorName, undone: r.undoneAt !== null, canUndo: r.undoneAt === null && Boolean(r.fresh),
-  }));
+  return rows.map((r) => {
+    const incoming = r.fromGradeId !== user.gradeId;
+    return {
+      id: r.id, fromClassName: r.fromClassName, toClassName: r.toClassName, count: r.studentIds.length,
+      createdAt: r.createdAt, actorName: r.actorName, undone: r.undoneAt !== null, incoming,
+      canUndo: !incoming && r.undoneAt === null && Boolean(r.fresh),
+    };
+  });
+}
+
+/** Số ngày băng báo "khối khác chuyển em vào / chọn khối này làm khối kế tiếp" còn hiện. */
+export const INCOMING_DAYS = 7;
+
+export interface IncomingNotices {
+  transfers: { id: string; fromGradeName: string; fromClassName: string; toClassName: string; count: number; createdAt: Date; actorName: string | null; undone: boolean }[];
+  links: { id: string; at: Date; text: string }[];
+}
+
+/**
+ * Băng báo trên màn "Năm học" của trưởng khối: trong 7 ngày gần đây, khối khác đã chuyển em vào lớp của khối này, hoặc
+ * khối khác đã chọn khối này làm khối kế tiếp. Không có bước đồng ý: chỉ để minh bạch (xem báo cáo Task 36).
+ */
+export async function incomingNotices(db: Db, user: AppUser): Promise<IncomingNotices | null> {
+  if (!user.isGradeHead || !user.gradeId) return null;
+  const [rows, events] = await Promise.all([
+    listGradePromotions(db, user.gradeId, 20, { incomingOnly: true, days: INCOMING_DAYS }),
+    recentNextGradeEvents(db, user.gradeId, INCOMING_DAYS),
+  ]);
+  return {
+    transfers: rows.map((r) => ({
+      id: r.id, fromGradeName: r.fromGradeName, fromClassName: r.fromClassName, toClassName: r.toClassName,
+      count: r.studentIds.length, createdAt: r.createdAt, actorName: r.actorName, undone: r.undoneAt !== null,
+    })),
+    links: events.map((e) => ({ id: e.id, at: e.at, text: describeAuditEvent({ action: e.action, actorName: e.actorName, summary: e.summary }).text })),
+  };
 }

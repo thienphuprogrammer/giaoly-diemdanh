@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getClassById, listClassesForUser } from "@/db/queries/classes";
 import { getGrade } from "@/db/queries/grades";
 import { massGrid, type MassGridStudent } from "@/db/queries/mass-stats";
-import { listTerms, resolveTerm } from "@/db/queries/stats";
+import { isPastTerm, listTerms, resolveTerm } from "@/db/queries/stats";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { isMassWarning, tallyMass, type MassCell, type MassWeek } from "@/lib/attendance/mass-tally";
@@ -19,6 +19,8 @@ export interface MassStatRow {
   warning: boolean;
   /** Cùng thứ tự với `MassStats.weeks`. */
   cells: readonly MassCell[];
+  /** Em đã lên lớp khác, chỉ còn trong số liệu học kỳ đã qua của lớp này. */
+  former: boolean;
 }
 
 export interface MassStats {
@@ -41,7 +43,7 @@ function statRow(weeks: readonly MassWeek[], s: MassGridStudent, threshold: numb
   return {
     studentId: s.id, fullName: s.fullName, saintName: s.saintName,
     recordedWeeksCounted: t.counted, attendedWeeks: t.attended, missedWeeks: t.missed,
-    warning: isMassWarning(t.missed, threshold), cells: t.cells,
+    warning: isMassWarning(t.missed, threshold), cells: t.cells, former: s.former,
   };
 }
 
@@ -54,11 +56,12 @@ export async function massStats(
 ): Promise<MassStats | null> {
   const cls = await guardClass(db, user, input.classId, "read");
   if (!cls) return null;
+  const today = input.today ?? todayInVietnam();
   const [term, info, grade] = await Promise.all([
-    pickTerm(db, input.termId, input.today ?? todayInVietnam()), getClassById(db, cls.id), getGrade(db, cls.gradeId),
+    pickTerm(db, input.termId, today), getClassById(db, cls.id), getGrade(db, cls.gradeId),
   ]);
   if (!term || !info || !grade) return null;
-  const grid = await massGrid(db, { classIds: [cls.id], termId: term.id });
+  const grid = await massGrid(db, { classIds: [cls.id], termId: term.id, includeFormer: isPastTerm(term, today) });
   const weeks = grid.weeks.get(cls.id) ?? [];
   const rows = grid.students.map((s) => statRow(weeks, s, grade.massThreshold));
   return {
@@ -89,12 +92,13 @@ export interface MassAttentionItem {
 }
 
 /** Các em chạm ngưỡng vắng lễ của khối, trên mọi lớp người dùng đọc được (nhóm "Đi lễ" của trang "Cần chú ý"). */
-export async function massAttentionList(db: Db, user: AppUser, termId: string): Promise<MassAttentionItem[]> {
+export async function massAttentionList(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<MassAttentionItem[]> {
   if (!z.uuid().safeParse(termId).success) return [];
+  const term = (await listTerms(db)).find((t) => t.id === termId);
   const visible = await listClassesForUser(db, user);
-  if (visible.length === 0) return [];
+  if (!term || visible.length === 0) return [];
   const names = new Map(visible.map((c) => [c.id, c.name]));
-  const grid = await massGrid(db, { classIds: visible.map((c) => c.id), termId });
+  const grid = await massGrid(db, { classIds: visible.map((c) => c.id), termId, includeFormer: isPastTerm(term, today) });
   return grid.students
     .map((s) => ({ s, missed: tallyMass(grid.weeks.get(s.classId) ?? [], s.firstSeen, s.attended).missed }))
     .filter(({ s, missed }) => isMassWarning(missed, s.threshold))

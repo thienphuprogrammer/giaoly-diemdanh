@@ -9,6 +9,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  // Máy dev/CI chậm (biên dịch lần đầu của next dev) hay vượt 5s mặc định; 10s vẫn ngắn hơn cửa sổ hoàn tác 8s + thao tác.
+  expect: { timeout: 10_000 },
   reporter: [["list"]],
   use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure" },
   projects: [

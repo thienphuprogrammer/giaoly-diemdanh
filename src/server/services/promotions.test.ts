@@ -4,9 +4,11 @@ import { attendance, classCatechists, classes, grades, promotions, seatAssignmen
 import { auditRows, breakAuditInserts, dataSnapshot } from "@/test/audit";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
-import { applyPromotion, listPromotions, previewPromotion, promotionTargets, undoPromotion } from "./promotions";
+import { setNextGrade } from "./grade-settings";
+import { applyPromotion, incomingNotices, listPromotions, previewPromotion, promotionTargets, undoPromotion } from "./promotions";
 import { applyScan } from "./scan";
-import { attentionList, classStats } from "./stats";
+import { massStats } from "./mass-stats";
+import { attentionList, classStats, gradeOverview } from "./stats";
 import { getStudentProfile } from "./student-profile";
 
 const NOT_FOUND = "Không tìm thấy lớp";
@@ -84,13 +86,18 @@ describe("applyPromotion: who and where", () => {
     const [promo] = await db.select().from(promotions);
     expect(promo).toMatchObject({ actorId: b.head.id, fromClassId: b.classId, toClassId: cls2.id, undoneAt: null });
     expect([...promo.studentIds].sort()).toEqual([an.id, binh.id].sort());
+    // Một dòng nhật ký cho MỖI lớp liên quan (lớp cũ và lớp mới đều thấy trong Nhật ký của lớp), cùng transaction.
     const audit = await auditRows(db);
-    expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({
-      actorId: b.head.id, classId: b.classId, gradeId: b.gradeId, entity: "promotion", entityId: promo.id, action: "promotion.apply",
+    expect(audit).toHaveLength(2);
+    expect(audit.find((a) => a.classId === b.classId)).toMatchObject({
+      actorId: b.head.id, gradeId: b.gradeId, entity: "promotion", entityId: promo.id, action: "promotion.apply",
       summary: { fromClass: "Lớp A", toClass: "Lớp A2", count: 2, skipped: 0, seatsRemoved: 0 },
     });
-    expect(JSON.stringify(audit[0].summary)).not.toContain(an.qrToken);
+    expect(audit.find((a) => a.classId === cls2.id)).toMatchObject({
+      actorId: b.head.id, gradeId: b.gradeId, entity: "promotion", entityId: promo.id, action: "promotion.apply",
+      summary: { fromClass: "Lớp A", toClass: "Lớp A2", count: 2, direction: "in" },
+    });
+    expect(JSON.stringify(audit)).not.toContain(an.qrToken);
   });
 
   it("allows a class of the configured next grade, and only then", async () => {
@@ -149,7 +156,7 @@ describe("applyPromotion: double submit", () => {
     const again = await apply(b.head, [an.id, binh.id], { clientToken });
     expect(again).toEqual(first);
     expect(await db.select().from(promotions)).toHaveLength(1);
-    expect(await auditRows(db)).toHaveLength(1);
+    expect(await auditRows(db)).toHaveLength(2);
   });
 
   it("without a token, students already in the target are skipped; nothing left to move writes nothing", async () => {
@@ -158,10 +165,11 @@ describe("applyPromotion: double submit", () => {
     expect(await apply(b.head, [an.id, binh.id])).toMatchObject({ ok: true, data: { moved: 1, skipped: 1 } });
     expect(await apply(b.head, [an.id, binh.id])).toEqual({ ok: true, data: { promotionId: null, moved: 0, skipped: 2, seatsRemoved: 0 } });
     expect(await db.select().from(promotions)).toHaveLength(2);
-    expect((await auditRows(db)).map((r) => r.summary)).toEqual([
+    expect((await auditRows(db)).filter((r) => r.classId === b.classId).map((r) => r.summary)).toEqual([
       { fromClass: "Lớp A", toClass: "Lớp A2", count: 1, skipped: 0, seatsRemoved: 0 },
       { fromClass: "Lớp A", toClass: "Lớp A2", count: 1, skipped: 1, seatsRemoved: 0 },
     ]);
+    expect(await auditRows(db)).toHaveLength(4);
   });
 });
 
@@ -201,17 +209,52 @@ describe("after a promotion: history, stats and scanning", () => {
     return { ...s, old };
   }
 
-  it("old sessions keep their rows; the old class's stats and attention list no longer include moved students", async () => {
-    const { db, b, an, binh, chi, old, apply } = await withHistory();
-    const statsBefore = await classStats(db, b.glv, b.classId, b.termId);
+  const CURRENT = "2026-10-12"; // trong học kỳ của seedBasics (01/09/2026 – 15/01/2027)
+  const LATER = "2027-03-01"; // học kỳ đó đã qua
+
+  it("current term: old sessions keep their rows; the old class's stats and attention list follow the current class", async () => {
+    const { db, b, cls2, glv2, an, binh, chi, old, apply } = await withHistory();
+    const statsBefore = await classStats(db, b.glv, b.classId, b.termId, CURRENT);
     expect(statsBefore?.rows.map((r) => r.fullName)).toEqual(["An", "Bình", "Chi"]);
-    expect((await attentionList(db, b.glv, b.termId)).map((a) => a.fullName)).toEqual(["An"]);
+    expect((await attentionList(db, b.glv, b.termId, CURRENT)).map((a) => a.fullName)).toEqual(["An"]);
     await apply(b.head, [an.id, binh.id]);
-    const stats = await classStats(db, b.glv, b.classId, b.termId);
+    const stats = await classStats(db, b.glv, b.classId, b.termId, CURRENT);
     expect(stats?.rows.map((r) => r.studentId)).toEqual([chi.id]);
-    expect(await attentionList(db, b.glv, b.termId)).toEqual([]);
+    expect(await attentionList(db, b.glv, b.termId, CURRENT)).toEqual([]);
+    const fresh = await classStats(db, glv2, cls2.id, b.termId, CURRENT);
+    expect(fresh?.rows.map((r) => [r.fullName, r.summary.marked, r.former])).toEqual([["An", 0, false], ["Bình", 0, false]]);
     const rows = await db.select().from(attendance).where(inArray(attendance.sessionId, old.map((o) => o.id)));
     expect(rows).toHaveLength(6);
+  });
+
+  it("past term: the old class keeps its promoted students with their rows (marked as moved), nobody else is added", async () => {
+    const { db, b, cls2, glv2, an, binh, apply, kid } = await withHistory();
+    const stranger = await kid("Người Lạ", {}, b.otherClassId); // lớp khác, không có dòng ở lớp A
+    await apply(b.head, [an.id, binh.id]);
+    const stats = await classStats(db, b.glv, b.classId, b.termId, LATER);
+    expect(stats?.rows.map((r) => [r.fullName, r.summary.marked, r.summary.unexcused, r.former])).toEqual([
+      ["An", 3, 3, true], ["Bình", 3, 0, true], ["Chi", 0, 0, false],
+    ]);
+    expect(JSON.stringify(stats)).not.toContain(an.qrToken);
+    expect(JSON.stringify(stats)).not.toContain(stranger.id);
+    expect((await attentionList(db, b.glv, b.termId, LATER)).map((a) => [a.fullName, a.classId])).toEqual([["An", b.classId]]);
+    const overview = await gradeOverview(db, b.head, b.termId, LATER);
+    expect(overview?.find((r) => r.classId === b.classId)).toMatchObject({ studentCount: 3, sessions: 3, warningCount: 1 });
+    expect(overview?.find((r) => r.classId === cls2.id)).toMatchObject({ studentCount: 2, sessions: 0 });
+    // Lớp mới, học kỳ cũ: các em là thành viên hiện tại nhưng không mang theo dòng của lớp cũ.
+    const newer = await classStats(db, glv2, cls2.id, b.termId, LATER);
+    expect(newer?.rows.map((r) => [r.fullName, r.summary.marked, r.former])).toEqual([["An", 0, false], ["Bình", 0, false]]);
+  });
+
+  it("past term: mass stats of the old class keep promoted students and their weeks", async () => {
+    const { db, b, an, apply } = await withHistory();
+    const [mass] = await db.insert(sessions).values({ classId: b.classId, termId: b.termId, heldOn: "2026-10-04", kind: "mass" }).returning();
+    await db.insert(attendance).values({ sessionId: mass.id, studentId: an.id, status: "present" });
+    await apply(b.head, [an.id]);
+    const current = await massStats(db, b.glv, { classId: b.classId, termId: b.termId, today: CURRENT });
+    expect(current?.rows.map((r) => r.fullName)).toEqual(["Bình", "Chi"]);
+    const past = await massStats(db, b.glv, { classId: b.classId, termId: b.termId, today: LATER });
+    expect(past?.rows.map((r) => [r.fullName, r.attendedWeeks, r.former])).toEqual([["An", 1, true], ["Bình", 0, false], ["Chi", 0, false]]);
   });
 
   it("the profile in the new class still shows the attendance history from the old class", async () => {
@@ -244,19 +287,20 @@ describe("undoPromotion", () => {
     return { ...s, promotionId: r.data.promotionId };
   }
 
-  it("moves the students back within 24 hours and writes one audit row; a second undo is refused", async () => {
-    const { db, b, an, binh, classOf, promotionId } = await promoted();
+  it("moves the students back within 24 hours and writes one audit row per class; a second undo is refused", async () => {
+    const { db, b, cls2, an, binh, classOf, promotionId } = await promoted();
     expect(await undoPromotion(db, b.head, { promotionId })).toEqual({ ok: true, data: { restored: 2, notRestored: 0 } });
     expect([await classOf(an.id), await classOf(binh.id)]).toEqual([b.classId, b.classId]);
     const [promo] = await db.select().from(promotions);
     expect(promo.undoneAt).not.toBeNull();
     expect(promo.undoneBy).toBe(b.head.id);
-    const audit = await auditRows(db);
-    expect(audit.map((a) => a.action)).toEqual(["promotion.apply", "promotion.undo"]);
-    expect(audit[1]).toMatchObject({ classId: b.classId, gradeId: b.gradeId, entity: "promotion", entityId: promotionId,
+    const undos = (await auditRows(db)).filter((a) => a.action === "promotion.undo");
+    expect(undos).toHaveLength(2);
+    expect(undos.find((a) => a.classId === b.classId)).toMatchObject({ gradeId: b.gradeId, entity: "promotion", entityId: promotionId,
       summary: { fromClass: "Lớp A", toClass: "Lớp A2", restored: 2, notRestored: 0 } });
+    expect(undos.find((a) => a.classId === cls2.id)).toMatchObject({ summary: { fromClass: "Lớp A", toClass: "Lớp A2", restored: 2, notRestored: 0, direction: "in" } });
     expect(await undoPromotion(db, b.head, { promotionId })).toEqual({ ok: false, error: "Lượt lên lớp này đã được hoàn tác" });
-    expect(await auditRows(db)).toHaveLength(2);
+    expect(await auditRows(db)).toHaveLength(4);
   });
 
   it("is refused after 24 hours", async () => {
@@ -285,6 +329,49 @@ describe("undoPromotion", () => {
     expect(await undoPromotion(db, b.head, { promotionId })).toEqual({ ok: true, data: { restored: 1, notRestored: 1 } });
     expect([await classOf(an.id), await classOf(binh.id)]).toEqual([b.classId, b.otherClassId]);
     expect(await db.select().from(seatAssignments).where(eq(seatAssignments.planId, plan.id))).toEqual([]);
+  });
+});
+
+describe("undoPromotion: a later promotion of the same students", () => {
+  it("is refused while a newer, not undone promotion includes any of the students; allowed once that one is undone", async () => {
+    const { db, b, cls2, an, binh, apply, classOf } = await setup();
+    const first = await apply(b.head, [an.id, binh.id]);
+    const firstId = first.ok ? first.data.promotionId ?? "" : "";
+    const second = await applyPromotion(db, b.head, { fromClassId: cls2.id, toClassId: b.classId, studentIds: [an.id] });
+    const secondId = second.ok ? second.data.promotionId ?? "" : "";
+    expect(await undoPromotion(db, b.head, { promotionId: firstId })).toEqual({
+      ok: false, error: "Có em trong lượt này đã được chuyển tiếp ở một lượt lên lớp sau. Hãy hoàn tác lượt sau trước.",
+    });
+    expect(await undoPromotion(db, b.head, { promotionId: secondId })).toMatchObject({ ok: true, data: { restored: 1 } });
+    expect(await undoPromotion(db, b.head, { promotionId: firstId })).toEqual({ ok: true, data: { restored: 2, notRestored: 0 } });
+    expect([await classOf(an.id), await classOf(binh.id)]).toEqual([b.classId, b.classId]);
+  });
+});
+
+describe("cross-grade visibility", () => {
+  it("the target grade's head sees incoming promotions read-only and a 7-day banner; the source head can undo", async () => {
+    const { db, b, an, otherHead, setNext } = await setup();
+    await setNext(b.otherGradeId);
+    const r = await applyPromotion(db, b.head, { fromClassId: b.classId, toClassId: b.otherClassId, studentIds: [an.id] });
+    expect(r.ok).toBe(true);
+    const mine = await listPromotions(db, b.head);
+    expect(mine?.map((p) => [p.fromClassName, p.toClassName, p.incoming, p.canUndo])).toEqual([["Lớp A", "Lớp B", false, true]]);
+    const theirs = await listPromotions(db, otherHead);
+    expect(theirs?.map((p) => [p.fromClassName, p.toClassName, p.incoming, p.canUndo])).toEqual([["Lớp A", "Lớp B", true, false]]);
+    const notices = await incomingNotices(db, otherHead);
+    expect(notices?.transfers.map((t) => [t.fromGradeName, t.fromClassName, t.toClassName, t.count, t.undone])).toEqual([["Khối 1", "Lớp A", "Lớp B", 1, false]]);
+    expect(await incomingNotices(db, b.head)).toEqual({ transfers: [], links: [] });
+    expect(await incomingNotices(db, b.glv)).toBeNull();
+    await db.execute(sql`update promotions set created_at = now() - interval '8 days'`);
+    expect((await incomingNotices(db, otherHead))?.transfers).toEqual([]);
+  });
+
+  it("the banner shows when another grade names this grade as its next grade", async () => {
+    const { db, b, otherHead } = await setup();
+    await setNextGrade(db, b.head, { gradeId: b.gradeId, nextGradeId: b.otherGradeId });
+    const notices = await incomingNotices(db, otherHead);
+    expect(notices?.links.map((l) => l.text)).toEqual(["head@x.vn đặt khối kế tiếp của Khối 1: chưa có → Khối 2"]);
+    expect((await incomingNotices(db, b.head))?.links).toEqual([]);
   });
 });
 

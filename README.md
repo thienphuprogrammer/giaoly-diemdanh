@@ -59,6 +59,13 @@ Triển khai lên Vercel (vùng Singapore `sin1`) với Postgres hosted cùng v�
 3. Tạo **tài khoản GLV** (đặt mật khẩu tạm thời cho họ). Khi GLV quên mật khẩu, trưởng khối vào trang **Khối**, mục **Đặt lại mật khẩu**, chọn GLV rồi nhập mật khẩu tạm mới (10–72 ký tự) và gửi cho họ.
 4. **Gán GLV vào lớp** (hoặc gán chính mình để điểm danh thay).
 5. GLV nhập hoặc nhập CSV danh sách thiếu nhi, tạo sơ đồ chỗ ngồi, rồi điểm danh từng buổi bằng sơ đồ hoặc checklist.
+6. Cuối năm, trưởng khối vào **Khối → Năm học mới và lên lớp**: tạo năm học (dùng chung cho mọi khối; xoá được khi chưa có buổi nào) và cho em **lên lớp** (chuyển em sang lớp khác, giữ thẻ QR và lịch sử; hoàn tác được trong 24 giờ, chỗ ngồi cũ không khôi phục).
+
+### Lên lớp: mô hình tin cậy
+
+- Chỉ trưởng khối của khối **nguồn** chuyển em, và chỉ em đang học ở lớp của khối mình; lớp đích là lớp cùng khối hoặc lớp của **khối kế tiếp** do chính trưởng khối nguồn chọn (không có quản trị viên toàn hệ thống, không có bước đồng ý của khối đích).
+- Bù lại là minh bạch: mỗi lượt chuyển ghi nhật ký ở **cả lớp cũ và lớp mới**; trưởng khối đích thấy lượt "Chuyển vào" (chỉ xem) và một băng báo 7 ngày khi khối khác chuyển em vào hoặc chọn khối mình làm khối kế tiếp. Trưởng khối nguồn không đọc thêm được gì của khối đích.
+- Điểm danh cũ (kể cả hôm nay, nếu chuyển giữa buổi) ở lại lớp cũ và không sửa được cho các em đã chuyển; thống kê học kỳ **đã qua** của lớp cũ vẫn giữ các em đó (ghi "đã lên lớp khác"), học kỳ hiện tại tính theo lớp hiện tại.
 
 ## Điểm danh bằng thẻ QR
 

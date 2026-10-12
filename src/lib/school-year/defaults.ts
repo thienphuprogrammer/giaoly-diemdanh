@@ -83,3 +83,14 @@ export function validateTermRanges(term1: TermRange, term2: TermRange): string |
   if (dayNumber(term2.endsOn) - dayNumber(term1.startsOn) > MAX_YEAR_DAYS) return `Năm học quá dài (tối đa ${MAX_YEAR_DAYS} ngày)`;
   return null;
 }
+
+/** Cộng `n` ngày (âm = lùi) vào ngày YYYY-MM-DD. */
+export function addDays(day: string, n: number): string {
+  return new Date((dayNumber(day) + n) * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Học kỳ 1 của năm học mới phải bắt đầu trong [hôm nay − 400 ngày, hôm nay + 550 ngày]. */
+export const START_WINDOW = { before: 400, after: 550 } as const;
+export function startWindow(today: string): { min: string; max: string } {
+  return { min: addDays(today, -START_WINDOW.before), max: addDays(today, START_WINDOW.after) };
+}

@@ -5,12 +5,13 @@ import { useState } from "react";
 import { Field } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
 import { Sheet } from "@/components/ui/Sheet";
+import { MAX_PROMOTION, PROMOTION_CONSEQUENCES, PROMOTION_HISTORY_NOTE, STALE_PROMOTION } from "@/lib/promotion";
 import type { ActionResult } from "@/server/result";
 import type { PromotionPreview, PromotionResult, PromotionTargets } from "@/server/services/promotions";
 
-const CONSEQUENCES = "Giữ thẻ QR và lịch sử điểm danh. Chỗ ngồi cũ sẽ bị xoá. Có thể hoàn tác trong 24 giờ.";
+const CONSEQUENCES = PROMOTION_CONSEQUENCES;
 const FAILED = "Không lưu được. Kiểm tra mạng rồi thử lại.";
-const MAX = 200;
+const MAX = MAX_PROMOTION;
 
 interface Props {
   options: PromotionTargets;
@@ -36,12 +37,12 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
   const targets = options.targets.filter((t) => t.id !== fromId);
   const reset = () => { setList(null); setDone(null); setToken(null); setError(null); };
 
-  async function run<T>(fn: () => Promise<ActionResult<T>>, onOk: (data: T) => void) {
+  async function run<T>(fn: () => Promise<ActionResult<T>>, onOk: (data: T) => void, onError?: (error: string) => void) {
     setBusy(true);
     setError(null);
     try {
       const r = await fn();
-      if (r.ok) onOk(r.data); else setError(r.error);
+      if (r.ok) onOk(r.data); else { setError(r.error); onError?.(r.error); }
     } catch {
       setError(FAILED);
     } finally {
@@ -49,10 +50,22 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
     }
   }
 
-  const loadStudents = () => run(() => preview({ fromClassId: fromId, toClassId: toId }), (p) => {
+  const showList = (p: PromotionPreview) => {
     setList(p);
     setPicked(new Set(p.students.filter((s) => s.selected).map((s) => s.id)));
-  });
+  };
+  const loadStudents = () => run(() => preview({ fromClassId: fromId, toClassId: toId }), showList);
+
+  /** Danh sách đã cũ (em vừa nghỉ/chuyển lớp ở máy khác): tải lại danh sách, giữ câu báo để người dùng chọn lại. */
+  const reloadAfterStale = async (p: PromotionPreview) => {
+    setToken(null);
+    try {
+      const fresh = await preview({ fromClassId: p.from.id, toClassId: p.to.id });
+      if (fresh.ok) showList(fresh.data);
+    } catch {
+      // giữ danh sách cũ; câu báo lỗi đã hiện
+    }
+  };
 
   const confirm = (p: PromotionPreview, clientToken: string) =>
     run(() => apply({ fromClassId: p.from.id, toClassId: p.to.id, studentIds: [...picked], clientToken }), (result) => {
@@ -60,7 +73,7 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
       setList(null);
       setDone({ result, preview: p });
       router.refresh();
-    });
+    }, (error) => { if (error === STALE_PROMOTION) void reloadAfterStale(p); });
 
   const undoDone = (d: Done) => d.result.promotionId && run(() => undo({ promotionId: d.result.promotionId! }), (undone) => {
     setDone({ ...d, undone });
@@ -138,6 +151,7 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
             <h2 className="font-display text-lg font-semibold">Chuyển {count} em từ {list.from.name} sang {list.to.name}?</h2>
             <p className="text-ink-soft">{CONSEQUENCES}</p>
             <p className="text-sm text-ink-soft">Từ giờ các em điểm danh ở {list.to.name}; quét thẻ ở buổi của {list.from.name} sẽ báo “Thẻ không dùng được cho lớp này”.</p>
+            <p className="text-sm text-ink-soft">{PROMOTION_HISTORY_NOTE}</p>
             {error && <Notice tone="error" role="alert">{error}</Notice>}
             <div className="grid grid-cols-2 gap-2">
               <button type="button" className="btn btn-lg btn-secondary" onClick={() => setToken(null)}>Huỷ</button>

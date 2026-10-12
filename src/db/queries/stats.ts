@@ -7,7 +7,13 @@ export const listTerms = (db: Db) => db.select().from(terms).orderBy(desc(terms.
 
 export async function resolveTerm(db: Db, termId: string | undefined, today: string) {
   const all = await listTerms(db);
-  return all.find((t) => t.id === termId) ?? all.find((t) => t.startsOn <= today && today <= t.endsOn) ?? all[0] ?? null;
+  // Ngoài mọi học kỳ: học kỳ gần nhất ĐÃ bắt đầu (danh sách mới trước), nếu chưa có thì học kỳ sớm nhất. Không bao giờ
+  // chọn một học kỳ tương lai khi đã có học kỳ đã bắt đầu (năm học tạo sẵn cho tương lai không thành "hiện tại").
+  return all.find((t) => t.id === termId)
+    ?? all.find((t) => t.startsOn <= today && today <= t.endsOn)
+    ?? all.find((t) => t.startsOn <= today)
+    ?? all.at(-1)
+    ?? null;
 }
 
 export async function rosterOf(db: Db, classIds: string[]) {
@@ -17,11 +23,40 @@ export async function rosterOf(db: Db, classIds: string[]) {
     .orderBy(asc(students.fullName));
 }
 
-/** Dòng điểm danh các buổi HỌC (không huỷ, không gồm đi lễ) của các lớp trong học kỳ. */
+/** Học kỳ đã kết thúc trước hôm nay (ngày Việt Nam). */
+export const isPastTerm = (term: { endsOn: string }, today: string): boolean => term.endsOn < today;
+
+export type RosterEntry = Awaited<ReturnType<typeof rosterOf>>[number] & {
+  /** Em đã chuyển sang lớp khác (lên lớp) nhưng có dòng điểm danh ở lớp này trong học kỳ đã qua. */
+  former: boolean;
+};
+
+/**
+ * Danh sách em để thống kê một học kỳ:
+ * - học kỳ hiện tại/tương lai: em ĐANG học ở lớp (theo lớp hiện tại);
+ * - học kỳ đã qua: em đang học ở lớp ∪ em có dòng điểm danh (buổi học hoặc đi lễ) ở các buổi của lớp trong học kỳ đó,
+ *   để em đã lên lớp không biến mất khỏi số liệu cũ. `classId` của dòng là lớp đang thống kê, không phải lớp hiện tại.
+ * Không bao giờ chọn `qr_token`.
+ */
+export async function termRoster(db: Db, classIds: string[], term: { id: string; endsOn: string }, today: string): Promise<RosterEntry[]> {
+  const current = (await rosterOf(db, classIds)).map((s) => ({ ...s, former: false }));
+  if (!isPastTerm(term, today) || classIds.length === 0) return current;
+  const pairs = await db
+    .selectDistinct({ ...studentColumns, classId: sessions.classId })
+    .from(attendance)
+    .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
+    .innerJoin(students, eq(students.id, attendance.studentId))
+    .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, term.id)));
+  const have = new Set(current.map((s) => `${s.classId}:${s.id}`));
+  const former = pairs.filter((p) => !have.has(`${p.classId}:${p.id}`)).map((p) => ({ ...p, former: true }));
+  return [...current, ...former].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
+}
+
+/** Dòng điểm danh các buổi HỌC (không huỷ, không gồm đi lễ) của các lớp trong học kỳ, kèm lớp của buổi. */
 export async function termRecords(db: Db, classIds: string[], termId: string) {
   if (classIds.length === 0) return [];
   return db
-    .select({ studentId: attendance.studentId, status: attendance.status })
+    .select({ classId: sessions.classId, studentId: attendance.studentId, status: attendance.status })
     .from(attendance)
     .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
     .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, termId), eq(sessions.kind, "class"), eq(sessions.cancelled, false)));

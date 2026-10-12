@@ -26,7 +26,7 @@ describe("audit action table", () => {
       "student.create", "student.update", "student.deactivate", "student.reactivate", "student.import", "student.contact_update", "student.qr_rotate",
       "seating.create", "seating.apply_template", "seating.save_layout", "seating.activate", "seating.delete",
       "session.cancel", "session.reopen", "grade.mass_threshold", "grade.next_grade",
-      "school_year.create", "promotion.apply", "promotion.undo",
+      "school_year.create", "school_year.delete", "promotion.apply", "promotion.undo",
     ]) expect(isAuditAction(a)).toBe(true);
     expect(isAuditAction("student.drop_table")).toBe(false);
     expect(isAuditAction("toString")).toBe(false);

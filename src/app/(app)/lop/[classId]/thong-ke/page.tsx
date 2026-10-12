@@ -22,7 +22,10 @@ function StatLine({ row }: { row: StatRow }) {
   const level = row.summary.warning.level;
   return (
     <div role="row" className={ROW}>
-      <div role="cell" className="order-first col-span-3 break-words font-medium sm:order-none sm:col-span-1">{row.fullName}</div>
+      <div role="cell" className="order-first col-span-3 break-words font-medium sm:order-none sm:col-span-1">
+        {row.fullName}
+        {row.former && <span className="ml-1.5 text-xs font-normal text-ink-soft">(đã lên lớp khác)</span>}
+      </div>
       {COLUMNS.map((c) => (
         <div role="cell" key={c.key} className="flex flex-col items-center rounded-control bg-surface-muted py-1.5 sm:bg-transparent sm:py-0">
           <span aria-hidden className="text-xs text-ink-soft sm:hidden">{STATUS_META[c.status].short}</span>

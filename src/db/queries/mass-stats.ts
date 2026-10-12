@@ -3,7 +3,7 @@ import { tallyMass, type MassWeek } from "@/lib/attendance/mass-tally";
 import { attendance, classes, grades, sessions, students } from "../schema";
 import type { Db } from "../types";
 
-type Reader = Pick<Db, "select">;
+type Reader = Pick<Db, "select" | "selectDistinct">;
 
 /** Đi lễ không có "đi muộn"; một dòng `late` cũ (nếu có) vẫn là đã đi lễ. */
 const ATTENDED = new Set(["present", "late"]);
@@ -21,6 +21,8 @@ export interface MassGridStudent {
   threshold: number;
   /** Các buổi đi lễ đã ghi nhận mà em có đi (present/late). */
   attended: ReadonlySet<string>;
+  /** Em đã lên lớp khác, chỉ còn trong số liệu học kỳ đã qua của lớp này (`includeFormer`). */
+  former: boolean;
 }
 
 export interface MassGrid {
@@ -36,6 +38,11 @@ interface GridInput {
   excludeSessionId?: string;
   /** Chỉ một em (kể cả em đã ẩn: trang hồ sơ); mặc định mọi em đang hoạt động của các lớp. */
   studentId?: string;
+  /**
+   * Học kỳ đã qua: thêm các em có dòng điểm danh (học hoặc đi lễ) ở buổi của lớp trong học kỳ nhưng nay đã ở lớp khác
+   * (lên lớp), tính theo lớp của buổi. Không dùng cho học kỳ hiện tại.
+   */
+  includeFormer?: boolean;
 }
 
 /**
@@ -46,7 +53,7 @@ interface GridInput {
  * 2. danh sách em kèm ngày xuất hiện đầu tiên ở lớp (heuristic em vào lớp giữa kỳ, xem `tallyMass`) và ngưỡng của khối.
  * Không thêm truy vấn nào vào đường quét (`applyScan`); chỉ bảng tra lúc mở máy quét đi lễ và các trang thống kê dùng.
  */
-export async function massGrid(db: Reader, { classIds, termId, excludeSessionId, studentId }: GridInput): Promise<MassGrid> {
+export async function massGrid(db: Reader, { classIds, termId, excludeSessionId, studentId, includeFormer }: GridInput): Promise<MassGrid> {
   if (classIds.length === 0) return { weeks: new Map(), students: [] };
   // Ngày xuất hiện đầu tiên của mỗi em ở từng lớp (đi từ buổi của các lớp, dùng chỉ mục buổi theo lớp và khoá chính
   // của `attendance`); ghép với em theo lớp HIỆN TẠI của em. Em vừa lên lớp (Task 36, đổi `class_id`) vì vậy "bắt đầu
@@ -62,7 +69,26 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
     .where(and(inArray(sessions.classId, classIds), studentId ? eq(attendance.studentId, studentId) : undefined))
     .groupBy(attendance.studentId, sessions.classId)
     .as("first");
-  const [rows, roster] = await Promise.all([
+  // Cặp (em, lớp của buổi) có dòng trong học kỳ: em đã lên lớp vẫn thuộc số liệu cũ của lớp này.
+  const pairs = db
+    .selectDistinct({ studentId: attendance.studentId, classId: sessions.classId })
+    .from(attendance)
+    .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
+    .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, termId)))
+    .as("pairs");
+  const formerQuery = includeFormer
+    ? db.select({
+      id: students.id, classId: pairs.classId, fullName: students.fullName, saintName: students.saintName,
+      parentPhone: students.parentPhone, firstSeen: first.firstSeen, threshold: grades.massThreshold,
+    })
+      .from(pairs)
+      .innerJoin(students, eq(students.id, pairs.studentId))
+      .leftJoin(first, and(eq(first.studentId, pairs.studentId), eq(first.classId, pairs.classId)))
+      .innerJoin(classes, eq(classes.id, pairs.classId))
+      .innerJoin(grades, eq(grades.id, classes.gradeId))
+      .where(and(ne(students.classId, pairs.classId), studentId ? eq(students.id, studentId) : undefined))
+    : Promise.resolve([]);
+  const [rows, roster, formerRows] = await Promise.all([
     db.select({ classId: sessions.classId, sessionId: sessions.id, heldOn: sessions.heldOn, studentId: attendance.studentId, status: attendance.status })
       .from(attendance)
       .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
@@ -87,6 +113,7 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
         studentId ? eq(students.id, studentId) : eq(students.active, true),
       ))
       .orderBy(asc(students.fullName)),
+    formerQuery,
   ]);
 
   const weeks = new Map<string, MassWeek[]>();
@@ -102,7 +129,12 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
   }
   return {
     weeks,
-    students: roster.map((s) => ({ ...s, attended: attendedBy.get(s.id) ?? new Set<string>() })),
+    students: [
+      ...roster.map((s) => ({ ...s, former: false })),
+      ...formerRows.map((s) => ({ ...s, former: true })),
+    ]
+      .sort((a, b) => (formerRows.length === 0 ? 0 : a.fullName.localeCompare(b.fullName, "vi")))
+      .map((s) => ({ ...s, attended: attendedBy.get(s.id) ?? new Set<string>() })),
   };
 }
 

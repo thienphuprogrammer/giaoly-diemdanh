@@ -15,6 +15,7 @@ interface Props {
 
 function status(p: PromotionItem): { text: string; cls: string } {
   if (p.undone) return { text: "Đã hoàn tác", cls: "bg-surface-muted text-ink-soft" };
+  if (p.incoming) return { text: "Chuyển vào", cls: "bg-warn-watch-tint text-warn-watch" };
   if (p.canUndo) return { text: "Hoàn tác được", cls: "bg-action-tint text-action" };
   return { text: "Hết hạn hoàn tác", cls: "bg-surface-muted text-ink-soft" };
 }
@@ -57,6 +58,7 @@ export function PromotionHistory({ items, undo }: Props) {
                   <span className="block text-sm text-ink-soft">
                     <span className="tabular-nums">{p.count}</span> em · {WHEN.format(new Date(p.createdAt))}{p.actorName ? ` · ${p.actorName}` : ""}
                   </span>
+                  {p.incoming && <span className="block text-xs text-ink-soft">Khối khác chuyển em vào lớp của khối mình; chỉ khối nguồn hoàn tác được.</span>}
                 </span>
                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${s.cls}`}>{s.text}</span>
               </div>

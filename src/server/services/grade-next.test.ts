@@ -22,12 +22,15 @@ describe("setNextGrade", () => {
     expect(await setNextGrade(db, b.head, { gradeId: b.gradeId, nextGradeId: b.otherGradeId })).toEqual({ ok: true, data: undefined });
     expect(await nextOf(b.gradeId)).toBe(b.otherGradeId);
     await setNextGrade(db, b.head, { gradeId: b.gradeId, nextGradeId: b.otherGradeId });
+    // Một dòng cho khối nguồn và một dòng cho khối được chọn (trưởng khối đó thấy mình bị chọn), cùng transaction.
     const rows = await auditRows(db);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      actorId: b.head.id, gradeId: b.gradeId, classId: null, entity: "grade_settings", entityId: b.gradeId, action: "grade.next_grade",
-      summary: { gradeName: "Khối 1", before: null, after: "Khối 2" },
-    });
+    expect(rows.map((r) => r.gradeId).sort()).toEqual([b.gradeId, b.otherGradeId].sort());
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        actorId: b.head.id, classId: null, entity: "grade_settings", entityId: b.gradeId, action: "grade.next_grade",
+        summary: { gradeName: "Khối 1", before: null, after: "Khối 2" },
+      });
+    }
   });
 
   it("clears the next grade with an empty value", async () => {
@@ -35,7 +38,9 @@ describe("setNextGrade", () => {
     await setNextGrade(db, b.head, { gradeId: b.gradeId, nextGradeId: b.otherGradeId });
     expect((await setNextGrade(db, b.head, { gradeId: b.gradeId, nextGradeId: "" })).ok).toBe(true);
     expect(await nextOf(b.gradeId)).toBeNull();
-    expect((await auditRows(db)).at(-1)?.summary).toEqual({ gradeName: "Khối 1", before: "Khối 2", after: null });
+    const cleared = (await auditRows(db)).filter((r) => (r.summary as { after: unknown }).after === null);
+    expect(cleared.map((r) => r.gradeId).sort()).toEqual([b.gradeId, b.otherGradeId].sort());
+    expect(cleared[0].summary).toEqual({ gradeName: "Khối 1", before: "Khối 2", after: null });
   });
 
   it("refuses itself, a missing grade, and anyone but the head of the source grade", async () => {

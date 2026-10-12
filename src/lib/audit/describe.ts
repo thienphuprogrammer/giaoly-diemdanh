@@ -126,6 +126,7 @@ function describeSchoolYear(s: Bag): string {
 function describePromotion(s: Bag): string {
   const [from, to, count] = [str(s.fromClass), str(s.toClass), num(s.count)];
   if (!from || !to || count === null) return "chuyển em sang lớp khác";
+  if (s.direction === "in") return `chuyển ${count} em vào ${to} (từ ${from})`;
   const seats = num(s.seatsRemoved);
   const skipped = num(s.skipped);
   const notes = [seats ? `bỏ ${seats} chỗ ngồi ở lớp cũ` : null, skipped ? `${skipped} em đã ở lớp mới` : null].filter((n) => n !== null);
@@ -136,6 +137,7 @@ function describePromotionUndo(s: Bag): string {
   const [from, to, restored] = [str(s.fromClass), str(s.toClass), num(s.restored)];
   if (!from || !to || restored === null) return "hoàn tác một lượt lên lớp";
   const missing = num(s.notRestored);
+  if (s.direction === "in") return `hoàn tác lên lớp: ${restored} em rời ${to}, về lại ${from}`;
   return `hoàn tác lên lớp ${from} → ${to}: trả ${restored} em về lớp cũ${missing ? `, ${missing} em không trả được` : ""}`;
 }
 
@@ -176,6 +178,7 @@ function what(action: string, s: Bag): string {
     case "grade.mass_threshold": return describeThreshold(s);
     case "grade.next_grade": return describeNextGrade(s);
     case "school_year.create": return describeSchoolYear(s);
+    case "school_year.delete": return str(s.yearName) ? `xoá năm học ${str(s.yearName)}` : "xoá một năm học";
     case "promotion.apply": return describePromotion(s);
     case "promotion.undo": return describePromotionUndo(s);
     default: return /^[a-z_]{1,32}\.[a-z_]{1,32}$/.test(action) ? `thực hiện một thay đổi (${action})` : "thực hiện một thay đổi";
