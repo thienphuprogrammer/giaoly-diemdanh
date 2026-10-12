@@ -1,11 +1,15 @@
 "use client";
-import { ChevronDown, Church } from "lucide-react";
-import { useId, useState } from "react";
+import { CalendarOff, ChevronDown, Church, ScanLine } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useId, useState, useTransition } from "react";
 import { Notice } from "@/components/ui/Notice";
 import { STATUS_META } from "@/components/ui/status";
 import { dateLabel } from "@/lib/date-label";
 import { MASS_CHOICES, massSummary, type MassStatus } from "@/lib/attendance/mass-marks";
 import type { Marks } from "@/lib/attendance/marks";
+import { scannerHrefFromBoard } from "@/lib/scan-return";
+import { cancelMassWeekAction } from "@/server/actions/mass";
 
 export interface MassStudent { id: string; fullName: string; saintName: string | null }
 
@@ -14,7 +18,10 @@ export interface MassStudent { id: string; fullName: string; saintName: string |
  * Mở ra: nút "Cả lớp đi lễ" và bốn lựa chọn cho từng em (Chưa hỏi / Có đi / Có phép / Không phép). Không có "đi muộn".
  * Trạng thái hiện bằng chữ + biểu tượng + aria-checked, không chỉ bằng màu.
  */
-export function MassSection({ sunday, students, marks, failedIds, canWrite, cancelled, locked, busy, onPick, onMarkAll }: {
+export function MassSection({ classId, classDate, sunday, students, marks, failedIds, canWrite, cancelled, locked, busy, onPick, onMarkAll }: {
+  classId: string;
+  /** Ngày học của bảng: lối vào "Tuần này không có lễ" nhận ngày học (máy chủ tự chọn Chúa nhật). */
+  classDate: string;
   sunday: string;
   students: readonly MassStudent[];
   marks: Marks;
@@ -33,6 +40,16 @@ export function MassSection({ sunday, students, marks, failedIds, canWrite, canc
   const ids = students.map((s) => s.id);
   const summary = massSummary(ids, marks);
   const readOnly = !canWrite || cancelled || locked;
+  const router = useRouter();
+  const [toggling, startToggle] = useTransition();
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  // Huỷ/mở lại tuần đi lễ theo id buổi `mass` (không đụng "Buổi nghỉ lễ" của buổi học), rồi đọc lại trang.
+  const setWeekCancelled = (value: boolean) => startToggle(async () => {
+    setToggleError(null);
+    const res = await cancelMassWeekAction({ classId, heldOn: classDate, cancelled: value }).catch(() => null);
+    if (res?.ok) router.refresh();
+    else setToggleError(res?.error ?? "Chưa lưu được, thử lại.");
+  });
 
   return (
     <section aria-label="Đi lễ Chúa nhật" className="card">
@@ -55,11 +72,24 @@ export function MassSection({ sunday, students, marks, failedIds, canWrite, canc
           </p>
           {cancelled && <Notice tone="info" role="status">Thánh lễ tuần này đã được đánh dấu nghỉ — không ghi đi lễ.</Notice>}
           {canWrite && !cancelled && (
-            <button type="button" onClick={onMarkAll} disabled={readOnly || busy || summary.unasked === 0} className="btn btn-primary btn-lg w-full">
-              <Church aria-hidden size={20} />
-              Cả lớp đi lễ
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button type="button" onClick={onMarkAll} disabled={readOnly || busy || summary.unasked === 0} className="btn btn-primary btn-lg w-full">
+                <Church aria-hidden size={20} />
+                Cả lớp đi lễ
+              </button>
+              <Link prefetch={false} href={scannerHrefFromBoard(`/lop/${classId}/di-le/${sunday}`)} className="btn btn-secondary btn-lg w-full">
+                <ScanLine aria-hidden size={20} />
+                Quét tại nhà thờ
+              </Link>
+            </div>
+          )}
+          {canWrite && (
+            <button type="button" onClick={() => setWeekCancelled(!cancelled)} disabled={toggling || locked || busy} className="btn btn-ghost btn-sm self-start">
+              <CalendarOff aria-hidden size={16} />
+              {cancelled ? "Mở lại tuần đi lễ" : "Tuần này không có lễ"}
             </button>
           )}
+          {toggleError && <Notice tone="error" role="alert">{toggleError}</Notice>}
           <ul className="flex flex-col divide-y divide-border">
             {students.map((s) => (
               <MassRow key={s.id} student={s} status={(marks[s.id]?.status ?? null) as MassStatus | null}

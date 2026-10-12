@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INVALID_CARD, SESSION_CANCELLED, decideScan, scanRefusal } from "./scan-rules";
+import { INVALID_CARD, MASS_CANCELLED_SCAN, SESSION_CANCELLED, decideScan, scanRefusal } from "./scan-rules";
 
 const mark = (status: "present" | "late" | "absent_excused" | "absent_unexcused") => ({ status, reason: null });
 
@@ -44,5 +44,17 @@ describe("scanRefusal (whole-session gate on the scanner)", () => {
   it("allows scans of a normal session and while the roster is still loading", () => {
     expect(scanRefusal({ cancelled: false })).toBeNull();
     expect(scanRefusal(null)).toBeNull();
+  });
+});
+
+describe("scanRefusal for a Mass session", () => {
+  it("says the Mass week was cancelled (not a class holiday)", () => {
+    expect(scanRefusal({ cancelled: true }, "mass")).toBe(MASS_CANCELLED_SCAN);
+    expect(MASS_CANCELLED_SCAN).toBe("Tuần này không có lễ — không ghi đi lễ");
+    expect(scanRefusal({ cancelled: true }, "class")).toBe(SESSION_CANCELLED);
+  });
+  it("allows scans of an open Mass and while the roster is loading", () => {
+    expect(scanRefusal({ cancelled: false }, "mass")).toBeNull();
+    expect(scanRefusal(null, "mass")).toBeNull();
   });
 });

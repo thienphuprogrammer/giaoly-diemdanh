@@ -1,7 +1,7 @@
 import type { sessions } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
-import { isSunday, massSundayFor } from "@/lib/attendance/mass-week";
+import { isSunday, massSundayFor, massWeekDays } from "@/lib/attendance/mass-week";
 import { fail, ok, type ActionResult } from "../result";
 import { checkOpenInput, openCheckedSession } from "./attendance";
 
@@ -16,7 +16,8 @@ export async function openMassSession(db: Db, user: AppUser, input: unknown, now
   if (!checked.ok) return checked;
   const { classId, heldOn, manual } = checked.data;
   if (!manual && !isSunday(heldOn)) return fail(SUNDAY_REQUIRED);
-  const opened = await openCheckedSession(db, classId, heldOn, "mass", [heldOn]);
+  // Cùng quy tắc học kỳ với lối vào từ bảng: Chúa nhật rơi trước `terms.starts_on` thuộc học kỳ của các ngày học trong tuần.
+  const opened = await openCheckedSession(db, classId, heldOn, "mass", [heldOn, ...massWeekDays(heldOn).filter((d) => d !== heldOn)]);
   return opened.ok ? ok({ id: opened.data.id }) : opened;
 }
 

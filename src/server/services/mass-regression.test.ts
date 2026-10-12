@@ -189,8 +189,8 @@ describe("scanning against a mass session id", () => {
     const roster = await getScanRoster(db, b.glv, sessionId);
     expect(roster?.sessionId).toBe(sessionId);
     expect(roster?.students.find((s) => s.studentId === chi.id)).toMatchObject({ status: "present" });
-    // Số buổi vắng KP trước đó vẫn chỉ tính buổi học.
-    expect(roster?.students.find((s) => s.studentId === an.id)).toMatchObject({ status: null, priorUnexcused: 1 });
+    // Bảng tra của buổi đi lễ: "vắng trước đó" là số tuần không đi lễ; vắng buổi học (An vắng KP 04/10) không tính.
+    expect(roster?.students.find((s) => s.studentId === an.id)).toMatchObject({ status: null, priorUnexcused: 0 });
 
     const results = await getScanResults(db, b.glv, { sessionId, eventIds: [eventId] });
     expect(results).toEqual({ ok: true, data: { results: [{ eventId, kind: "scan", result: "applied", studentId: chi.id, status: "present" }] } });
@@ -225,5 +225,22 @@ describe("scanning against a mass session id", () => {
     const roster = await getScanRoster(ctx.db, ctx.b.glv, ctx.c2);
     expect(roster?.students.find((s) => s.studentId === ctx.an.id)?.priorUnexcused).toBe(1);
     expect(roster?.students.find((s) => s.studentId === ctx.binh.id)?.priorUnexcused).toBe(0);
+  });
+
+  it("the scan roster of a Mass session counts missed-Mass weeks (explicit absent_* Mass rows, this term), not class absences", async () => {
+    const ctx = await setup();
+    const { db, b, binh, chi } = ctx;
+    const { m2 } = await ctx.addMass(); // 11/10 và 18/10: An, Bình vắng KP cả hai; Chi vắng KP 11/10
+    await db.update(attendance).set({ status: "absent_excused" }).where(and(eq(attendance.sessionId, m2), eq(attendance.studentId, binh.id)));
+    await db.insert(attendance).values({ sessionId: m2, studentId: chi.id, status: "present" });
+    const m3 = await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-10-25" }, LATE_NOW);
+    if (!m3.ok) throw new Error(m3.error);
+    const prior = async () => {
+      const roster = await getScanRoster(db, b.glv, m3.data.id);
+      return Object.fromEntries((roster?.students ?? []).map((s) => [s.fullName, s.priorUnexcused]));
+    };
+    expect(await prior()).toEqual({ An: 2, "Bình": 2, Chi: 1 });
+    await db.update(sessions).set({ cancelled: true }).where(eq(sessions.id, m2)); // tuần không có lễ: không tính
+    expect(await prior()).toEqual({ An: 1, "Bình": 1, Chi: 1 });
   });
 });

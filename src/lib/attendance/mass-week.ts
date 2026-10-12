@@ -30,3 +30,12 @@ export function isSunday(day: string): boolean {
     return false;
   }
 }
+
+/**
+ * Bảy ngày Chúa nhật..thứ Bảy của tuần chứa `day`: các ngày học mà thánh lễ là Chúa nhật đầu tuần (`massSundayFor`).
+ * Dùng để chọn học kỳ cho buổi đi lễ khi Chúa nhật rơi trước `terms.starts_on` (tuần đầu học kỳ).
+ */
+export function massWeekDays(day: string): string[] {
+  const sunday = utcMidnight(massSundayFor(day));
+  return Array.from({ length: 7 }, (_, i) => new Date(sunday + i * DAY_MS).toISOString().slice(0, 10));
+}

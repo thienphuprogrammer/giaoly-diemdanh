@@ -146,7 +146,7 @@ export function AttendanceBoard({ board, mass, userId, renderId }: { board: Boar
         </Notice>
       )}
 
-      <MassSection sunday={mass.sunday} students={board.students} marks={saves.massMarks} failedIds={massFailedIds}
+      <MassSection classId={board.classId} classDate={board.heldOn} sunday={mass.sunday} students={board.students} marks={saves.massMarks} failedIds={massFailedIds}
         canWrite={mass.canWrite} cancelled={mass.cancelled} locked={saves.stale} busy={saves.busy}
         onPick={(id, status) => void saves.saveMass(id, status ? { status, reason: null } : null)}
         onMarkAll={() => void saves.markAllMass()} />

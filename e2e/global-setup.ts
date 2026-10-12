@@ -50,6 +50,9 @@ export default async function globalSetup() {
   const boardUsers = await db.insert(s.users).values(["glv-a5@e2e.vn", "glv-a6@e2e.vn"].map((email, i) => ({ email, name: `GLV A${i + 5}`, passwordHash: hash, gradeId: gradeA.id }))).returning();
   await db.insert(s.classCatechists).values(boardUsers.map((u) => ({ classId: classA.id, userId: u.id })));
   await db.insert(s.students).values(Array.from({ length: 30 }, (_, i) => ({ classId: classQ.id, fullName: `Em Q${String(i + 1).padStart(2, "0")}` })));
+  // GLV lớp A cho test quét đi lễ tại nhà thờ (mỗi project một người): bảng tra giới hạn 30 lần/phút mỗi người.
+  const massUsers = await db.insert(s.users).values(["glv-m1@e2e.vn", "glv-m2@e2e.vn"].map((email, i) => ({ email, name: `GLV M${i + 1}`, passwordHash: hash, gradeId: gradeA.id }))).returning();
+  await db.insert(s.classCatechists).values(massUsers.map((u) => ({ classId: classA.id, userId: u.id })));
   await db.insert(s.classCatechists).values([
     { classId: classA.id, userId: glvA.id }, { classId: classB.id, userId: glvB.id },
     { classId: classC.id, userId: glvReset.id }, { classId: classC.id, userId: headA.id },

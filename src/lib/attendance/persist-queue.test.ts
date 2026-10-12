@@ -42,6 +42,20 @@ describe("queueStorageKey", () => {
   });
 });
 
+describe("queue of a Mass session never mixes with the class session of the same day", () => {
+  it("keeps separate keys and loads only its own events", () => {
+    const store = memoryStorage();
+    const classKey = queueStorageKey("u1", "class-session");
+    const massKey = queueStorageKey("u1", "mass-session");
+    expect(massKey).not.toBe(classKey);
+    expect(persistState(store, classKey, state(queued("c1")), new Set(["c1"]), NOW)).toBe(true);
+    expect(persistState(store, massKey, state(queued("m1"), queued("m2")), new Set(["m1", "m2"]), NOW)).toBe(true);
+    expect(loadQueue(store, classKey, NOW).map((e) => e.eventId)).toEqual(["c1"]);
+    expect(loadQueue(store, massKey, NOW).map((e) => e.eventId)).toEqual(["m1", "m2"]);
+    expect(countUnsentInQueue(store, classKey, NOW)).toBe(1);
+  });
+});
+
 describe("toPersisted", () => {
   it("keeps unsaved events (sending, failed) with the payload needed to resend, plus needs_confirm as display-only", () => {
     const out = toPersisted(state(

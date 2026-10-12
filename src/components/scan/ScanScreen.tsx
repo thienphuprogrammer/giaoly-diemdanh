@@ -1,5 +1,5 @@
 "use client";
-import { Check, CircleAlert, Clock, LogIn, RefreshCw, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
+import { Check, Church, CircleAlert, Clock, LogIn, RefreshCw, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { RemainingAbsentButton, RemainingAbsentSheet } from "@/components/attendance/RemainingAbsent";
 import { useLeaveGuard } from "@/components/nav/useLeaveGuard";
@@ -9,11 +9,13 @@ import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { remainingAbsentBlock } from "@/lib/attendance/remaining-absent";
-import { SESSION_CANCELLED, type ScanMode } from "@/lib/attendance/scan-rules";
+import type { ScanKind } from "@/lib/attendance/scan-rules";
+import { scanVariant } from "@/lib/attendance/scan-variant";
 import { loginHref } from "@/lib/auth/next-path";
 import { dateLabel } from "@/lib/date-label";
 import { nextRadioIndex } from "@/lib/radio-keys";
 import { scannerExit } from "@/lib/scan-return";
+import { cancelMassSessionAction } from "@/server/actions/mass";
 import { QrCamera, type CameraState } from "./QrCamera";
 import { useScanFeedbackSetting } from "./feedback";
 import { useScanSession } from "./useScanSession";
@@ -23,17 +25,23 @@ interface ScanScreenProps {
   sessionId: string; userId: string; classId: string; className: string; heldOn: string;
   /** Mở từ nút "Quét QR" của bảng điểm danh (`?from=board`): về bảng bằng cách lùi lịch sử. */
   fromBoard: boolean;
+  /** `mass`: máy quét đi lễ tại nhà thờ (không có "Đi muộn", không "Đánh vắng còn lại", có "Tuần này không có lễ"). */
+  kind?: ScanKind;
+  /** Nơi "Xong" về khi không mở từ bảng; mặc định là bảng điểm danh của buổi. */
+  exitHref?: string;
+  /** Địa chỉ của chính màn quét (đăng nhập lại xong quay về đây); mặc định là máy quét của buổi học. */
+  selfHref?: string;
 }
-
-const MODES: readonly ScanMode[] = ["present", "late"];
 
 /**
  * Màn quét toàn màn hình (không có thanh điều hướng/tab lớp). "Xong" và công tắc Có mặt/Đi muộn ở đáy cho ngón cái.
  * Rời màn (Xong, Back, link) khi còn lượt chưa lưu thì hỏi lại. Về bảng: mở từ bảng thì lùi lịch sử (không tạo mục bảng
  * thứ hai), mở từ nơi khác thì `router.replace` để Back không quay lại máy quét.
  */
-export function ScanScreen({ sessionId, userId, classId, className, heldOn, fromBoard }: ScanScreenProps) {
-  const s = useScanSession({ sessionId, userId });
+export function ScanScreen({ sessionId, userId, classId, className, heldOn, fromBoard, kind = "class", exitHref, selfHref }: ScanScreenProps) {
+  const v = scanVariant(kind);
+  const MODES = v.modes;
+  const s = useScanSession({ sessionId, userId, kind });
   const [storedFeedback, saveFeedback] = useScanFeedbackSetting();
   const [camera, setCamera] = useState<CameraState>("starting");
   const [cameraKey, setCameraKey] = useState(0);
@@ -41,11 +49,13 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
   const [query, setQuery] = useState("");
   const [review, setReview] = useState(false);
   const [absentOpen, setAbsentOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelState, setCancelState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const absentSaving = s.absentInFlight > 0;
   const busyCount = s.pending + (absentSaving ? 1 : 0); // đánh vắng đang lưu cũng chặn rời trang
   const guard = useLeaveGuard(busyCount, { navigate: "replace" });
   const leaving = guard.target !== null;
-  const paused = !!s.confirm || finding || review || absentOpen || leaving;
+  const paused = !!s.confirm || finding || review || absentOpen || cancelOpen || leaving;
   useWakeLock(camera === "on" || camera === "restarting");
   // Sheet đặt focus lại mỗi khi onClose đổi: giữ các hàm đóng ổn định để không cướp focus khỏi ô tìm kiếm.
   const { setConfirm, clearAbsent } = s;
@@ -53,6 +63,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
   const closeFinding = useCallback(() => { setFinding(false); setQuery(""); }, []);
   const closeReview = useCallback(() => { setReview(false); clearAbsent(); }, [clearAbsent]);
   const closeAbsent = useCallback(() => setAbsentOpen(false), []);
+  const closeCancel = useCallback(() => setCancelOpen(false), []);
   const searchRef = useRef<HTMLInputElement>(null);
   // Effect của cha chạy sau effect của Sheet (vốn focus vào khung): đưa focus về ô tìm để gõ ngay.
   useEffect(() => { if (finding) searchRef.current?.focus(); }, [finding]);
@@ -67,12 +78,20 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
 
   const needsAction = s.queue.events.filter((e) => e.state === "needs_confirm" || e.state === "rejected" || e.state === "failed");
   const boardHref = `/lop/${classId}/diem-danh/${heldOn}`;
+  const exitTo = exitHref ?? boardHref;
   const late = s.mode === "late";
   // Còn lượt quét đang gửi/lỗi/cần chọn thì không đánh vắng (tránh chạy đua với hàng đợi); nói rõ lý do.
-  const absentBlock = s.cancelled ? SESSION_CANCELLED : remainingAbsentBlock({ unsaved: s.pending, busy: absentSaving, notReady: s.roster === null });
+  const absentBlock = s.cancelled ? v.cancelledText : remainingAbsentBlock({ unsaved: s.pending, busy: absentSaving, notReady: s.roster === null });
   const toBoard = () => {
     if (scannerExit({ fromBoard, historyLength: window.history.length }) === "back") guard.back();
-    else guard.go(boardHref);
+    else guard.go(exitTo);
+  };
+  /** "Tuần này không có lễ" / mở lại (chỉ máy quét đi lễ; mọi người mở được màn này đều có quyền ghi). */
+  const setMassCancelled = async (value: boolean) => {
+    setCancelState({ busy: true, error: null });
+    const res = await cancelMassSessionAction({ sessionId, cancelled: value }).catch(() => null);
+    if (res?.ok) s.applyCancelled(value);
+    setCancelState({ busy: false, error: res?.ok ? null : res?.error ?? "Chưa lưu được, thử lại." });
   };
   const goBoard = () => { setReview(false); toBoard(); };
   const modeRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -85,14 +104,14 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
     modeRefs.current[next]?.focus();
   };
   // Đăng nhập xong quay lại đúng màn quét; hàng chờ đã lưu bền (theo buổi + người dùng) sẽ tự gửi tiếp.
-  const relogin = () => guard.hardNavigate(loginHref(`${boardHref}/quet`));
+  const relogin = () => guard.hardNavigate(loginHref(selfHref ?? `${boardHref}/quet`));
 
   return (
     <section aria-label="Quét thẻ QR" aria-busy={s.roster === null} className="flex min-h-dvh flex-col">
       <header className="flex items-center gap-2 px-4 pt-3">
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-lg font-semibold leading-tight">Quét thẻ QR</h1>
-          <p className="truncate font-display text-sm text-ink-soft">{className} · {dateLabel(heldOn)}</p>
+          <h1 className="font-display text-lg font-semibold leading-tight">{v.title(heldOn)}</h1>
+          <p className="truncate font-display text-sm text-ink-soft">{kind === "mass" ? className : `${className} · ${dateLabel(heldOn)}`}</p>
         </div>
         <button type="button" onClick={() => saveFeedback(!storedFeedback)} aria-pressed={storedFeedback}
           aria-label="Rung và tiếng bíp khi quét" title={storedFeedback ? "Đang bật rung/tiếng bíp" : "Đang tắt rung/tiếng bíp"}
@@ -116,8 +135,21 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
           <Notice tone="warning" role="status">Máy không lưu được hàng chờ: đừng đóng trang cho tới khi gửi xong.</Notice>
         )}
 
+        {kind === "mass" && !s.cancelled && (
+          <button type="button" onClick={() => setCancelOpen(true)} disabled={s.pending > 0 || cancelState.busy} className="btn btn-ghost btn-sm self-start">
+            <Church aria-hidden size={16} /> Tuần này không có lễ
+          </button>
+        )}
+        {cancelState.error && <Notice tone="error" role="alert">{cancelState.error}</Notice>}
         {s.cancelled ? (
-          <Notice tone="warning" role="status">{SESSION_CANCELLED}. Tắt “Buổi nghỉ lễ” trên bảng điểm danh nếu buổi này vẫn học.</Notice>
+          <Notice tone="warning" role="status">
+            <p>{v.cancelledText}. {v.cancelledHint}</p>
+            {kind === "mass" && (
+              <button type="button" onClick={() => void setMassCancelled(false)} disabled={cancelState.busy} className="btn btn-secondary btn-sm mt-2">
+                <RefreshCw aria-hidden size={16} /> Mở lại tuần đi lễ
+              </button>
+            )}
+          </Notice>
         ) : camera === "denied" || camera === "unavailable" ? (
           <EmptyState icon={VideoOff} title={camera === "denied" ? "Chưa cho phép dùng camera" : "Không mở được camera"}
             action={(
@@ -152,7 +184,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
                   {s.banner.text}
                 </p>
               </div>
-              {s.banner.status && <StatusPill status={s.banner.status} />}
+              {s.banner.status && <StatusPill status={s.banner.status} label={v.statusLabel(s.banner.status)} />}
             </div>
           ) : <p className="text-ink-soft">{s.roster === null ? "Đang tải danh sách lớp…" : "Đưa thẻ QR của em vào khung hình."}</p>}
         </div>
@@ -172,7 +204,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
           {s.recent.map((e) => (
             <li key={e.eventId} className="flex flex-wrap items-center gap-2 p-3">
               <span className="min-w-0 flex-1 font-medium">{e.fullName}</span>
-              {e.state === "saved" && <StatusPill status={e.serverStatus ?? e.optimisticStatus} label={e.result === "noop" ? "Đã có" : undefined} />}
+              {e.state === "saved" && <StatusPill status={e.serverStatus ?? e.optimisticStatus} label={e.result === "noop" ? "Đã có" : v.statusLabel(e.serverStatus ?? e.optimisticStatus)} />}
               {e.state === "sending" && <Pill tone="action">{s.authRequired ? "Chờ đăng nhập" : "Đang gửi"}</Pill>}
               {e.state === "needs_confirm" && (
                 <button type="button" onClick={() => s.reopenConfirm(e)} aria-label={`Chọn trạng thái cho ${e.fullName}`} className="btn btn-secondary btn-sm">
@@ -201,7 +233,12 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
           {late && <p role="status" className="text-center text-sm font-medium text-st-late">Đang quét chế độ <b>Đi muộn</b>: thẻ quét sau sẽ ghi Đi muộn.</p>}
           <div className="flex items-stretch gap-2">
-            <div role="radiogroup" aria-label="Chế độ quét" className="grid flex-1 grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
+            {!v.showModeSwitch && (
+              <p className="flex flex-1 items-center gap-1.5 rounded-control border border-border bg-surface-muted px-3 font-display text-base font-medium">
+                <Church aria-hidden size={18} className="shrink-0 text-st-present" /> Quét thẻ = {v.presentLabel}
+              </p>
+            )}
+            {v.showModeSwitch && <div role="radiogroup" aria-label="Chế độ quét" className="grid flex-1 grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
               {MODES.map((m, i) => (
                 <button key={m} ref={(el) => { modeRefs.current[i] = el; }} type="button" role="radio" aria-checked={s.mode === m}
                   tabIndex={s.mode === m ? 0 : -1} onClick={() => s.setMode(m)} onKeyDown={onModeKey}
@@ -210,7 +247,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
                   {m === "late" ? "Đi muộn" : "Có mặt"}
                 </button>
               ))}
-            </div>
+            </div>}
             <button type="button" onClick={toBoard} className="btn btn-primary h-auto min-h-14 shrink-0 px-4">
               <Check aria-hidden size={18} /> Xong
             </button>
@@ -239,10 +276,11 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
       {s.confirm && (
         <Sheet label={`Chọn trạng thái cho ${s.confirm.entry.fullName}`} onClose={closeConfirm}>
           <p className="font-display text-xl font-semibold">{s.confirm.entry.fullName}</p>
-          <p className="text-ink-soft">Đang được ghi: <b>{s.confirm.current === "absent_excused" ? "Vắng có phép" : "Vắng không phép"}</b>. Em vừa đến, đổi thành:</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="btn btn-primary btn-lg" onClick={() => s.confirmChoice("present")}>Có mặt</button>
-            <button type="button" className="btn btn-secondary btn-lg" onClick={() => s.confirmChoice("late")}>Đi muộn</button>
+          <p className="text-ink-soft">Đang được ghi: <b>{v.absentLabel(s.confirm.current)}</b>. {v.arrivedText}</p>
+          <div className={`grid gap-2 ${v.confirmChoices.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {v.confirmChoices.map((c) => (
+              <button key={c} type="button" className={`btn btn-lg ${c === "present" ? "btn-primary" : "btn-secondary"}`} onClick={() => s.confirmChoice(c)}>{v.confirmLabel(c)}</button>
+            ))}
           </div>
           <button type="button" className="btn btn-secondary" onClick={s.keepAsIs}>Giữ nguyên</button>
         </Sheet>
@@ -250,35 +288,52 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
 
       {review && !absentOpen && (
         <Sheet label="Kiểm tra cuối buổi" onClose={closeReview}>
-          <h2 className="font-display text-lg font-semibold">Em chưa điểm danh ({s.unmarked.length})</h2>
-          <ul className="text-sm">{s.unmarked.map((r) => <li key={r.studentId} className="py-1">{r.fullName}</li>)}{s.unmarked.length === 0 && <li className="text-ink-soft">Tất cả đã được điểm danh.</li>}</ul>
+          <h2 className="font-display text-lg font-semibold">{v.unmarkedHeading(s.unmarked.length)}</h2>
+          <ul className="text-sm">{s.unmarked.map((r) => <li key={r.studentId} className="py-1">{r.fullName}</li>)}{s.unmarked.length === 0 && <li className="text-ink-soft">{v.allMarkedText}</li>}</ul>
           <h2 className="font-display text-lg font-semibold">Lượt cần xử lý ({needsAction.length})</h2>
           {s.summary.sending > 0 && <p className="text-sm text-ink-soft">Còn {s.summary.sending} lượt đang gửi.</p>}
           <ul className="text-sm">
             {needsAction.map((e) => (
-              <li key={e.eventId} className="py-1">{e.fullName}: {e.state === "needs_confirm" ? "cần chọn Có mặt/Đi muộn" : e.state === "failed" ? "chưa gửi được" : e.message ?? "bị từ chối"}</li>
+              <li key={e.eventId} className="py-1">{e.fullName}: {e.state === "needs_confirm" ? v.needsConfirmText : e.state === "failed" ? "chưa gửi được" : e.message ?? "bị từ chối"}</li>
             ))}
             {needsAction.length === 0 && <li className="text-ink-soft">Không có lượt nào cần xử lý.</li>}
           </ul>
-          <p className="text-sm text-ink-soft">App không tự đánh vắng. Nếu các em còn lại đều vắng, bấm nút dưới để ghi “vắng không phép” cho tất cả; sau đó vẫn đổi từng em sang “có phép” được trên bảng điểm danh.</p>
-          {s.absent.phase === "done" && (
-            <Notice tone="success" role="status">{s.absent.marked > 0 ? `Đã đánh vắng ${s.absent.marked} em.` : "Không còn em nào cần đánh vắng."}</Notice>
+          {v.offersRemainingAbsent ? (
+            <>
+            <p className="text-sm text-ink-soft">App không tự đánh vắng. Nếu các em còn lại đều vắng, bấm nút dưới để ghi “vắng không phép” cho tất cả; sau đó vẫn đổi từng em sang “có phép” được trên bảng điểm danh.</p>
+            {s.absent.phase === "done" && (
+              <Notice tone="success" role="status">{s.absent.marked > 0 ? `Đã đánh vắng ${s.absent.marked} em.` : "Không còn em nào cần đánh vắng."}</Notice>
+            )}
+            {absentSaving && <Notice tone="info" role="status">Đang lưu…</Notice>}
+            {s.absent.phase === "error" && (
+              <Notice tone="error" role="alert">
+                <p>{s.absent.message}</p>
+                {s.unmarked.length > 0 && <button type="button" onClick={() => setAbsentOpen(true)} className="btn btn-secondary btn-sm mt-2">Thử lại đánh vắng</button>}
+              </Notice>
+            )}
+            <RemainingAbsentButton count={s.unmarked.length} blockedReason={absentBlock} onOpen={() => { s.clearAbsent(); setAbsentOpen(true); }} />
+            </>
+          ) : (
+            <p className="text-sm text-ink-soft">Em chưa quét là <b>chưa ghi nhận</b> đi lễ, không tính là vắng. Có thể ghi từng em trong phần “Đi lễ Chúa nhật” của bảng điểm danh.</p>
           )}
-          {absentSaving && <Notice tone="info" role="status">Đang lưu…</Notice>}
-          {s.absent.phase === "error" && (
-            <Notice tone="error" role="alert">
-              <p>{s.absent.message}</p>
-              {s.unmarked.length > 0 && <button type="button" onClick={() => setAbsentOpen(true)} className="btn btn-secondary btn-sm mt-2">Thử lại đánh vắng</button>}
-            </Notice>
-          )}
-          <RemainingAbsentButton count={s.unmarked.length} blockedReason={absentBlock} onOpen={() => { s.clearAbsent(); setAbsentOpen(true); }} />
-          <button type="button" onClick={goBoard} className="btn btn-primary btn-lg">Mở bảng điểm danh</button>
+          <button type="button" onClick={goBoard} className="btn btn-primary btn-lg">{kind === "mass" && fromBoard ? "Về bảng điểm danh" : v.exitLabel}</button>
         </Sheet>
       )}
 
       {absentOpen && (
         <RemainingAbsentSheet students={s.unmarked.map((r) => ({ id: r.studentId, fullName: r.fullName, saintName: r.saintName }))} blockedReason={absentBlock}
           onClose={closeAbsent} onConfirm={() => { closeAbsent(); void s.markRemainingAbsent(); }} />
+      )}
+
+      {cancelOpen && (
+        <Sheet label="Tuần này không có lễ?" onClose={closeCancel}>
+          <p className="font-display text-lg font-semibold">Đánh dấu tuần này không có lễ?</p>
+          <p className="text-ink-soft">Không ghi đi lễ cho tuần này và không tính vào số tuần không đi lễ. Mở lại được bất cứ lúc nào.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className="btn btn-secondary btn-lg" onClick={closeCancel}>Huỷ</button>
+            <button type="button" className="btn btn-primary btn-lg" onClick={() => { closeCancel(); void setMassCancelled(true); }}>Không có lễ</button>
+          </div>
+        </Sheet>
       )}
 
       {leaving && (
@@ -288,9 +343,9 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
               <p className="font-display text-lg font-semibold">Còn {s.unsaved.total + (absentSaving ? 1 : 0)} lượt chưa xong</p>
               <ul className="text-ink-soft" role="status">
                 {absentSaving && <li>Đang lưu việc đánh vắng các em còn lại: ở lại vài giây, xong sẽ tự về bảng điểm danh.</li>}
-                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về bảng điểm danh.</li>}
+                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về {v.exitPlace}.</li>}
                 {s.unsaved.failed > 0 && <li>{s.unsaved.failed} lượt chưa gửi được: thử gửi lại, hoặc ghi tay trên bảng điểm danh.</li>}
-                {s.unsaved.needsConfirm > 0 && <li>{s.unsaved.needsConfirm} em đang vắng cần chọn Có mặt/Đi muộn: bấm “Cần chọn” trong danh sách.</li>}
+                {s.unsaved.needsConfirm > 0 && <li>{s.unsaved.needsConfirm} em đang vắng {v.needsConfirmText}: bấm “Cần chọn” trong danh sách.</li>}
               </ul>
               <p className="text-sm text-ink-soft">
                 {s.persistFailed
@@ -304,7 +359,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
               </div>
             </>
           ) : (
-            <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét — đang về bảng điểm danh…</p>
+            <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét — đang về {v.exitPlace}…</p>
           )}
         </Sheet>
       )}

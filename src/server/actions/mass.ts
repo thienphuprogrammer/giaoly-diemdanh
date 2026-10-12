@@ -14,3 +14,10 @@ export async function markClassAtMassAction(input: unknown) {
 export async function undoClassAtMassAction(input: unknown) {
   return mass.undoClassAtMass(db, await requireUser(), input);
 }
+// "Tuần này không có lễ": từ bảng điểm danh (theo ngày học) và từ màn quét tại nhà thờ (theo id buổi đi lễ).
+export async function cancelMassWeekAction(input: unknown) {
+  return mass.cancelMassWeek(db, await requireUser(), input);
+}
+export async function cancelMassSessionAction(input: unknown) {
+  return mass.cancelMassSession(db, await requireUser(), input);
+}

@@ -70,8 +70,38 @@ describe("openMassSession", () => {
     expect((await open("2026-02-30")).ok).toBe(false);
     expect((await open(undefined)).ok).toBe(false);
     expect(await open("2026-10-18")).toEqual({ ok: false, error: "Không thể điểm danh cho ngày chưa tới" });
-    expect(await open("2026-08-30")).toEqual({ ok: false, error: "Ngày này không thuộc học kỳ nào" });
+    expect(await open("2026-08-23")).toEqual({ ok: false, error: "Ngày này không thuộc học kỳ nào" });
     expect((await openMassSession(db, b.glv, null, now)).ok).toBe(false);
+  });
+});
+
+describe("openMassSession: term fallback for the first week of a term (same rule as the board path)", () => {
+  const termOf = async (db: Awaited<ReturnType<typeof setup>>["db"], id: string) =>
+    (await db.select({ termId: sessions.termId, heldOn: sessions.heldOn }).from(sessions).where(eq(sessions.id, id)))[0];
+
+  it("an explicit Sunday before terms.starts_on is stored in the term of that week's class days", async () => {
+    // Học kỳ bắt đầu thứ Ba 01/09/2026: Chúa nhật 30/08 nằm ngoài học kỳ nhưng lớp thứ Bảy 05/09 đi lễ Chúa nhật đó.
+    const { db, b } = await setup();
+    const r = await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-08-30" }, LATE_NOW);
+    if (!r.ok) throw new Error(r.error);
+    expect(await termOf(db, r.data.id)).toEqual({ termId: b.termId, heldOn: "2026-08-30" });
+    // Cùng một buổi với lối vào từ bảng điểm danh (ngày học 05/09).
+    const board = await openMassForClassDate(db, b.glv, { classId: b.classId, heldOn: "2026-09-05" }, LATE_NOW);
+    expect(board.ok && board.data.id).toBe(r.data.id);
+  });
+
+  it("a manual feast day before the term start uses the same week's term", async () => {
+    const { db, b } = await setup();
+    const r = await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-08-31", manual: true }, LATE_NOW);
+    if (!r.ok) throw new Error(r.error);
+    expect(await termOf(db, r.data.id)).toEqual({ termId: b.termId, heldOn: "2026-08-31" });
+  });
+
+  it("still rejects a week with no term at all", async () => {
+    const { db, b } = await setup();
+    expect(await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-08-23" }, LATE_NOW))
+      .toEqual({ ok: false, error: "Ngày này không thuộc học kỳ nào" });
+    expect(await db.select().from(sessions)).toHaveLength(0);
   });
 });
 

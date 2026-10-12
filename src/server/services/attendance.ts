@@ -14,6 +14,10 @@ import { fail, ok, type ActionResult } from "../result";
 const firstError = (e: z.ZodError) => e.issues[0]?.message ?? "Dữ liệu không hợp lệ";
 export const NOT_FOUND_SESSION = "Không tìm thấy buổi học";
 export const CANCELLED = "Buổi này đã được đánh dấu nghỉ lễ";
+/** Tuần đi lễ được đánh dấu "không có lễ" (khác với buổi học nghỉ lễ). */
+export const MASS_CANCELLED = "Tuần này đã được đánh dấu không có lễ";
+/** Thông điệp từ chối ghi vào một buổi đã huỷ, theo loại buổi. */
+export const cancelledMessage = (kind: SessionKind): string => (kind === "mass" ? MASS_CANCELLED : CANCELLED);
 export const NOT_FOUND_STUDENT = "Không tìm thấy thiếu nhi";
 const STATUSES = ["present", "absent_excused", "absent_unexcused", "late"] as const;
 
@@ -97,18 +101,20 @@ export async function setStatus(db: Db, user: AppUser, input: unknown): Promise<
   return ok({ warning: evaluateWarningFromCount(await unexcusedCount(db, written.data.studentId, session.termId)) });
 }
 
+type StudentRow = NonNullable<Awaited<ReturnType<typeof getStudent>>>;
+
 /**
  * Ghi tay (chạm trên bảng) trạng thái của một em trong buổi; `null` = xoá dòng. Ghi đè dòng hiện có và đặt
  * `lastEventId = null`, nên hoàn tác của lượt quét / lần "Tất cả có mặt" cũ không còn xoá được dòng này.
- * Buổi đi lễ không có "đi muộn". Người gọi đã kiểm tra quyền ghi của buổi.
+ * Buổi đi lễ không có "đi muộn". Người gọi đã kiểm tra quyền ghi của buổi. Người gọi đã đọc em rồi thì truyền luôn
+ * bản ghi đó (khỏi đọc lại); vẫn kiểm tra em thuộc lớp của buổi và đang hoạt động.
  */
 export async function writeManualMark(
-  db: Db, user: AppUser, session: Session, studentId: string, status: AttendanceStatus | null, reason: string | null,
+  db: Db, user: AppUser, session: Session, who: string | StudentRow, status: AttendanceStatus | null, reason: string | null,
 ): Promise<ActionResult<{ studentId: string }>> {
-  if (session.cancelled) return fail(CANCELLED);
+  if (session.cancelled) return fail(cancelledMessage(session.kind));
   if (session.kind === "mass" && status === "late") return fail(NO_LATE_AT_MASS);
-  if (!z.uuid().safeParse(studentId).success) return fail(NOT_FOUND_STUDENT);
-  const student = await getStudent(db, studentId);
+  const student = typeof who === "string" ? (z.uuid().safeParse(who).success ? await getStudent(db, who) : null) : who;
   if (!student || student.classId !== session.classId || !student.active) return fail(NOT_FOUND_STUDENT);
 
   if (status === null) {
@@ -158,7 +164,7 @@ export async function markAllPresent(db: Db, user: AppUser, input: unknown): Pro
 
 /** "Có mặt"/"đi lễ" cho các em chưa có dấu của `session` (đã kiểm tra quyền), gắn chung một `batchId` để hoàn tác. */
 export async function presentBatch(db: Db, user: AppUser, session: Session): Promise<ActionResult<{ marked: number; batchId: string; studentIds: string[] }>> {
-  if (session.cancelled) return fail(CANCELLED);
+  if (session.cancelled) return fail(cancelledMessage(session.kind));
   const batchId = crypto.randomUUID();
   const studentIds = await fillUnmarked(db, user, session, "present", batchId);
   return ok({ marked: studentIds.length, batchId, studentIds });
@@ -178,7 +184,7 @@ export async function undoMarkAllPresent(db: Db, user: AppUser, input: unknown):
  * dòng đã bị sửa sau đó (thiết bị khác, quét, chạm tay) giữ kết quả mới hơn.
  */
 export async function undoPresentBatch(db: Db, session: Session, batchId: string): Promise<ActionResult<{ studentIds: string[] }>> {
-  if (session.cancelled) return fail(CANCELLED);
+  if (session.cancelled) return fail(cancelledMessage(session.kind));
   const removed = await db.delete(attendance)
     .where(and(eq(attendance.sessionId, session.id), eq(attendance.lastEventId, batchId), eq(attendance.status, "present")))
     .returning({ id: attendance.studentId });

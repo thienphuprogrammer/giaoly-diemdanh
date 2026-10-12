@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { findSession } from "@/db/queries/attendance";
+import { findSession, getSession } from "@/db/queries/attendance";
 import { getStudent } from "@/db/queries/students";
 import { attendance, sessions, students } from "@/db/schema";
 import type { Db } from "@/db/types";
@@ -9,7 +9,7 @@ import { MASS_STATUSES, toMassStatus, type MassMark } from "@/lib/attendance/mas
 import { massSundayFor } from "@/lib/attendance/mass-week";
 import { classPermissions } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
-import { NOT_FOUND_STUDENT, checkOpenInput, presentBatch, undoPresentBatch, writeManualMark } from "./attendance";
+import { NOT_FOUND_SESSION, NOT_FOUND_STUDENT, checkOpenInput, presentBatch, setCancelled, undoPresentBatch, writeManualMark } from "./attendance";
 import { openMassOfWeek } from "./mass-sessions";
 
 /**
@@ -77,7 +77,7 @@ export async function setMassStatus(db: Db, user: AppUser, input: unknown, now: 
   const session = await massOfWeek(db, p.data.classId, p.data.heldOn, p.data.status !== null);
   if (!session.ok) return session;
   if (!session.data) return ok(undefined); // "chưa hỏi" khi tuần này chưa ghi gì: không có gì để xoá
-  const written = await writeManualMark(db, user, session.data, student.id, p.data.status, null);
+  const written = await writeManualMark(db, user, session.data, student, p.data.status, null);
   return written.ok ? ok(undefined) : written;
 }
 
@@ -103,4 +103,28 @@ export async function undoClassAtMass(
   const session = await massOfWeek(db, p.data.classId, p.data.heldOn, false);
   if (!session.ok) return session;
   return session.data ? undoPresentBatch(db, session.data, p.data.batchId) : ok({ studentIds: [] });
+}
+
+/**
+ * "Tuần này không có lễ" từ bảng điểm danh (nhận NGÀY HỌC): huỷ/mở lại buổi `mass` của tuần đó. Huỷ khi tuần chưa ghi gì
+ * thì mở buổi (đã huỷ) để màn quét và bảng cùng thấy; mở lại khi chưa có buổi thì không tạo gì. Ghi theo id buổi
+ * (`setCancelled`), nên không bao giờ đụng công tắc "Buổi nghỉ lễ" của buổi học.
+ */
+export async function cancelMassWeek(db: Db, user: AppUser, input: unknown, now: Date = new Date()): Promise<ActionResult> {
+  const p = classDay.extend({ cancelled: z.boolean() }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const checked = await checkOpenInput(db, user, p.data, now);
+  if (!checked.ok) return checked;
+  const session = await massOfWeek(db, p.data.classId, p.data.heldOn, p.data.cancelled);
+  if (!session.ok) return session;
+  return session.data ? setCancelled(db, user, { sessionId: session.data.id, cancelled: p.data.cancelled }) : ok(undefined);
+}
+
+/** "Tuần này không có lễ" từ màn quét tại nhà thờ (theo id buổi): chỉ nhận buổi `mass`, người có quyền ghi. */
+export async function cancelMassSession(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {
+  const p = z.object({ sessionId: z.string(), cancelled: z.boolean() }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const session = z.uuid().safeParse(p.data.sessionId).success ? await getSession(db, p.data.sessionId) : null;
+  if (!session || session.kind !== "mass") return fail(NOT_FOUND_SESSION);
+  return setCancelled(db, user, p.data); // kiểm tra quyền ghi của lớp
 }

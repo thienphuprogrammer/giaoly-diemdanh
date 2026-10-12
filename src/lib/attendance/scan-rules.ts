@@ -5,9 +5,16 @@ export const INVALID_CARD = "Thẻ không dùng được cho lớp này";
 /** Buổi nghỉ lễ: máy quét từ chối mọi lượt (máy chủ cũng từ chối). */
 export const SESSION_CANCELLED = "Buổi này nghỉ lễ — không điểm danh";
 
+/** Tuần đi lễ được đánh dấu "không có lễ": máy quét tại nhà thờ từ chối mọi lượt (máy chủ cũng từ chối). */
+export const MASS_CANCELLED_SCAN = "Tuần này không có lễ — không ghi đi lễ";
+
+/** Loại buổi của màn quét: buổi học giáo lý hoặc thánh lễ Chúa nhật (cùng giá trị với `sessions.kind`). */
+export type ScanKind = "class" | "mass";
+
 /** Lý do máy quét từ chối mọi lượt của buổi (null = được quét; chưa tải bảng tra thì chưa biết, để máy chủ quyết định). */
-export function scanRefusal(session: { cancelled: boolean } | null): string | null {
-  return session?.cancelled ? SESSION_CANCELLED : null;
+export function scanRefusal(session: { cancelled: boolean } | null, kind: ScanKind = "class"): string | null {
+  if (!session?.cancelled) return null;
+  return kind === "mass" ? MASS_CANCELLED_SCAN : SESSION_CANCELLED;
 }
 
 export type ScanMode = "present" | "late";

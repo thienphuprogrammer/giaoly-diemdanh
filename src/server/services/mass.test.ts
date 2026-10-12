@@ -4,8 +4,9 @@ import { attendance, sessions, students } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import { markAllPresent, openSession, setCancelled, setStatus } from "./attendance";
-import { markClassAtMass, readMassMarks, setMassStatus, undoClassAtMass } from "./mass";
-import { openMassForClassDate } from "./mass-sessions";
+import { cancelMassSession, cancelMassWeek, markClassAtMass, readMassMarks, setMassStatus, undoClassAtMass } from "./mass";
+import { openMassForClassDate, openMassSession } from "./mass-sessions";
+import { applyScan, applyUndo } from "./scan";
 
 const LATE_NOW = new Date("2027-02-01T05:00:00Z");
 const SATURDAY = "2026-10-10";
@@ -118,7 +119,7 @@ describe("setMassStatus", () => {
     const mass = await openMassForClassDate(db, b.glv, input(), LATE_NOW);
     if (!mass.ok) throw new Error(mass.error);
     await setCancelled(db, b.glv, { sessionId: mass.data.id, cancelled: true });
-    expect(await setMassStatus(db, b.glv, input({ studentId: an.id, status: "present" }), LATE_NOW)).toEqual({ ok: false, error: "Buổi này đã được đánh dấu nghỉ lễ" });
+    expect(await setMassStatus(db, b.glv, input({ studentId: an.id, status: "present" }), LATE_NOW)).toEqual({ ok: false, error: "Tuần này đã được đánh dấu không có lễ" });
   });
 });
 
@@ -191,5 +192,90 @@ describe("no 'late' at Mass through the generic services", () => {
     expect(await statusOf(an.id)).toBeNull();
     expect((await setStatus(db, b.glv, { sessionId: mass.data.id, studentId: an.id, status: "present", reason: null })).ok).toBe(true);
     expect((await setStatus(db, b.glv, { sessionId: cls.data.id, studentId: an.id, status: "late", reason: null })).ok).toBe(true);
+  });
+});
+
+describe("cancel / reopen a Mass week ('Tuần này không có lễ')", () => {
+  const MASS_CANCELLED = "Tuần này đã được đánh dấu không có lễ";
+  const sessionRows = async (db: Awaited<ReturnType<typeof setup>>["db"]) =>
+    (await db.select({ kind: sessions.kind, heldOn: sessions.heldOn, cancelled: sessions.cancelled }).from(sessions)).sort((a, b) => a.kind.localeCompare(b.kind));
+
+  it("from the board (class date): opens that week's Mass as cancelled; the class session is untouched", async () => {
+    const { db, b, input } = await setup();
+    const cls = await openSession(db, b.glv, { classId: b.classId, heldOn: SATURDAY }, LATE_NOW);
+    if (!cls.ok) throw new Error(cls.error);
+    expect(await cancelMassWeek(db, b.glv, input({ cancelled: true }), LATE_NOW)).toEqual({ ok: true, data: undefined });
+    expect(await sessionRows(db)).toEqual([
+      { kind: "class", heldOn: SATURDAY, cancelled: false },
+      { kind: "mass", heldOn: SUNDAY_BEFORE, cancelled: true },
+    ]);
+    expect(await readMassMarks(db, b.glv, input())).toMatchObject({ cancelled: true });
+    expect(await cancelMassWeek(db, b.glv, input({ cancelled: false }), LATE_NOW)).toEqual({ ok: true, data: undefined });
+    expect(await sessionRows(db)).toEqual([
+      { kind: "class", heldOn: SATURDAY, cancelled: false },
+      { kind: "mass", heldOn: SUNDAY_BEFORE, cancelled: false },
+    ]);
+  });
+
+  it("reopening a week that was never recorded creates nothing", async () => {
+    const { db, b, input } = await setup();
+    expect(await cancelMassWeek(db, b.glv, input({ cancelled: false }), LATE_NOW)).toEqual({ ok: true, data: undefined });
+    expect(await db.select().from(sessions)).toHaveLength(0);
+  });
+
+  it("writers only: heads, other catechists and bad input get an error and nothing changes", async () => {
+    const { db, b, input } = await setup();
+    expect(await cancelMassWeek(db, b.head, input({ cancelled: true }), LATE_NOW)).toEqual({ ok: false, error: "Không tìm thấy lớp" });
+    expect(await cancelMassWeek(db, b.otherGlv, input({ cancelled: true }), LATE_NOW)).toEqual({ ok: false, error: "Không tìm thấy lớp" });
+    expect((await cancelMassWeek(db, b.glv, input({ cancelled: "yes" }), LATE_NOW)).ok).toBe(false);
+    expect(await db.select().from(sessions)).toHaveLength(0);
+  });
+
+  it("from the scanner (session id): only Mass sessions; a class session id is refused and the class toggle is untouched", async () => {
+    const { db, b } = await setup();
+    const cls = await openSession(db, b.glv, { classId: b.classId, heldOn: SUNDAY_BEFORE }, LATE_NOW);
+    const mass = await openMassSession(db, b.glv, { classId: b.classId, heldOn: SUNDAY_BEFORE }, LATE_NOW);
+    if (!cls.ok || !mass.ok) throw new Error("open failed");
+    expect(await cancelMassSession(db, b.glv, { sessionId: cls.data.id, cancelled: true })).toEqual({ ok: false, error: "Không tìm thấy buổi học" });
+    expect(await cancelMassSession(db, b.head, { sessionId: mass.data.id, cancelled: true })).toEqual({ ok: false, error: "Không tìm thấy buổi học" });
+    expect(await cancelMassSession(db, b.glv, { sessionId: "nope", cancelled: true })).toEqual({ ok: false, error: "Không tìm thấy buổi học" });
+    expect(await cancelMassSession(db, b.glv, { sessionId: mass.data.id, cancelled: true })).toEqual({ ok: true, data: undefined });
+    expect(await sessionRows(db)).toEqual([
+      { kind: "class", heldOn: SUNDAY_BEFORE, cancelled: false },
+      { kind: "mass", heldOn: SUNDAY_BEFORE, cancelled: true },
+    ]);
+    // Bật/tắt "Buổi nghỉ lễ" của buổi học không đụng tới tuần đi lễ.
+    await setCancelled(db, b.glv, { sessionId: cls.data.id, cancelled: true });
+    await setCancelled(db, b.glv, { sessionId: cls.data.id, cancelled: false });
+    expect(await sessionRows(db)).toEqual([
+      { kind: "class", heldOn: SUNDAY_BEFORE, cancelled: false },
+      { kind: "mass", heldOn: SUNDAY_BEFORE, cancelled: true },
+    ]);
+  });
+
+  it("a cancelled Mass refuses scans, undo, ticks and 'Cả lớp đi lễ' with the Mass-week copy", async () => {
+    const { db, b, an, input } = await setup();
+    const mass = await openMassForClassDate(db, b.glv, input(), LATE_NOW);
+    if (!mass.ok) throw new Error(mass.error);
+    const sessionId = mass.data.id;
+    const scanned = await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId, kind: "manual", studentId: an.id, mode: "present" });
+    if (!scanned.ok) throw new Error(scanned.error);
+    await cancelMassWeek(db, b.glv, input({ cancelled: true }), LATE_NOW);
+    expect(await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId, kind: "manual", studentId: an.id, mode: "present" }))
+      .toEqual({ ok: false, code: "cancelled", error: MASS_CANCELLED });
+    expect(await applyUndo(db, b.glv, { eventId: crypto.randomUUID(), sessionId, targetEventId: scanned.data.eventId }))
+      .toEqual({ ok: false, code: "cancelled", error: MASS_CANCELLED });
+    expect(await setMassStatus(db, b.glv, input({ studentId: an.id, status: null }), LATE_NOW)).toEqual({ ok: false, error: MASS_CANCELLED });
+    expect(await markClassAtMass(db, b.glv, input(), LATE_NOW)).toEqual({ ok: false, error: MASS_CANCELLED });
+    expect(await undoClassAtMass(db, b.glv, input({ batchId: crypto.randomUUID() }), LATE_NOW)).toEqual({ ok: false, error: MASS_CANCELLED });
+  });
+
+  it("a cancelled class session keeps the class copy", async () => {
+    const { db, b, an } = await setup();
+    const cls = await openSession(db, b.glv, { classId: b.classId, heldOn: SATURDAY }, LATE_NOW);
+    if (!cls.ok) throw new Error(cls.error);
+    await setCancelled(db, b.glv, { sessionId: cls.data.id, cancelled: true });
+    expect(await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId: cls.data.id, kind: "manual", studentId: an.id, mode: "present" }))
+      .toEqual({ ok: false, code: "cancelled", error: "Buổi này đã được đánh dấu nghỉ lễ" });
   });
 });

@@ -4,7 +4,8 @@ import { runBulk } from "@/lib/attendance/board-save";
 import { loadQueue, localStore, persistState, queueStorageKey, sweepStaleQueues } from "@/lib/attendance/persist-queue";
 import { filterRoster } from "@/lib/attendance/roster-search";
 import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pendingCount, queueReducer, recentEvents, sendable, summarizeQueue, unsavedSummary, type QueuedEvent, type ScanAction } from "@/lib/attendance/scan-queue";
-import { INVALID_CARD, decideScan, scanRefusal, type CurrentMark, type ScanMode } from "@/lib/attendance/scan-rules";
+import { INVALID_CARD, decideScan, scanRefusal, type CurrentMark, type ScanKind, type ScanMode } from "@/lib/attendance/scan-rules";
+import { scanModeFor, scanVariant } from "@/lib/attendance/scan-variant";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { parseQrPayload } from "@/lib/qr/payload";
 import { markRemainingAbsentAction } from "@/server/actions/attendance";
@@ -36,13 +37,16 @@ const isAbsence = (s: AttendanceStatus | null | undefined): s is "absent_excused
 type Marks = ReadonlyMap<string, CurrentMark | null>;
 const toMark = (status: AttendanceStatus | null, reason: string | null = null): CurrentMark | null => (status ? { status, reason } : null);
 
-export function useScanSession({ sessionId, userId }: { sessionId: string; userId: string }) {
+/** `kind = "mass"`: máy quét tại nhà thờ — luôn ghi "Đi lễ" (không bao giờ gửi `late`), không có "Đánh vắng còn lại". */
+export function useScanSession({ sessionId, userId, kind = "class" }: { sessionId: string; userId: string; kind?: ScanKind }) {
+  const variant = scanVariant(kind);
   const [roster, setRoster] = useState<ScanRosterEntry[] | null>(null);
   const [rosterError, setRosterError] = useState(false);
   /** Buổi nghỉ lễ (theo bảng tra mới nhất): từ chối mọi lượt quét/chọn tên, không ghi lạc quan. */
   const [cancelled, setCancelled] = useState(false);
   const cancelledRef = useRef(false);
-  const [mode, setStoredMode] = useRememberedScanMode(sessionId);
+  const [storedMode, setStoredMode] = useRememberedScanMode(sessionId);
+  const mode = scanModeFor(kind, storedMode);
   /** Bản hiển thị của hàng; nguồn thật là `queueRef` (cập nhật đồng bộ trong `dispatch`). */
   const [queue, setQueue] = useState(initialQueue);
   /** Máy chủ trả 401: tạm dừng gửi, giữ hàng (đã lưu bền) cho tới khi đăng nhập lại. */
@@ -73,7 +77,11 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   const seenIds = useRef(new Set<string>());
   const storageKey = queueStorageKey(userId, sessionId);
 
-  const setMode = useCallback((m: ScanMode) => { modeRef.current = m; setStoredMode(m); }, [setStoredMode]);
+  const setMode = useCallback((m: ScanMode) => {
+    if (kind === "mass") return; // buổi đi lễ không có chế độ "Đi muộn"
+    modeRef.current = m;
+    setStoredMode(m);
+  }, [kind, setStoredMode]);
 
   /** Mọi thay đổi hàng đi qua đây: áp dụng reducer (thuần) rồi ghi ngay các lượt chưa xong vào localStorage. */
   const dispatch = useCallback((action: ScanAction) => {
@@ -151,29 +159,29 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
         prev, capturedAt: new Date().toISOString(), undoBusy: false,
       },
     });
-    setBanner({ tone: "applied", fullName: entry.fullName, saintName: entry.saintName, status, text: status === "late" ? "Đã ghi Đi muộn" : "Đã ghi Có mặt" });
+    setBanner({ tone: "applied", fullName: entry.fullName, saintName: entry.saintName, status, text: variant.appliedText(status) });
     playScanFeedback("ok");
     return true;
-  }, [setMark, dispatch]);
+  }, [setMark, dispatch, variant]);
 
   /** Buổi nghỉ lễ: báo lỗi (kèm phản hồi lỗi), không xếp lượt nào. Trả về true nếu đã từ chối. */
   const refuseIfCancelled = useCallback((entry?: ScanRosterEntry): boolean => {
-    const refusal = scanRefusal(rosterLoaded.current ? { cancelled: cancelledRef.current } : null);
+    const refusal = scanRefusal(rosterLoaded.current ? { cancelled: cancelledRef.current } : null, kind);
     if (!refusal) return false;
     playScanFeedback("error");
     setBanner({ tone: "error", fullName: entry?.fullName, saintName: entry?.saintName, text: refusal });
     return true;
-  }, []);
+  }, [kind]);
 
   const handleEntry = useCallback((entry: ScanRosterEntry, kind: "scan" | "manual") => {
     if (refuseIfCancelled(entry)) return;
     const decision = decideScan(marks.current.get(entry.studentId) ?? null, modeRef.current);
     if (decision.kind === "apply") { enqueueApply(entry, kind, decision.status); return; }
     if (decision.kind === "noop") {
-      return setBanner({ tone: "noop", fullName: entry.fullName, saintName: entry.saintName, status: marks.current.get(entry.studentId)?.status ?? null, text: decision.reason === "already_late" ? "Đã ghi đi muộn" : "Đã điểm danh" });
+      return setBanner({ tone: "noop", fullName: entry.fullName, saintName: entry.saintName, status: marks.current.get(entry.studentId)?.status ?? null, text: variant.noopText(decision.reason) });
     }
     setConfirm({ entry, current: decision.current, defaultStatus: decision.defaultStatus, kind });
-  }, [enqueueApply, refuseIfCancelled]);
+  }, [enqueueApply, refuseIfCancelled, variant]);
 
   const handleCode = useCallback(async (text: string) => {
     const token = parseQrPayload(text);
@@ -335,6 +343,7 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
    * Xong thì cập nhật dấu ngay và tải lại bảng tra để danh sách "chưa điểm danh" khớp máy chủ.
    */
   const markRemainingAbsent = useCallback(async () => {
+    if (!variant.offersRemainingAbsent) return; // đi lễ: em chưa quét = chưa ghi nhận, không bao giờ tự thành vắng
     if (pendingCount(queueRef.current) > 0 || absentInFlightRef.current > 0 || cancelledRef.current) return;
     // Quá hạn chờ thì báo lỗi (có thể thử lại); nếu kết quả thật đến muộn và thành công thì vẫn áp dụng.
     await runBulk(() => markRemainingAbsentAction({ sessionId }), ABSENT_TIMEOUT_MS, {
@@ -347,7 +356,12 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
         void loadRoster();
       },
     });
-  }, [sessionId, writeMarks, loadRoster]);
+  }, [sessionId, writeMarks, loadRoster, variant]);
+  /** Máy chủ vừa huỷ/mở lại tuần đi lễ (từ chính màn này): áp dụng ngay, không phải tải lại bảng tra. */
+  const applyCancelled = useCallback((value: boolean) => {
+    cancelledRef.current = value;
+    setCancelled(value);
+  }, []);
   /** Xoá kết quả đã hiện (xong/lỗi); đang lưu thì giữ nguyên. */
   const clearAbsent = useCallback(() => setAbsent((a) => (a.phase === "saving" ? a : { phase: "idle" })), []);
 
@@ -364,5 +378,5 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   const unmarked = useMemo(() => (roster ?? []).filter((s) => !marksView.get(s.studentId)), [roster, marksView]);
   const search = useCallback((q: string) => filterRoster(roster ?? [], q), [roster]);
 
-  return { roster, rosterError, cancelled, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, absent, absentInFlight, markRemainingAbsent, clearAbsent, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
+  return { roster, rosterError, cancelled, applyCancelled, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, absent, absentInFlight, markRemainingAbsent, clearAbsent, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
 }

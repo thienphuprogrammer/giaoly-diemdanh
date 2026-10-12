@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isSunday, massSundayFor } from "./mass-week";
+import { isSunday, massSundayFor, massWeekDays } from "./mass-week";
 
 describe("massSundayFor", () => {
   it.each([
@@ -37,5 +37,20 @@ describe("massSundayFor", () => {
 describe("isSunday", () => {
   it.each([["2026-10-11", true], ["2026-10-10", false], ["2026-10-12", false], ["bad", false], ["2026-02-30", false]])("%s -> %s", (day, expected) => {
     expect(isSunday(day)).toBe(expected);
+  });
+});
+
+describe("massWeekDays (class days whose Mass is that week's Sunday)", () => {
+  it("lists Sunday..Saturday of the week containing the day", () => {
+    const week = ["2026-08-30", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"];
+    expect(massWeekDays("2026-08-30")).toEqual(week);
+    expect(massWeekDays("2026-09-02")).toEqual(week);
+    expect(massWeekDays("2026-09-05")).toEqual(week);
+  });
+  it("crosses year boundaries", () => {
+    expect(massWeekDays("2026-12-27")).toEqual(["2026-12-27", "2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]);
+  });
+  it("rejects invalid days", () => {
+    expect(() => massWeekDays("2026-02-30")).toThrow();
   });
 });

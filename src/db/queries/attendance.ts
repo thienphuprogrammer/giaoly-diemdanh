@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import { visibleAssignments } from "@/lib/seating/assignments";
 import type { Assignment, Layout } from "@/lib/seating/types";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
@@ -69,6 +69,14 @@ export interface BoardStudent {
   priorUnexcused: number;
 }
 
+/**
+ * "Vắng trước đó" của bảng/bảng tra, theo loại buổi (cùng một truy vấn, không thêm lượt DB):
+ * - buổi học: số buổi HỌC vắng không phép trong học kỳ (quy tắc cảnh báo ≥2);
+ * - buổi đi lễ: số tuần KHÔNG ĐI LỄ trong học kỳ = buổi đi lễ khác (không bị huỷ) mà em có dòng vắng (có/không phép);
+ *   tuần chưa ghi nhận (không có dòng) không bị tính.
+ */
+const PRIOR_ABSENCES = { class: ["absent_unexcused"], mass: ["absent_excused", "absent_unexcused"] } as const;
+
 export async function loadBoardData(db: Db, session: typeof sessions.$inferSelect) {
   const roster = await db.select(studentColumns).from(students)
     .where(and(eq(students.classId, session.classId), eq(students.active, true)))
@@ -81,10 +89,10 @@ export async function loadBoardData(db: Db, session: typeof sessions.$inferSelec
     .where(and(
       eq(sessions.classId, session.classId),
       eq(sessions.termId, session.termId),
-      eq(sessions.kind, "class"), // số vắng KP trước đó luôn là của buổi học, kể cả khi bảng là buổi đi lễ
+      eq(sessions.kind, session.kind), // buổi học chỉ đếm buổi học; buổi đi lễ chỉ đếm tuần đi lễ
       eq(sessions.cancelled, false),
       ne(sessions.id, session.id),
-      eq(attendance.status, "absent_unexcused"),
+      inArray(attendance.status, [...PRIOR_ABSENCES[session.kind]]),
     ))
     .groupBy(attendance.studentId);
 

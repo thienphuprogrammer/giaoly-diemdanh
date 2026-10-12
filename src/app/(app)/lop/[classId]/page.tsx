@@ -1,10 +1,11 @@
-import { CalendarDays, ChevronRight, ClipboardCheck } from "lucide-react";
+import { CalendarDays, ChevronRight, Church, ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { db } from "@/db/client";
 import { listSessions } from "@/db/queries/attendance";
+import { massSundayFor } from "@/lib/attendance/mass-week";
 import { requireUser } from "@/lib/auth/dal";
 import { dateLabel } from "@/lib/date-label";
 import { todayInVietnam } from "@/lib/dates";
@@ -17,6 +18,7 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
   const perms = await classPermissions(db, user, classId);
   if (!perms.canRead) notFound();
   const today = todayInVietnam();
+  const sunday = massSundayFor(today); // hôm nay nếu là Chúa nhật, không thì Chúa nhật vừa qua
   const sessions = await listSessions(db, classId);
   return (
     <section className="flex flex-col gap-6">
@@ -29,6 +31,12 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
             Điểm danh hôm nay
           </Link>
           <p className="-mt-2 text-center text-sm text-ink-soft">{dateLabel(today)}</p>
+          {/* Đi lễ "cách 2": quét thẻ tại nhà thờ cho thánh lễ Chúa nhật (mở buổi đi lễ khi vào màn quét). */}
+          <Link prefetch={false} href={`/lop/${classId}/di-le/${sunday}/quet`} className="btn btn-secondary btn-lg w-full">
+            <Church aria-hidden size={20} />
+            Điểm danh đi lễ
+          </Link>
+          <p className="-mt-2 text-center text-sm text-ink-soft">Quét thẻ tại nhà thờ · {dateLabel(sunday)}</p>
           <div className="border-t border-border pt-4">
             <OpenDate classId={classId} today={today} />
           </div>

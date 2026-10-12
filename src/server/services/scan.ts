@@ -9,7 +9,7 @@ import type { AppUser } from "@/lib/access/can-access";
 import { INVALID_CARD, decideScan, type CurrentMark, type ScanDecision } from "@/lib/attendance/scan-rules";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { guardClass } from "../guard";
-import { CANCELLED, NOT_FOUND_SESSION, NO_LATE_AT_MASS } from "./attendance";
+import { NOT_FOUND_SESSION, NO_LATE_AT_MASS, cancelledMessage } from "./attendance";
 
 export type ScanErrorCode =
   | "bad_request" | "forbidden" | "invalid_card" | "cancelled" | "event_conflict" | "conflict" | "rate_limited" | "unauthenticated";
@@ -100,7 +100,7 @@ export async function applyScan(db: Db, user: AppUser, raw: unknown): Promise<Sc
   if (ctx.event) {
     return sameRequest(ctx.event) ? replay(db, ctx.event) : reject("event_conflict", "Mã lượt đã được dùng cho thao tác khác");
   }
-  if (ctx.cancelled) return reject("cancelled", CANCELLED);
+  if (ctx.cancelled) return reject("cancelled", cancelledMessage(ctx.kind));
   if (ctx.kind === "mass" && (input.mode === "late" || input.confirmStatus === "late")) return reject("bad_request", NO_LATE_AT_MASS);
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -138,7 +138,7 @@ export async function applyUndo(db: Db, user: AppUser, raw: unknown): Promise<Sc
       ? success({ eventId, targetEventId, studentId: e.studentId ?? "", status: e.newStatus })
       : reject("event_conflict", "Mã lượt đã được dùng cho thao tác khác");
   if (ctx.event) return stored(ctx.event);
-  if (ctx.cancelled) return reject("cancelled", CANCELLED);
+  if (ctx.cancelled) return reject("cancelled", cancelledMessage(ctx.kind));
 
   try {
     const result = await db.transaction(async (tx): Promise<ScanResponse<UndoOutcome>> => {
