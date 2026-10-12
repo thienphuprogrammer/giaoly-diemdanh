@@ -29,6 +29,13 @@
       "when": 1791774592596,
       "tag": "0003_mass_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791778804611,
+      "tag": "0004_mass_threshold_check",
+      "breakpoints": true
     }
   ]
 }

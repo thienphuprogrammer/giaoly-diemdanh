@@ -10,6 +10,8 @@ interface Journal { entries: { tag: string }[] }
 export const QR_MIGRATION = "0002_qr_cards_and_scans";
 /** Migration thêm `sessions.kind` (buổi đi lễ) và `grades.mass_threshold`. */
 export const MASS_MIGRATION = "0003_mass_sessions";
+/** Migration thêm CHECK `grades.mass_threshold >= 1` (ngưỡng cảnh báo đi lễ trưởng khối sửa được). */
+export const MASS_THRESHOLD_MIGRATION = "0004_mass_threshold_check";
 
 const sqlOf = (tag: string) =>
   readFileSync(`./drizzle/${tag}.sql`, "utf8").split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);

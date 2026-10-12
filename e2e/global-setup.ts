@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import * as s from "../src/db/schema";
 import { hashPassword } from "../src/lib/auth/password";
+import { massSundayFor } from "../src/lib/attendance/mass-week";
 import { todayInVietnam } from "../src/lib/dates";
 
 const EDIT_NAME = "Trần Sửa";
@@ -79,6 +80,31 @@ export default async function globalSetup() {
     { sessionId: profileSessions[1].id, studentId: kidNoPhone.id, status: "absent_unexcused" },
   ]);
 
+  // Khối C / Lớp M (thống kê đi lễ): khối riêng để trưởng khối C đổi ngưỡng mà không ảnh hưởng cảnh báo của khối A.
+  // Cả ba em có dòng buổi học từ đầu kỳ; ba tuần đi lễ đã ghi: Đỗ đi cả ba, Võ vắng 2 tuần (= ngưỡng 2 => cảnh báo),
+  // Hồ vắng 1 tuần (chỉ cảnh báo khi trưởng khối hạ ngưỡng xuống 1).
+  const [gradeC] = await db.insert(s.grades).values({ name: "Khối E2E C" }).returning();
+  await db.insert(s.users).values({ email: "head-c@e2e.vn", name: "Trưởng khối C", passwordHash: hash, gradeId: gradeC.id, isGradeHead: true });
+  const [classM] = await db.insert(s.classes).values({ gradeId: gradeC.id, name: "Lớp M" }).returning();
+  const [glvMc] = await db.insert(s.users).values({ email: "glv-mc@e2e.vn", name: "GLV MC", passwordHash: hash, gradeId: gradeC.id }).returning();
+  await db.insert(s.classCatechists).values({ classId: classM.id, userId: glvMc.id });
+  const [kidMassAll, kidMassWarn, kidMassOne] = await db.insert(s.students).values([
+    { classId: classM.id, fullName: "Đỗ Lễ Đều" },
+    { classId: classM.id, fullName: "Võ Vắng Lễ", parentPhone: "0907654321" },
+    { classId: classM.id, fullName: "Hồ Vắng Một" },
+  ]).returning();
+  const [massEnrolled] = await db.insert(s.sessions).values({ classId: classM.id, termId: term.id, heldOn: dayOffset(-35) }).returning();
+  await db.insert(s.attendance).values([kidMassAll, kidMassWarn, kidMassOne].map((k) => ({ sessionId: massEnrolled.id, studentId: k.id, status: "present" as const })));
+  const massWeeks = await db.insert(s.sessions).values([-21, -14, -7].map((d) => ({ classId: classM.id, termId: term.id, heldOn: massSundayFor(dayOffset(d)), kind: "mass" as const }))).returning();
+  await db.insert(s.attendance).values([
+    ...massWeeks.map((w) => ({ sessionId: w.id, studentId: kidMassAll.id, status: "present" as const })),
+    { sessionId: massWeeks[0].id, studentId: kidMassWarn.id, status: "present" as const },
+    { sessionId: massWeeks[1].id, studentId: kidMassWarn.id, status: "absent_unexcused" as const }, // tuần 3: không có dòng => vẫn vắng lễ
+    { sessionId: massWeeks[0].id, studentId: kidMassOne.id, status: "present" as const },
+    { sessionId: massWeeks[1].id, studentId: kidMassOne.id, status: "present" as const },
+    { sessionId: massWeeks[2].id, studentId: kidMassOne.id, status: "absent_excused" as const },
+  ]);
+
   const kids = await db.insert(s.students).values(["An", "Bình", "Chi", "Dũng"].map((n) => ({ classId: classA.id, fullName: `Nguyễn ${n}` }))).returning();
   const [plan] = await db.insert(s.seatingPlans).values({
     classId: classA.id, name: "Sơ đồ E2E", isActive: true,
@@ -93,6 +119,7 @@ export default async function globalSetup() {
   const [past] = await db.insert(s.sessions).values({ classId: classA.id, termId: term.id, heldOn: dayOffset(-7) }).returning();
   await db.insert(s.attendance).values({ sessionId: past.id, studentId: kids[0].id, status: "absent_unexcused" });
 
-  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id }));
+  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id,
+    gradeC: gradeC.id, classM: classM.id, kidMassWarn: kidMassWarn.id, kidMassOne: kidMassOne.id }));
   await sql.end();
 }

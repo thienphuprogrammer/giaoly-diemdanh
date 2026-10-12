@@ -13,6 +13,7 @@ import { markClassAtMass, setMassStatus, undoClassAtMass } from "./mass";
 import { openMassSession } from "./mass-sessions";
 import { applyScan, getScanResults, getScanRoster } from "./scan";
 import { attentionList, classStats, gradeOverview } from "./stats";
+import { massAttentionList, massStats } from "./mass-stats";
 import { getStudentProfile } from "./student-profile";
 
 /**
@@ -76,7 +77,9 @@ type Ctx = Awaited<ReturnType<typeof setup>>;
 async function classNumbers({ db, b, an, c2 }: Ctx) {
   const stats = await classStats(db, b.glv, b.classId, b.termId);
   const board = await readBoard(db, b.glv, c2);
-  const profile = await getStudentProfile(db, b.glv, { classId: b.classId, studentId: an.id, today: TODAY });
+  const fullProfile = await getStudentProfile(db, b.glv, { classId: b.classId, studentId: an.id, today: TODAY });
+  // Khối "Đi lễ" của hồ sơ (Task 31) cố ý thay đổi; mọi phần chuyên cần buổi học thì không.
+  const profile = fullProfile && Object.fromEntries(Object.entries(fullProfile).filter(([key]) => key !== "mass"));
   return {
     stats,
     excel: await workbookValues(await buildStatsWorkbook({ className: stats!.className, termName: stats!.term.name, rows: stats!.rows })),
@@ -107,6 +110,11 @@ describe("mass sessions do not change class-session numbers", () => {
     const { m1 } = await ctx.addMass();
     const after = await classNumbers(ctx);
     expect(after).toEqual(before);
+    // ...even though the same data now raises separate Mass warnings: everyone missed both recorded weeks
+    // (Chi has an absent row on 11/10 and no row on 18/10 — both count).
+    const mass = await massStats(ctx.db, ctx.b.glv, { classId: ctx.b.classId, termId: ctx.b.termId });
+    expect(mass!.rows.filter((r) => r.warning).map((r) => r.fullName)).toEqual(["An", "Bình", "Chi"]);
+    expect((await massAttentionList(ctx.db, ctx.b.glv, ctx.b.termId)).map((i) => i.fullName)).toEqual(["An", "Bình", "Chi"]);
     expect(after.classSessionOfDay).toBe(ctx.c2);
     expect(after.classSessionOfDay).not.toBe(m1);
   });
@@ -230,7 +238,7 @@ describe("scanning against a mass session id", () => {
   it("the scan roster of a Mass session counts missed recorded Mass weeks (no present row), not class absences", async () => {
     const ctx = await setup();
     const { db, b, binh, chi } = ctx;
-    const [dung] = await db.insert(students).values({ classId: b.classId, fullName: "Dũng" }).returning(); // không có dòng nào
+    const [dung] = await db.insert(students).values({ classId: b.classId, fullName: "Dũng" }).returning(); // chưa từng có dòng nào: không tính tuần nào (Task 31)
     const { m2 } = await ctx.addMass(); // 11/10 và 18/10: An, Bình vắng KP cả hai; Chi vắng KP 11/10
     await db.update(attendance).set({ status: "absent_excused" }).where(and(eq(attendance.sessionId, m2), eq(attendance.studentId, binh.id)));
     await db.insert(attendance).values({ sessionId: m2, studentId: chi.id, status: "present" });
@@ -243,8 +251,8 @@ describe("scanning against a mass session id", () => {
       return Object.fromEntries((roster?.students ?? []).map((s) => [s.fullName, s.priorUnexcused]));
     };
     expect(dung).toBeDefined();
-    expect(await prior()).toEqual({ An: 2, "Bình": 2, Chi: 1, "Dũng": 2 });
+    expect(await prior()).toEqual({ An: 2, "Bình": 2, Chi: 1, "Dũng": 0 });
     await db.update(sessions).set({ cancelled: true }).where(eq(sessions.id, m2)); // tuần không có lễ: không tính
-    expect(await prior()).toEqual({ An: 1, "Bình": 1, Chi: 1, "Dũng": 1 });
+    expect(await prior()).toEqual({ An: 1, "Bình": 1, Chi: 1, "Dũng": 0 });
   });
 });

@@ -69,6 +69,51 @@ describe("getStudentProfile", () => {
   });
 });
 
+describe("getStudentProfile: Đi lễ block (spec §1b)", () => {
+  const mass = async (db: Awaited<ReturnType<typeof setup>>["db"], classId: string, termId: string, heldOn: string, cancelled = false) =>
+    (await db.insert(sessions).values({ classId, termId, heldOn, kind: "mass", cancelled }).returning())[0];
+
+  it("counts this term's recorded weeks (newest first) with attended/missed, and warns at the grade threshold", async () => {
+    const { db, b, kid, session } = await setup();
+    const enrolled = await session("2026-09-12");
+    await db.insert(attendance).values({ sessionId: enrolled.id, studentId: kid.id, status: "present" });
+    const [w1, w2, w3] = [await mass(db, b.classId, b.termId, "2026-10-04"), await mass(db, b.classId, b.termId, "2026-10-11"), await mass(db, b.classId, b.termId, "2026-10-18")];
+    const cancelled = await mass(db, b.classId, b.termId, "2026-10-25", true);
+    await db.insert(attendance).values([
+      { sessionId: w1.id, studentId: kid.id, status: "present" },
+      { sessionId: w2.id, studentId: kid.id, status: "absent_unexcused" },
+      { sessionId: cancelled.id, studentId: kid.id, status: "absent_unexcused" },
+    ]);
+    const [other] = await db.insert(students).values({ classId: b.classId, fullName: "Bạn" }).returning();
+    await db.insert(attendance).values({ sessionId: w3.id, studentId: other.id, status: "present" }); // tuần 18/10 đã ghi; An không có dòng
+    const p = await getStudentProfile(db, b.glv, { classId: b.classId, studentId: kid.id, today: TODAY });
+    expect(p!.mass).toEqual({
+      threshold: 2, counted: 3, attended: 1, missed: 2, warning: true,
+      weeks: [
+        { sessionId: w3.id, heldOn: "2026-10-18", attended: false },
+        { sessionId: w2.id, heldOn: "2026-10-11", attended: false },
+        { sessionId: w1.id, heldOn: "2026-10-04", attended: true },
+      ],
+    });
+    // Mass rows never leak into the class block.
+    expect(p!.summary.marked).toBe(1);
+    expect(p!.records.map((r) => r.heldOn)).toEqual(["2026-09-12"]);
+  });
+
+  it("threshold - 1 missed weeks is not a warning; a never-recorded student has an empty block", async () => {
+    const { db, b, kid, session } = await setup();
+    const w1 = await mass(db, b.classId, b.termId, "2026-10-04");
+    const [other] = await db.insert(students).values({ classId: b.classId, fullName: "Bạn" }).returning();
+    await db.insert(attendance).values({ sessionId: w1.id, studentId: other.id, status: "present" });
+    const never = await getStudentProfile(db, b.glv, { classId: b.classId, studentId: kid.id, today: TODAY });
+    expect(never!.mass).toEqual({ threshold: 2, counted: 0, attended: 0, missed: 0, warning: false, weeks: [] });
+    const enrolled = await session("2026-09-12");
+    await db.insert(attendance).values({ sessionId: enrolled.id, studentId: kid.id, status: "present" });
+    const one = await getStudentProfile(db, b.glv, { classId: b.classId, studentId: kid.id, today: TODAY });
+    expect(one!.mass).toMatchObject({ missed: 1, warning: false });
+  });
+});
+
 describe("updateStudentContact", () => {
   it("updates note and normalises the phone for the assigned catechist only", async () => {
     const { db, b, kid } = await setup();

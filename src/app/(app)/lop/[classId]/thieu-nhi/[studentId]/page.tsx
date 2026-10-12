@@ -12,6 +12,7 @@ import { todayInVietnam } from "@/lib/dates";
 import { getStudentProfile } from "@/server/services/student-profile";
 import { ContactButtons } from "./ContactButtons";
 import { ContactForm } from "./ContactForm";
+import { MassBlock } from "./MassBlock";
 
 const COUNTS = [
   { key: "present", status: "present", label: "Có mặt" },
@@ -25,7 +26,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   const user = await requireUser();
   const profile = await getStudentProfile(db, user, { classId, studentId, today: todayInVietnam() });
   if (!profile) notFound();
-  const { student, summary, rate, records, term, canWrite } = profile;
+  const { student, summary, rate, records, term, canWrite, mass } = profile;
   const percent = rate === null ? null : Math.round(rate * 100);
   return (
     <section className="flex flex-col gap-5">
@@ -81,8 +82,10 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         {rate !== null && <p className="text-xs text-ink-muted">Tỉ lệ có mặt = (có mặt + đi muộn) / số buổi đã điểm danh ({summary.marked} buổi).</p>}
       </div>
 
+      {mass && term && <MassBlock mass={mass} termName={term.name} />}
+
       <div className="flex flex-col gap-2">
-        <h3 className="text-base font-semibold">Các buổi đã điểm danh</h3>
+        <h3 className="text-base font-semibold">Các buổi học đã điểm danh</h3>
         {records.length === 0 ? (
           <EmptyState icon={ClipboardList} title="Chưa có buổi nào">Khi em được điểm danh trong {term?.name ?? "học kỳ"}, từng buổi sẽ hiện ở đây.</EmptyState>
         ) : (

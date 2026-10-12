@@ -1,0 +1,1 @@
+ALTER TABLE "grades" ADD CONSTRAINT "grades_mass_threshold_min" CHECK ("grades"."mass_threshold" >= 1);

@@ -7,8 +7,10 @@ import { classCatechists, users } from "@/db/schema";
 import { resolveTerm } from "@/db/queries/stats";
 import { requireUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
+import { getGradeSettings } from "@/server/services/grade-settings";
 import { gradeOverview } from "@/server/services/stats";
-import { assignAction, createCatechistAction, createClassAction, resetPasswordAction, unassignAction } from "./actions";
+import { assignAction, createCatechistAction, createClassAction, resetPasswordAction, setMassThresholdAction, unassignAction } from "./actions";
+import { MassThresholdForm } from "./MassThresholdForm";
 import { SimpleForm } from "@/components/forms/SimpleForm";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WarningPill } from "@/components/ui/Pill";
@@ -19,10 +21,11 @@ export default async function GradePage() {
   const classList = await listClassesForUser(db, user);
   const classIds = classList.map((c) => c.id);
   const term = await resolveTerm(db, undefined, todayInVietnam());
-  const [catechists, links, overview] = await Promise.all([
+  const [catechists, links, overview, settings] = await Promise.all([
     db.select({ id: users.id, name: users.name, isGradeHead: users.isGradeHead }).from(users).where(eq(users.gradeId, user.gradeId)),
     classIds.length === 0 ? Promise.resolve([]) : db.select().from(classCatechists).where(inArray(classCatechists.classId, classIds)),
     term ? gradeOverview(db, user, term.id) : Promise.resolve([]),
+    getGradeSettings(db, user),
   ]);
   const classOptions = classList.map((c) => ({ value: c.id, label: c.name }));
   // Trưởng khối cũng nằm trong danh sách để tự gán mình vào lớp khi cần ghi điểm danh thay GLV.
@@ -82,7 +85,7 @@ export default async function GradePage() {
       <div className="flex flex-col gap-3">
         <div>
           <h2 className="text-xl font-semibold">Quản lý</h2>
-          <p className="mt-0.5 text-sm text-ink-soft">Tạo lớp, tài khoản và phân công giáo lý viên trong khối.</p>
+          <p className="mt-0.5 text-sm text-ink-soft">Tạo lớp, tài khoản, phân công giáo lý viên và ngưỡng cảnh báo đi lễ của khối.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <SimpleForm title="Tạo lớp" icon={<Plus aria-hidden size={20} />} action={createClassAction} fields={[{ name: "name", label: "Tên lớp" }]} />
@@ -92,6 +95,7 @@ export default async function GradePage() {
             fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
           <SimpleForm title="Gỡ GLV khỏi lớp" icon={<Unlink aria-hidden size={20} />} action={unassignAction}
             fields={[{ name: "classId", label: "Lớp", options: classOptions }, { name: "userId", label: "Giáo lý viên", options: glvOptions }]} />
+          {settings && <MassThresholdForm gradeId={settings.gradeId} threshold={settings.massThreshold} action={setMassThresholdAction} />}
         </div>
       </div>
       {resetOptions.length > 0 && (

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
+  boolean, check, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 import type { Layout } from "../lib/seating/types";
 
@@ -17,7 +17,7 @@ export const grades = pgTable("grades", {
   name: text("name").notNull().unique(),
   /** Số tuần không đi lễ trong học kỳ bắt đầu cảnh báo (trưởng khối sửa). */
   massThreshold: integer("mass_threshold").notNull().default(2),
-});
+}, (t) => [check("grades_mass_threshold_min", sql`${t.massThreshold} >= 1`)]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
