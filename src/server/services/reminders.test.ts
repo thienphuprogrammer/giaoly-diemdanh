@@ -8,7 +8,7 @@ import type { PushMessage } from "@/lib/push/payload";
 import type { PushOutcome } from "@/lib/push/send";
 import { createTestDb } from "@/test/db";
 import { seedBasics, type Basics } from "@/test/fixtures";
-import { REMINDER_BUDGET_MS, pushDeliver, runReminders, type Deliver } from "./reminders";
+import { REMINDER_BUDGET_MS, pushDeliver, runReminders, thresholdHits, type Deliver } from "./reminders";
 
 /** Giờ Việt Nam (+07). 2026-10-11 là Chủ nhật, trong "Học kỳ 1" (2026-09-01 → 2027-01-15) của seedBasics. */
 const vn = (iso: string) => new Date(`${iso}+07:00`);
@@ -20,12 +20,13 @@ const keys = () => ({ p256dh: Buffer.concat([Buffer.from([4]), randomBytes(64)])
 interface Captured { userId: string; message: PushMessage }
 
 /** Bộ gửi giả: ghi lại mọi thông báo; `fail` = các người dùng mà mọi thiết bị đều không nhận. */
-function fakeDeliver(opts: { fail?: Set<string>; throwFor?: Set<string>; onSend?: () => void } = {}) {
+function fakeDeliver(opts: { fail?: Set<string>; gone?: Set<string>; throwFor?: Set<string>; onSend?: () => void } = {}) {
   const captured: Captured[] = [];
   const deliver: Deliver = async (userId, message) => {
     opts.onSend?.();
     captured.push({ userId, message });
     if (opts.throwFor?.has(userId)) throw new Error("network down");
+    if (opts.gone?.has(userId)) return { sent: 0, failed: 0, removed: 1 };
     return opts.fail?.has(userId) ? { sent: 0, failed: 1, removed: 0 } : { sent: 1, failed: 0, removed: 0 };
   };
   return { deliver, captured };
@@ -77,7 +78,7 @@ describe("runReminders: nhắc điểm danh", () => {
     const s = await run(db, at("08:30"), due.deliver);
     expect(reminders(due.captured).map((c) => c.userId).sort()).toEqual([b.glv.id, glv2.id].sort());
     expect(reminders(due.captured)[0].message).toEqual({ title: "Chưa điểm danh", body: "Lớp A chưa điểm danh hôm nay", url: `/lop/${b.classId}/diem-danh/${SUNDAY}` });
-    expect(s).toMatchObject({ sent: 2, failed: 0, complete: true });
+    expect(s).toMatchObject({ sent: 2, failed: 0, truncated: false });
     const rows = await logRows(db, "class_reminder");
     expect(rows.map((r) => r.targetKey)).toEqual([`${b.classId}:${SUNDAY}`, `${b.classId}:${SUNDAY}`]);
   });
@@ -157,14 +158,33 @@ describe("runReminders: nhắc điểm danh", () => {
     expect(reminders(d.captured).map((c) => c.userId)).not.toContain(b.head.id);
   });
 
-  it("gửi lỗi không làm hỏng lần chạy và không gửi lại ở lần sau (dòng nhật ký được giữ)", async () => {
+  it("gửi lỗi tạm thời (ném lỗi / mọi thiết bị lỗi) không làm hỏng lần chạy, nhả dòng nhật ký và lần sau gửi lại", async () => {
     const { db, b, glv2 } = await setup();
     const d = fakeDeliver({ throwFor: new Set([b.glv.id]), fail: new Set([glv2.id]) });
     const s = await run(db, at("08:30"), d.deliver);
-    expect(s).toMatchObject({ sent: 0, failed: 2, complete: true });
+    expect(s).toMatchObject({ sent: 0, failed: 2, truncated: false });
+    expect(await logRows(db, "class_reminder")).toEqual([]);
+    const next = fakeDeliver();
+    const s2 = await run(db, at("08:40"), next.deliver);
+    expect(reminders(next.captured).map((c) => c.userId).sort()).toEqual([b.glv.id, glv2.id].sort());
+    expect(s2).toMatchObject({ sent: 2, failed: 0 });
+    expect(await logRows(db, "class_reminder")).toHaveLength(2);
+  });
+
+  it("gửi thành công thì giữ dòng nhật ký (không gửi lại)", async () => {
+    const { db } = await setup();
+    await run(db, at("08:30"), fakeDeliver().deliver);
     const next = fakeDeliver();
     await run(db, at("08:40"), next.deliver);
     expect(reminders(next.captured)).toEqual([]);
+  });
+
+  it("mọi thiết bị vừa hết hạn (404/410, bị xoá): nhả dòng, đếm là bỏ qua chứ không phải lỗi", async () => {
+    const { db, b, glv2 } = await setup();
+    const d = fakeDeliver({ gone: new Set([b.glv.id]) });
+    const s = await run(db, at("08:30"), d.deliver);
+    expect(s).toMatchObject({ sent: 1, failed: 0, skipped: 1 });
+    expect((await logRows(db, "class_reminder")).map((r) => r.userId)).toEqual([glv2.id]);
   });
 
   it("chưa cấu hình push (không có bộ gửi): không ghi nhật ký, đếm là bỏ qua", async () => {
@@ -175,7 +195,7 @@ describe("runReminders: nhắc điểm danh", () => {
     expect(await logRows(db, "class_reminder")).toEqual([]);
   });
 
-  it("dùng bộ gửi thật (sendToUser) với sender giả: lỗi tạm thời được đếm và đăng ký được cập nhật bộ đếm", async () => {
+  it("dùng bộ gửi thật (sendToUser) với sender giả: lỗi tạm thời được đếm, bộ đếm đăng ký tăng, dòng được nhả", async () => {
     const { db, b } = await setup();
     const outcomes: PushOutcome[] = [];
     const deliver = pushDeliver(db, vapidEnv(), async () => { outcomes.push("retry"); return { outcome: "retry", status: 503 }; });
@@ -184,6 +204,17 @@ describe("runReminders: nhắc điểm danh", () => {
     expect(s).toMatchObject({ sent: 0, failed: 2 });
     const [sub] = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, b.glv.id));
     expect(sub.failureCount).toBe(1);
+    expect(await logRows(db, "class_reminder")).toEqual([]);
+  });
+
+  it("dùng bộ gửi thật với sender trả `gone`: đăng ký bị xoá, dòng được nhả, đếm là bỏ qua", async () => {
+    const { db, b } = await setup();
+    const deliver = pushDeliver(db, vapidEnv(), async () => ({ outcome: "gone", status: 410 }));
+    const s = await run(db, at("08:30"), deliver);
+    expect(s).toMatchObject({ sent: 0, failed: 0 });
+    expect(s.skipped).toBeGreaterThanOrEqual(2);
+    expect(await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, b.glv.id))).toEqual([]);
+    expect(await logRows(db, "class_reminder")).toEqual([]);
   });
 });
 
@@ -336,16 +367,21 @@ describe("runReminders: thông báo ngưỡng cho trưởng khối", () => {
     expect(await logRows(db, "absence_threshold")).toEqual([]);
   });
 
-  it("gửi cho trưởng khối lỗi: lần sau không gửi lại", async () => {
+  it("gửi cho trưởng khối lỗi tạm thời: nhả mọi khoá, lần sau gửi lại đủ", async () => {
     const { db, b } = await setup();
-    const a = await kid(db, b.classId, "Em Lỗi Gửi");
-    await absentTwice(db, b, [a.id]);
+    const kids = [await kid(db, b.classId, "Em Lỗi Gửi"), await kid(db, b.classId, "Em Lỗi Hai")];
+    await absentTwice(db, b, kids.map((k) => k.id));
     const d = fakeDeliver({ throwFor: new Set([b.head.id]) });
     const s = await run(db, NOON, d.deliver);
     expect(s.failed).toBe(1);
+    expect(await logRows(db, "absence_threshold")).toEqual([]);
     const next = fakeDeliver();
     await run(db, at("13:10"), next.deliver);
-    expect(next.captured).toEqual([]);
+    expect(next.captured.map((c) => c.message.body)).toEqual(["Có 2 em đạt ngưỡng cảnh báo vắng học ở Lớp A"]);
+    expect(await logRows(db, "absence_threshold")).toHaveLength(2);
+    const third = fakeDeliver();
+    await run(db, at("13:20"), third.deliver);
+    expect(third.captured).toEqual([]);
   });
 });
 
@@ -371,25 +407,56 @@ describe("runReminders: nội dung không lộ thông tin em", () => {
 });
 
 describe("runReminders: ngân sách thời gian", () => {
-  it("hết ngân sách thì dừng gọn (complete=false); lần chạy sau làm tiếp phần còn lại", async () => {
+  it("hết ngân sách thì dừng gọn (truncated=true); lần chạy sau làm tiếp phần còn lại", async () => {
     const { db, b } = await setup();
-    expect(REMINDER_BUDGET_MS).toBe(25_000);
+    expect(REMINDER_BUDGET_MS).toBe(20_000);
     const [cls2] = await db.insert(classes).values({ gradeId: b.gradeId, name: "Lớp C", meetsOn: 0, meetsAt: "08:00" }).returning();
     await db.insert(classCatechists).values({ classId: cls2.id, userId: b.glv.id });
     let t = 0;
-    const d = fakeDeliver({ onSend: () => { t += 20_000; } });
+    const d = fakeDeliver({ onSend: () => { t += 15_000; } });
     const s = await run(db, at("08:30"), d.deliver, { clock: () => t, budgetMs: REMINDER_BUDGET_MS });
-    expect(s.complete).toBe(false);
+    expect(s.truncated).toBe(true);
     const firstClassIds = new Set(reminders(d.captured).map((c) => c.message.url));
     expect(firstClassIds.size).toBe(1);
     expect(s.pruned).toBe(0);
 
     const rest = fakeDeliver();
     const s2 = await run(db, at("08:40"), rest.deliver);
-    expect(s2.complete).toBe(true);
+    expect(s2.truncated).toBe(false);
     const second = new Set(reminders(rest.captured).map((c) => c.message.url));
     expect(second.size).toBe(1);
     expect([...second][0]).not.toBe([...firstClassIds][0]);
+  });
+});
+
+describe("runReminders: ngân sách quanh phần tính ngưỡng", () => {
+  it("tính ngưỡng (termRoster/termRecords/massGrid) làm hết ngân sách: không nhận khoá nào, báo truncated, lần sau gửi", async () => {
+    const { db, b } = await setup();
+    const a = await kid(db, b.classId, "Em Chậm");
+    for (const heldOn of ["2026-09-20", "2026-09-27"]) {
+      const s = await session(db, b, heldOn);
+      await db.insert(attendance).values({ sessionId: s.id, studentId: a.id, status: "absent_unexcused" });
+    }
+    let t = 0;
+    const slowHits: typeof thresholdHits = async (...args) => { const r = await thresholdHits(...args); t += 25_000; return r; };
+    const d = fakeDeliver();
+    const s = await run(db, at("13:00"), d.deliver, { clock: () => t, thresholdHits: slowHits });
+    expect(s).toMatchObject({ truncated: true, sent: 0, pruned: 0 });
+    expect(d.captured).toEqual([]);
+    expect(await logRows(db)).toEqual([]);
+    const next = fakeDeliver();
+    const s2 = await run(db, at("13:10"), next.deliver);
+    expect(s2).toMatchObject({ truncated: false, sent: 1 });
+  });
+
+  it("hết ngân sách trước khi tính ngưỡng thì không gọi phần tính ngưỡng", async () => {
+    const { db } = await setup();
+    let t = 0;
+    const hits = vi.fn(thresholdHits);
+    const d = fakeDeliver({ onSend: () => { t += 30_000; } });
+    const s = await run(db, at("08:30"), d.deliver, { clock: () => t, thresholdHits: hits });
+    expect(s.truncated).toBe(true);
+    expect(hits).not.toHaveBeenCalled();
   });
 });
 
@@ -434,7 +501,7 @@ describe("runReminders: dọn dẹp mỗi ngày một lần", () => {
     await db.insert(auditEvents).values({ at: vn("2025-01-01T00:00:00"), classId: b.classId, entity: "class", action: "class.schedule" });
     const log = vi.fn();
     const broken = await run(db, at("13:00"), null, { prune: async () => { throw new Error("db down"); }, log });
-    expect(broken).toMatchObject({ pruned: 0, complete: true });
+    expect(broken).toMatchObject({ pruned: 0, truncated: false });
     expect(log).toHaveBeenCalled();
     const retry = await run(db, at("13:10"), null);
     expect(retry.pruned).toBe(1);

@@ -39,20 +39,16 @@ function vnNow() {
   return { date: t.toISOString().slice(0, 10), weekday: t.getUTCDay(), minutes: t.getUTCHours() * 60 + t.getUTCMinutes() };
 }
 
-test.beforeEach(async () => {
-  await withDb(async (sql) => {
-    await sql`delete from push_subscriptions`;
-    await sql`delete from notification_log where kind in ('class_reminder', 'absence_threshold', 'mass_threshold')`;
-    await sql`update classes set meets_on = null, meets_at = null where id = ${state().classL}`;
-  });
+/** Chỉ dọn dữ liệu của spec này: đăng ký giả (endpoint `e2e-…`) và nhật ký thông báo của hai người dùng nó dùng. */
+const OWN_USERS = ["head-c@e2e.vn", "glv-l@e2e.vn"];
+const cleanup = () => withDb(async (sql) => {
+  await sql`delete from push_subscriptions where endpoint like 'https://fcm.googleapis.com/fcm/send/e2e-%'`;
+  await sql`delete from notification_log where user_id in (select id from users where email in ${sql(OWN_USERS)})`;
+  await sql`update classes set meets_on = null, meets_at = null where id = ${state().classL}`;
 });
 
-test.afterAll(async () => {
-  await withDb(async (sql) => {
-    await sql`delete from push_subscriptions where endpoint like 'https://fcm.googleapis.com/fcm/send/e2e-%'`;
-    await sql`update classes set meets_on = null, meets_at = null where id = ${state().classL}`;
-  });
-});
+test.beforeEach(cleanup);
+test.afterAll(cleanup);
 
 test("thiếu hoặc sai bí mật: 401, không cache, không chạy", async ({ request }) => {
   expect(token().length).toBeGreaterThanOrEqual(32);
@@ -65,13 +61,13 @@ test("thiếu hoặc sai bí mật: 401, không cache, không chạy", async ({ 
   expect((await request.post(ROUTE)).status()).toBe(401);
 });
 
-test("không ai có thiết bị: chạy xong, không gửi, có mục bỏ qua, chỉ trả số đếm", async ({ request }) => {
+test("không ai trong spec có thiết bị: chạy xong, có mục bỏ qua, chỉ trả số đếm", async ({ request }) => {
   const res = await request.get(ROUTE, { headers: bearer() });
   expect(res.status()).toBe(200);
   expect(res.headers()["cache-control"]).toBe("no-store");
   const body = await res.json() as Record<string, unknown>;
-  expect(Object.keys(body).sort()).toEqual(["complete", "failed", "pruned", "sent", "skipped"]);
-  expect(body).toMatchObject({ sent: 0, failed: 0, complete: true });
+  expect(Object.keys(body).sort()).toEqual(["failed", "pruned", "sent", "skipped", "truncated"]);
+  expect(body).toMatchObject({ failed: 0, truncated: false });
   expect(body.skipped as number).toBeGreaterThan(0); // trưởng khối A/C/E có em chạm ngưỡng nhưng chưa bật thông báo
   expect(await logRows("head-c@e2e.vn", "mass_threshold")).toEqual([]);
 });

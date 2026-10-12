@@ -101,7 +101,9 @@ describe("checkEnv: cờ nguy hiểm và tùy chọn", () => {
     expect(levels(checkEnv({ ...base, DB_POOL_MAX: "abc" }, { prod: true }), "DB_POOL_MAX")).toEqual(["warn"]);
     expect(levels(checkEnv({ ...base, DB_POOL_MAX: "3" }, { prod: true }), "DB_POOL_MAX")).toEqual([]);
   });
-  it("VAPID_* chỉ thông tin; CRON_SECRET thiếu thì cảnh báo kèm chỉ dẫn tài liệu; không mục nào làm fail", () => {
+  it("VAPID_* chỉ thông tin; CRON_SECRET thiếu thì cảnh báo (production) kèm chỉ dẫn tài liệu; không mục nào làm fail", () => {
+    expect(levels(checkEnv(base, { prod: false }), "OPTIONAL_CRON")).toEqual(["info"]);
+    expect(checkEnv(base, { prod: false }).find((c) => c.id === "OPTIONAL_CRON")?.message).toMatch(/docs\/deploy-vercel-ios\.md/);
     const cs = checkEnv(base, { prod: true });
     expect(levels(cs, "OPTIONAL_PUSH")).toEqual(["info"]);
     expect(levels(cs, "OPTIONAL_CRON")).toEqual(["warn"]);
@@ -128,8 +130,19 @@ describe("checkEnv: cờ nguy hiểm và tùy chọn", () => {
     expect(levels(checkEnv({ ...base, CRON_SECRET: good }, { prod: true }), "OPTIONAL_CRON")).toEqual(["info"]);
   });
 
-  it("PUSH_DRY_RUN đặt: production thì cảnh báo, dev thì ghi chú; không đặt thì không có mục", () => {
-    expect(levels(checkEnv({ ...base, PUSH_DRY_RUN: "1" }, { prod: true }), "PUSH_DRY_RUN")).toEqual(["warn"]);
+  it("CRON_SECRET có khoảng trắng đầu/cuối thì cảnh báo (app tự cắt, nhưng nơi gọi có thể gửi giá trị khác)", () => {
+    const good = randomBytes(36).toString("base64");
+    for (const v of [` ${good}`, `${good}\n`, `${good} `]) {
+      const cs = checkEnv({ ...base, CRON_SECRET: v }, { prod: true });
+      expect(levels(cs, "OPTIONAL_CRON")).toEqual(["warn"]);
+      expect(cs.find((c) => c.id === "OPTIONAL_CRON")?.message).toMatch(/khoảng trắng/);
+      expect(JSON.stringify(cs)).not.toContain(good);
+    }
+  });
+
+  it("PUSH_DRY_RUN đặt: production thì LỖI, dev thì ghi chú; không đặt thì không có mục", () => {
+    expect(levels(checkEnv({ ...base, PUSH_DRY_RUN: "1" }, { prod: true }), "PUSH_DRY_RUN")).toEqual(["fail"]);
+    expect(summarize(checkEnv({ ...base, PUSH_DRY_RUN: "1" }, { prod: true })).failed).toBe(true);
     expect(levels(checkEnv({ ...base, PUSH_DRY_RUN: "1" }, { prod: false }), "PUSH_DRY_RUN")).toEqual(["info"]);
     expect(levels(checkEnv(base, { prod: true }), "PUSH_DRY_RUN")).toEqual([]);
   });

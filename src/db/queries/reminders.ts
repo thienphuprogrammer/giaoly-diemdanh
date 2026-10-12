@@ -1,11 +1,8 @@
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { evaluateWarningFromCount } from "@/lib/attendance/warning";
-import { isMassWarning, tallyMass } from "@/lib/attendance/mass-tally";
 import type { ThresholdKind } from "@/lib/reminders/messages";
 import { attendance, classCatechists, classes, notificationLog, pushSubscriptions, sessions, users } from "../schema";
 import type { Db } from "../types";
-import { massGrid } from "./mass-stats";
-import { listTerms, termRecords, termRoster } from "./stats";
+import { listTerms } from "./stats";
 
 /** Truy vấn cho tác vụ nhắc việc (Task 39). Không bao giờ chọn `qr_token`; tên/SĐT của em không rời khỏi tầng này. */
 
@@ -71,33 +68,6 @@ export const classesOfGrades = (db: Db, gradeIds: string[]) =>
   gradeIds.length === 0
     ? Promise.resolve([])
     : db.select({ id: classes.id, name: classes.name, gradeId: classes.gradeId }).from(classes).where(inArray(classes.gradeId, gradeIds));
-
-export interface ThresholdHit { kind: ThresholdKind; studentId: string; classId: string }
-
-/**
- * Các em ĐANG học ở lớp (không gồm em đã nghỉ/đã chuyển lớp) đang ở trạng thái cảnh báo trong học kỳ:
- * - vắng học: số buổi HỌC (`kind='class'`, không huỷ) vắng không phép ở lớp hiện tại ≥ ngưỡng hiện hành (2);
- * - vắng lễ: `tallyMass` (tuần đã ghi nhận, bỏ tuần huỷ/rỗng, tính từ dòng đầu tiên của em) ≥ `grades.mass_threshold`.
- * Cùng định nghĩa với "Cần chú ý" (`attentionList`, `massAttentionList`).
- */
-export async function thresholdHits(db: Db, classIds: string[], term: { id: string; endsOn: string }, today: string): Promise<ThresholdHit[]> {
-  if (classIds.length === 0) return [];
-  const [roster, records, grid] = await Promise.all([
-    termRoster(db, classIds, term, today), termRecords(db, classIds, term.id), massGrid(db, { classIds, termId: term.id }),
-  ]);
-  const unexcused = new Map<string, number>();
-  for (const r of records) {
-    if (r.status === "absent_unexcused") unexcused.set(`${r.classId}:${r.studentId}`, (unexcused.get(`${r.classId}:${r.studentId}`) ?? 0) + 1);
-  }
-  const absence = roster
-    .filter((s) => !s.former && !s.inactive && evaluateWarningFromCount(unexcused.get(`${s.classId}:${s.id}`) ?? 0).level === "warning")
-    .map((s): ThresholdHit => ({ kind: "absence_threshold", studentId: s.id, classId: s.classId }));
-  const mass = grid.students
-    .filter((s) => !s.former && !s.inactive)
-    .filter((s) => isMassWarning(tallyMass(grid.weeks.get(s.classId) ?? [], s.firstSeen, s.attended).missed, s.threshold))
-    .map((s): ThresholdHit => ({ kind: "mass_threshold", studentId: s.id, classId: s.classId }));
-  return [...absence, ...mass];
-}
 
 /**
  * Nhận trước khi gửi: chèn dòng `notification_log` (on conflict do nothing) và trả về các khoá VỪA được nhận. Hai lần

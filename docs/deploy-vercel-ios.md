@@ -166,11 +166,11 @@ App có route `/api/cron/nhac-viec`. Mỗi lần được gọi, nó gửi các 
 
 **Mỗi thông báo nghĩa là gì**
 - **"Chưa điểm danh – Lớp A chưa điểm danh hôm nay"** (gửi GLV được phân công lớp). Lớp có lịch học (đặt ở trang lớp), hôm nay đúng thứ học, đã qua giờ bắt đầu từ 30 phút đến dưới 3 giờ (giờ Việt Nam), mà buổi học hôm nay chưa có dấu điểm danh nào. Buổi bị huỷ thì không nhắc. Mỗi lớp mỗi ngày nhắc một lần. Bấm vào thông báo mở trang điểm danh hôm nay.
-- **"Cảnh báo vắng học" / "Cảnh báo vắng lễ"** (gửi trưởng khối). Gửi khi có em đang học ở lớp trong khối vừa chạm ngưỡng cảnh báo trong học kỳ hiện tại:
+- **"Cảnh báo vắng học" / "Cảnh báo vắng lễ"** (gửi trưởng khối). Gửi khi lần chạy thấy có em đang học ở lớp trong khối đang ở trạng thái cảnh báo trong học kỳ hiện tại mà trưởng khối chưa được báo về em đó:
   - vắng học: từ 2 buổi học vắng không phép trở lên;
   - vắng lễ: số tuần không đi lễ đạt ngưỡng của khối (cùng quy tắc với trang "Cần chú ý").
 
-  Mỗi em được báo một lần mỗi học kỳ cho mỗi loại. Nhiều em trong cùng một lần chạy được gộp thành một thông báo ("Có 2 em đạt ngưỡng cảnh báo vắng học ở Lớp A, Lớp B"). Bấm vào mở "Cần chú ý".
+  Mỗi em được báo một lần mỗi học kỳ cho mỗi loại. **Lần chạy đầu tiên sau khi triển khai** (hoặc sau khi một trưởng khối bật thông báo) sẽ gửi **một** thông báo gộp cho mọi cảnh báo đang có; sau đó chỉ báo em mới chạm ngưỡng. Nhiều em trong cùng một lần chạy được gộp thành một thông báo ("Có 2 em đạt ngưỡng cảnh báo vắng học ở Lớp A, Lớp B"). Bấm vào mở "Cần chú ý".
 - Thông báo hiện cả trên màn hình khoá nên **chỉ có tên lớp và số em**, không bao giờ có tên hay số điện thoại của em.
 - Một người chỉ nhận thông báo khi đã bấm "Bật thông báo" ở trang Tài khoản trên ít nhất một thiết bị. **iPhone/iPad**: cần iOS 16.4 trở lên và app phải được **Thêm vào Màn hình chính** rồi mở từ biểu tượng đó (mục 6). Safari thường không nhận thông báo đẩy.
 
@@ -179,12 +179,14 @@ App có route `/api/cron/nhac-viec`. Mỗi lần được gọi, nó gửi các 
 **Bước 2: thử bằng tay** (thay tên miền của bạn):
 ```bash
 read -rs CRON_SECRET   # dán bí mật rồi Enter (không hiện ra màn hình, không vào lịch sử lệnh)
-curl -sS --fail -H "Authorization: Bearer $CRON_SECRET" https://ten-app.vercel.app/api/cron/nhac-viec
+printf 'Authorization: Bearer %s\n' "$CRON_SECRET" | curl -sS --fail --max-time 65 -H @- https://ten-app.vercel.app/api/cron/nhac-viec
+unset CRON_SECRET
 ```
-Kết quả đúng là `{"sent":0,"skipped":…,"failed":0,"pruned":…,"complete":true}`. Ý nghĩa các số:
+Kết quả đúng là `{"sent":0,"skipped":…,"failed":0,"pruned":…,"truncated":false}`. Ý nghĩa các số:
 - `sent`: số thông báo đã tới ít nhất một thiết bị;
 - `skipped`: số thông báo bỏ qua vì đã gửi rồi hoặc người nhận chưa bật thông báo;
-- `failed`: số thông báo gửi lỗi (không gửi lại);
+- `failed`: số thông báo không tới được thiết bị nào vì lỗi (lỗi mạng, dịch vụ push quá tải, khoá sai); lần chạy sau **thử lại** (có giới hạn: đăng ký lỗi liên tục bị xoá sau 5 hoặc 10 lần);
+- `truncated`: `true` khi lần chạy dừng vì hết ngân sách 20 giây; phần còn lại làm ở lần sau.
 - `pruned`: số dòng nhật ký cũ đã dọn.
 
 Các mã lỗi:
@@ -202,7 +204,10 @@ Gọi lại ngay một lần nữa sẽ không gửi trùng.
   Workflow chạy mỗi 10 phút và có nút **Run workflow** để thử ngay. Lưu ý:
   - lịch của GitHub có thể trễ vài phút đến hơn chục phút lúc cao điểm, và khoảng cách tối thiểu là 5 phút;
   - cửa sổ nhắc kéo dài 2 tiếng rưỡi nên trễ như vậy vẫn ổn;
-  - GitHub tự tắt lịch của repo không có hoạt động trong 60 ngày (sẽ có email báo; bấm bật lại).
+  - lịch chỉ chạy trên **nhánh mặc định** (thường là `main`): tệp workflow phải nằm ở nhánh đó;
+  - GitHub tự **tắt** lịch khi repo không có hoạt động (commit) trong 60 ngày; sẽ có email báo, vào tab Actions bấm bật lại;
+  - thiếu secret hoặc `APP_URL` không bắt đầu bằng `https://` thì lần chạy **báo lỗi đỏ** (để bạn thấy ngay), không im lặng bỏ qua; dấu `/` cuối được tự bỏ;
+  - bí mật được đưa vào curl qua stdin, không nằm trên dòng lệnh, và không bao giờ được in ra log.
 - **(b) cron-job.org** (hoặc dịch vụ hẹn giờ tương tự). Tạo job với:
   - URL `https://ten-app.vercel.app/api/cron/nhac-viec`, phương thức GET, mỗi 10 phút;
   - mục Headers thêm `Authorization` = `Bearer <CRON_SECRET>`;
@@ -219,13 +224,13 @@ Gọi lại ngay một lần nữa sẽ không gửi trùng.
 - Không có bí mật thì route không bao giờ chạy (503).
 - Bí mật không bao giờ được in ra log hay phản hồi.
 - Phản hồi chỉ gồm số đếm và có `Cache-Control: no-store`.
-- Hai lần gọi chồng nhau không gửi trùng: mỗi thông báo được ghi vào `notification_log` **trước** khi gửi.
+- Hai lần gọi chồng nhau không gửi trùng: mỗi thông báo được ghi vào `notification_log` **trước** khi gửi. Dòng được giữ khi tới được ít nhất một thiết bị; không tới thiết bị nào thì dòng được nhả để lần sau thử lại.
 
 **Dọn dẹp** (mỗi ngày một lần trong lần chạy đầu tiên của ngày):
 - xoá nhật ký thay đổi cũ hơn 12 tháng;
 - xoá nhật ký thông báo cũ.
 
-Đổi bí mật: tạo giá trị mới, cập nhật ở Vercel (deploy lại) và ở nơi gọi (GitHub secret/cron-job.org) cùng lúc.
+Dán bí mật cẩn thận: khoảng trắng/xuống dòng ở đầu cuối được app tự cắt, nhưng nơi gọi có thể gửi nguyên văn, nên hãy xoá chúng ở mọi nơi (`pnpm preflight --prod` cảnh báo nếu có). Đổi bí mật: tạo giá trị mới, cập nhật ở Vercel (deploy lại) và ở nơi gọi (GitHub secret/cron-job.org) cùng lúc.
 
 ## 10. Sau này
 

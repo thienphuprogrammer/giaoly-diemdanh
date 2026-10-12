@@ -4,7 +4,7 @@ import { CRON_SECRET_MIN_LENGTH, authorizeCron, handleCronRequest } from "./cron
 
 const token = () => randomBytes(36).toString("base64url"); // 48 ký tự, sinh lúc chạy
 const req = (headers: Record<string, string> = {}, method = "GET") => new Request("http://localhost/api/cron/nhac-viec", { method, headers });
-const summary = { sent: 2, skipped: 3, failed: 1, pruned: 4, complete: true };
+const summary = { sent: 2, skipped: 3, failed: 1, pruned: 4, truncated: false };
 
 describe("authorizeCron", () => {
   it("đúng header Bearer thì cho qua", () => {
@@ -36,6 +36,15 @@ describe("authorizeCron", () => {
     expect(authorizeCron(`Bearer ${short}`, short)).toBe("unconfigured");
     const exact = randomBytes(32).toString("hex").slice(0, 32);
     expect(authorizeCron(`Bearer ${exact}`, exact)).toBe("ok");
+  });
+
+  it("bí mật có khoảng trắng đầu/cuối (dán nhầm) được cắt một lần và so với giá trị đã cắt", () => {
+    const s = token();
+    expect(authorizeCron(`Bearer ${s}`, ` ${s}\n`)).toBe("ok");
+    expect(authorizeCron(`Bearer  ${s}\n`, ` ${s}\n`)).toBe("denied");
+    // Sau khi cắt mà ngắn hơn 32 thì chưa cấu hình, dù có khoảng trắng bù độ dài.
+    const short = randomBytes(15).toString("hex");
+    expect(authorizeCron(`Bearer ${short}`, `${short}${" ".repeat(10)}`)).toBe("unconfigured");
   });
 
   it("bí mật chỉ gồm khoảng trắng bị coi như chưa đặt", () => {
@@ -107,6 +116,6 @@ describe("handleCronRequest", () => {
     const { deps } = setup(s);
     const leaky = { ...deps, run: vi.fn(async () => ({ ...summary, users: ["x@y.vn"] }) as typeof summary) };
     const res = await handleCronRequest(req({ authorization: `Bearer ${s}` }), leaky);
-    expect(Object.keys(await res.json()).sort()).toEqual(["complete", "failed", "pruned", "sent", "skipped"]);
+    expect(Object.keys(await res.json()).sort()).toEqual(["failed", "pruned", "sent", "skipped", "truncated"]);
   });
 });

@@ -12,10 +12,12 @@ export type CronAuth = "ok" | "denied" | "unconfigured";
 
 const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
 
+/** Bí mật được cắt khoảng trắng đầu/cuối MỘT lần (dán nhầm xuống dòng ở Vercel/GitHub) và so với giá trị đã cắt. */
 export function authorizeCron(header: string | null | undefined, secret: string | undefined): CronAuth {
-  if (typeof secret !== "string" || secret.trim().length < CRON_SECRET_MIN_LENGTH) return "unconfigured";
+  const trimmed = typeof secret === "string" ? secret.trim() : "";
+  if (trimmed.length < CRON_SECRET_MIN_LENGTH) return "unconfigured";
   if (typeof header !== "string") return "denied";
-  return timingSafeEqual(digest(header), digest(`Bearer ${secret}`)) ? "ok" : "denied";
+  return timingSafeEqual(digest(header), digest(`Bearer ${trimmed}`)) ? "ok" : "denied";
 }
 
 /** Chỉ số đếm (không id, không tên, không email). */
@@ -24,8 +26,8 @@ export interface CronSummary {
   skipped: number;
   failed: number;
   pruned: number;
-  /** false khi dừng vì hết ngân sách thời gian (phần còn lại để lần chạy sau). */
-  complete: boolean;
+  /** true khi dừng vì hết ngân sách thời gian (phần còn lại để lần chạy sau). */
+  truncated: boolean;
 }
 
 export interface CronDeps {
@@ -45,7 +47,7 @@ export async function handleCronRequest(request: Request, deps: CronDeps): Promi
   const log = deps.log ?? ((m: string) => console.warn(m));
   try {
     const s = await deps.run((deps.now ?? (() => new Date()))());
-    return json(200, { sent: s.sent, skipped: s.skipped, failed: s.failed, pruned: s.pruned, complete: s.complete });
+    return json(200, { sent: s.sent, skipped: s.skipped, failed: s.failed, pruned: s.pruned, truncated: s.truncated });
   } catch (e) {
     // Không in thông điệp lỗi (lỗi driver có thể chứa chuỗi kết nối); chỉ tên lớp lỗi.
     log(`cron: nhac-viec failed (${e instanceof Error ? e.name : "unknown"})`);

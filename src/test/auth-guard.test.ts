@@ -68,6 +68,19 @@ describe("ranh giới xác thực (cấu trúc)", () => {
     expect(checkRouteSource(CRON_ROUTE, f!.src, ALLOW_ROUTES)).toBeNull();
   });
 
+  it("route cron: nhập handleCronRequest từ @/server/http/cron, chỉ export dynamic/maxDuration/GET/POST, runReminders chỉ chạy trong `run:`", () => {
+    const src = files.find((x) => x.rel === CRON_ROUTE)!.src;
+    expect(src).toMatch(/import\s*\{[^}]*\bhandleCronRequest\b[^}]*\}\s*from\s*"@\/server\/http\/cron";/);
+    const exported = [...src.matchAll(/^export\s+(?:const|let|var|async\s+function|function|default)\s*(\w*)/gm)].map((m) => m[1]).sort();
+    expect(exported).toEqual(["GET", "POST", "dynamic", "maxDuration"]);
+    expect(src).not.toMatch(/^export\s*\{/m);
+    // Mọi lời gọi runReminders( đều nằm trong callback `run:` được truyền cho handleCronRequest (chạy SAU khi xác thực).
+    const calls = [...src.matchAll(/\brunReminders\s*\(/g)];
+    expect(calls.length).toBe(1);
+    const before = src.slice(0, calls[0].index);
+    expect(before).toMatch(/handleCronRequest\(request,\s*\{[\s\S]*\brun:\s*\(now\)\s*=>\s*$/);
+  });
+
   it("miễn trừ của cron không áp cho route khác cùng thư mục", () => {
     const src = `export const GET = (r: Request) => handleCronRequest(r, deps);`;
     expect(checkRouteSource("src/app/api/cron/khac/route.ts", src, ALLOW_ROUTES)).not.toBeNull();

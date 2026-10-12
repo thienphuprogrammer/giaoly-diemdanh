@@ -86,11 +86,19 @@ function pushCheck(env: Env): Check {
 
 const CRON_DOC = "Xem docs/deploy-vercel-ios.md, mục \"Nhắc việc tự động\"; sinh bằng: openssl rand -base64 48";
 
-/** Nhắc việc tự động cần CRON_SECRET (≥ 32 ký tự); thiếu/ngắn thì route cron trả 503: cảnh báo, không làm fail. */
-function cronCheck(env: Env): Check {
-  const s = env.CRON_SECRET?.trim() ?? "";
+/**
+ * Nhắc việc tự động cần CRON_SECRET (≥ 32 ký tự); thiếu/ngắn thì route cron trả 503: cảnh báo (production) hoặc ghi chú
+ * (dev), không làm fail.
+ */
+function cronCheck(env: Env, { prod }: EnvOptions): Check {
+  const raw = env.CRON_SECRET ?? "";
+  const s = raw.trim();
   const warn = (message: string): Check => ({ id: "OPTIONAL_CRON", level: "warn", message: `${message} ${CRON_DOC}.` });
-  if (!s) return warn("CRON_SECRET: chưa đặt, nhắc việc tự động (/api/cron/nhac-viec) sẽ không chạy.");
+  if (!s) {
+    const message = `CRON_SECRET: chưa đặt, nhắc việc tự động (/api/cron/nhac-viec) sẽ không chạy. ${CRON_DOC}.`;
+    return { id: "OPTIONAL_CRON", level: prod ? "warn" : "info", message };
+  }
+  if (s !== raw) return warn("CRON_SECRET có khoảng trắng hoặc xuống dòng ở đầu/cuối (thường do dán nhầm). App tự cắt, nhưng nơi gọi (GitHub/cron-job.org) có thể gửi giá trị khác: hãy xoá khoảng trắng ở mọi nơi.");
   if (s.length < MIN_SECRET) return warn(`CRON_SECRET quá ngắn (${s.length} ký tự, cần tối thiểu ${MIN_SECRET}); route nhắc việc sẽ từ chối chạy.`);
   if (new Set(s).size < 8 || PLACEHOLDER.test(s)) return warn("CRON_SECRET trông như giá trị mẫu hoặc lặp ký tự.");
   return { id: "OPTIONAL_CRON", level: "info", message: `CRON_SECRET: đã đặt (${s.length} ký tự).` };
@@ -111,10 +119,10 @@ export function checkEnv(env: Env, opts: EnvOptions): Check[] {
 
   // Thông báo đẩy và nhắc việc: chỉ báo trạng thái, không bao giờ in giá trị.
   checks.push(pushCheck(env));
-  checks.push(cronCheck(env));
+  checks.push(cronCheck(env, opts));
   if (env.PUSH_DRY_RUN) {
     checks.push(opts.prod
-      ? { id: "PUSH_DRY_RUN", level: "warn", message: "PUSH_DRY_RUN đang được đặt. Biến này chỉ dành cho E2E (production luôn bỏ qua nó), hãy xoá khỏi biến môi trường của Vercel." }
+      ? { id: "PUSH_DRY_RUN", level: "fail", message: "PUSH_DRY_RUN đang được đặt. Biến này chỉ dành cho E2E (production luôn bỏ qua nó); hãy xoá khỏi biến môi trường của Vercel." }
       : { id: "PUSH_DRY_RUN", level: "info", message: "PUSH_DRY_RUN đang được đặt: ở dev/test thông báo đẩy không được gửi ra mạng." });
   }
   return checks;

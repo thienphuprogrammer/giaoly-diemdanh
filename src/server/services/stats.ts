@@ -22,8 +22,11 @@ export interface StatRow {
 
 const key = (classId: string, studentId: string) => `${classId}:${studentId}`;
 
-/** Mỗi em được tính theo các dòng ở đúng lớp của dòng thống kê (em chuyển lớp không mang dòng của lớp cũ sang lớp mới). */
-function buildRows(roster: RosterEntry[], records: { classId: string; studentId: string; status: AttendanceStatus }[]): StatRow[] {
+/**
+ * Mỗi em được tính theo các dòng ở đúng lớp của dòng thống kê (em chuyển lớp không mang dòng của lớp cũ sang lớp mới).
+ * Dùng chung cho thống kê, "Cần chú ý" và thông báo ngưỡng của tác vụ nhắc việc (cùng một quy tắc cảnh báo).
+ */
+export function buildRows(roster: RosterEntry[], records: { classId: string; studentId: string; status: AttendanceStatus }[]): StatRow[] {
   const byStudent = new Map<string, { status: AttendanceStatus }[]>();
   for (const r of records) {
     const k = key(r.classId, r.studentId);
