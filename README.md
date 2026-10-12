@@ -18,6 +18,7 @@ Sao chép `.env.example` thành `.env.local` rồi điền giá trị. Không co
 |------|---------|
 | `DATABASE_URL` | Chuỗi kết nối Postgres |
 | `AUTH_SECRET` | Khóa ký phiên đăng nhập, tối thiểu 32 ký tự. Sinh bằng `openssl rand -base64 32` |
+| `CSP_ALLOW_UNSAFE_EVAL` | Tùy chọn, mặc định tắt. Đặt `1` lúc build nếu cần hỗ trợ iPhone iOS 15 trở xuống (máy quét QR cần WebAssembly), đổi lại CSP yếu hơn (cho phép `'unsafe-eval'`). Mặc định máy quét cần iOS 16+. Xem `docs/ios-checklist.md`. |
 
 Các biến chỉ dùng cho `pnpm seed`: `SEED_EMAIL`, `SEED_PASSWORD` (tối thiểu 10 ký tự), và tùy chọn `SEED_NAME`, `SEED_GRADE`, `SEED_YEAR`, `SEED_T1_START`, `SEED_T1_END`, `SEED_T2_START`, `SEED_T2_END`.
 
@@ -113,7 +114,7 @@ Proxy (`src/proxy.ts`) **không còn chặn request không phải GET khi thiế
 - **Mã thẻ QR là bí mật nhẹ**: chỉ có tác dụng khi người quét đã đăng nhập và có quyền ghi đúng lớp. Không chia sẻ ảnh chụp thẻ. Mã chỉ được đọc ở `db/queries/qr-cards.ts` và `db/queries/scan.ts` (cùng `services/qr-cards.ts`, `services/scan.ts` để so khớp/cấp lại); các truy vấn thiếu nhi khác cố ý không chọn cột này.
 - **`X-Forwarded-Host` chỉ đáng tin sau reverse proxy ghi đè header đó** (Vercel làm vậy). Kiểm tra Origin của API quét dựa vào header này: nếu tự host mà đặt app trực tiếp ra internet, hãy có proxy chuẩn hóa/ghi đè `X-Forwarded-Host`.
 - **`NEXT_PUBLIC_E2E_SCAN_BRIDGE` chỉ dùng cho E2E** (cầu nối `window.__scanFeed` đưa mã giả lập vào mà không cần camera; chỉ `playwright.config.ts` đặt biến này, E2E chạy bằng `next dev`). Cầu nối chỉ bật khi biến bằng `1` **và** `NODE_ENV` không phải `production`; điều kiện này bị loại lúc biên dịch nên **bản `next build` không còn chứa mã cầu nối** (kể cả khi lỡ đặt biến; kiểm bằng `grep -r __scanFeed .next/static` sau khi build: không có kết quả). Dù vậy, đừng đặt biến này trên production.
-- **Header bảo mật** (`next.config.ts`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy: camera=(self), microphone=(), geolocation=()` (chỉ trang của app được xin camera), và HSTS ở production. Chưa có CSP.
+- **Header bảo mật** (`next.config.ts`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy: camera=(self), microphone=(), geolocation=()` (chỉ trang của app được xin camera), và HSTS ở production. `Content-Security-Policy` chặn thật, chỉ nguồn của chính app (`src/lib/security-headers.ts`; `'wasm-unsafe-eval'` cho bộ đọc QR, `'unsafe-eval'` chỉ ở dev hoặc khi đặt `CSP_ALLOW_UNSAFE_EVAL=1`).
 
 ## Kiểm thử
 

@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
-import { buildSecurityHeaders } from "./src/lib/security-headers";
+import { buildSecurityHeaders, cspOptionsFromEnv } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: buildSecurityHeaders({ isProd: process.env.NODE_ENV === "production" }) }];
+    return [{ source: "/:path*", headers: buildSecurityHeaders(cspOptionsFromEnv(process.env)) }];
   },
   turbopack: {
     rules: {

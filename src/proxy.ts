@@ -49,5 +49,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*|apple-icon.*|apple-touch-icon.*|splash/).*)"],
+  // Bỏ qua tài nguyên tĩnh công khai. iOS tải apple-touch-icon và ảnh khởi động (splash/*.png) không kèm cookie: chỉ đúng
+  // các tệp .png đó, đường dẫn khác cùng tiền tố vẫn qua proxy.
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*|apple-icon.*|apple-touch-icon(?:-precomposed)?\\.png$|splash/[\\w-]+\\.png$).*)"],
 };

@@ -4,7 +4,7 @@ App là web app (PWA), không phải app App Store. Trên iPhone cài bằng Saf
 
 ## 1. Cài lên Màn hình chính
 
-1. Mở link app bằng **Safari** (Chrome/Zalo trên iPhone không cài được dạng app; nếu mở từ Zalo, bấm "Mở bằng Safari").
+1. Mở link app bằng **Safari** (khuyên dùng). Từ iOS 16.4, Chrome/Edge/Firefox trên iPhone cũng có "Thêm vào Màn hình chính" trong menu Chia sẻ, nhưng hướng dẫn dưới đây theo Safari. Trình duyệt bên trong app khác (Zalo, Messenger, Facebook…) **không** cài được: bấm "Mở bằng Safari"/"Mở trong trình duyệt" trước.
 2. Bấm nút **Chia sẻ** (ô vuông có mũi tên lên) → kéo xuống → **Thêm vào Màn hình chính**.
 3. Tên hiện sẵn là "Điểm danh" → bấm **Thêm**.
 4. Mở app từ biểu tượng mới trên Màn hình chính và **đăng nhập lại** (xem mục 3: app cài và tab Safari không chung đăng nhập).
@@ -15,7 +15,7 @@ App là web app (PWA), không phải app App Store. Trên iPhone cài bằng Saf
 
 | | Thử gì | Mong đợi |
 |---|---|---|
-| ☐ | Mở app từ Màn hình chính | Màn khởi động nền sáng có biểu tượng (iPhone 12–16; máy khác: nền sáng trơn), không có thanh địa chỉ, thanh trạng thái nền sáng chữ tối. |
+| ☐ | Mở app từ Màn hình chính | Màn khởi động nền sáng có biểu tượng (các đời có ảnh khởi động, xem mục 3; máy khác: nền sáng trơn), không có thanh địa chỉ, thanh trạng thái nền sáng chữ tối. |
 | ☐ | Thanh dưới (Lớp của tôi / Cần chú ý / …) trên máy không có nút Home | Thanh nằm trên vạch home indicator, không bị che; dòng cuối của danh sách cuộn được lên khỏi thanh. |
 | ☐ | Bảng trượt từ dưới (chọn trạng thái, tìm tên, hỏi khi rời màn quét) | Nút cuối cùng không bị vạch home indicator che. |
 | ☐ | Thông báo "Đã ghi có mặt N em — Hoàn tác" và thông báo lỗi lưu ở bảng điểm danh | Nằm ngay trên thanh dưới, không chồng lên thanh, không bị home indicator che. |
@@ -42,7 +42,8 @@ App là web app (PWA), không phải app App Store. Trên iPhone cài bằng Saf
 - **Thông báo đẩy** chỉ có khi đã cài lên Màn hình chính và iOS **16.4+**; tab Safari thường không nhận được.
 - **Giữ màn hình sáng** cần iOS 16.4+; máy cũ hơn phải tự chỉnh Tự động khóa.
 - **Không hỏi khi đóng tab/app**: Safari iOS không hiện hộp "Rời trang?" (`beforeunload`). Lượt quét vẫn an toàn vì được lưu trên máy và tự gửi khi mở lại màn quét; thay đổi trên bảng điểm danh đang "Đang lưu…" thì nên đợi xong rồi mới đóng app.
-- **Ảnh khởi động** chỉ làm cho iPhone 12–16 (3 cỡ màn hình phổ biến); máy khác thấy màn nền sáng trơn khi mở app.
+- **Ảnh khởi động** chỉ có cho: iPhone 12, 12 Pro, 13, 13 Pro, 14, 14 Pro, 14 Pro Max, 15, 15 Plus, 15 Pro, 15 Pro Max, 16, 16 Plus, 16 Pro, 16 Pro Max (và máy khác cùng kích thước màn hình). Máy khác (iPhone SE, 12/13 mini, 14 Plus…) thấy màn nền sáng trơn khi mở app.
+- **Quét QR cần iOS 16 trở lên** với cấu hình bảo mật mặc định: iOS 15 trở xuống chặn bộ đọc mã (WebAssembly) và máy quét hiện "Máy này chưa đọc được mã QR" — cập nhật iOS (Cài đặt > Cài đặt chung > Cập nhật phần mềm) hoặc điểm danh bằng "Tìm bằng tên". Nếu buộc phải hỗ trợ iPhone iOS 15 trở xuống, xem mục 5.
 - **Phóng to ở màn quét**: đã chặn bằng `touch-action`; iOS bỏ qua `user-scalable=no` từ iOS 10 và app cố ý không khóa zoom toàn trang (trợ năng), nên nếu một bản iOS vẫn cho chụm hai ngón thì chỉ cần chụm lại để thu nhỏ.
 
 ## 4. Guard lịch sử và cử chỉ vuốt-quay-lại (không kiểm được bằng Playwright)
@@ -66,4 +67,8 @@ Các bước thử (cả tab Safari và app standalone):
 
 ## 5. Bảo mật (để biết khi gặp lỗi lạ)
 
-Trang gửi `Content-Security-Policy` chỉ cho phép tài nguyên của chính app (cho phép WebAssembly để giải mã QR). Nếu sau này thêm dịch vụ ngoài (font CDN, phân tích, bản đồ…) mà không chạy, kiểm tra Console của Safari (kết nối Mac) hoặc Chrome để xem có lỗi "Content Security Policy", rồi thêm nguồn đó vào `src/lib/security-headers.ts`.
+Trang gửi `Content-Security-Policy` chỉ cho phép tài nguyên của chính app (cho phép WebAssembly để giải mã QR bằng `'wasm-unsafe-eval'`, iOS 16+).
+
+**Hỗ trợ iPhone iOS 15 trở xuống**: đặt biến môi trường `CSP_ALLOW_UNSAFE_EVAL=1` cho bản build/triển khai (Vercel: Project Settings → Environment Variables, rồi deploy lại vì header được tính lúc build). Bật nếu cần hỗ trợ iPhone iOS 15 trở xuống, đổi lại CSP yếu hơn (cho phép `eval` của JavaScript). Mặc định để trống/tắt.
+
+ Nếu sau này thêm dịch vụ ngoài (font CDN, phân tích, bản đồ…) mà không chạy, kiểm tra Console của Safari (kết nối Mac) hoặc Chrome để xem có lỗi "Content Security Policy", rồi thêm nguồn đó vào `src/lib/security-headers.ts`.

@@ -21,15 +21,21 @@ describe("zod dùng chung server/trình duyệt", () => {
     expect(z.config().jitless).not.toBe(true);
   });
 
-  it("code dùng chung trong src/lib import zod qua @/lib/zod", () => {
+  it("code chạy được ở trình duyệt không import zod trực tiếp (phải qua @/lib/zod)", () => {
     const walk = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
       const p = path.join(dir, n);
-      return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") && !p.endsWith(".test.ts") ? [p] : [];
+      return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(p) && !/\.test\.tsx?$/.test(p) ? [p] : [];
     });
-    const libDir = path.join(process.cwd(), "src/lib");
-    const direct = walk(libDir)
-      .filter((f) => !f.endsWith(`${path.sep}zod.ts`) && /from "zod"/.test(readFileSync(f, "utf8")))
-      .map((f) => path.relative(process.cwd(), f));
+    const rel = (f: string) => path.relative(process.cwd(), f).split(path.sep).join("/");
+    // src/lib và src/components: dùng chung/được client import. src/app: chỉ file "use client" (page/route/actions
+    // không có "use client" chạy trên server). src/server: chỉ server, được import thẳng.
+    const isClientReachable = (file: string, src: string) =>
+      /^src\/(lib|components)\//.test(file) || /^\s*["']use client["']/m.test(src);
+    const direct = ["src/lib", "src/components", "src/app"]
+      .flatMap((d) => walk(path.join(process.cwd(), d)))
+      .map((f) => ({ file: rel(f), src: readFileSync(f, "utf8") }))
+      .filter(({ file, src }) => file !== "src/lib/zod.ts" && /from ["']zod(\/[^"']*)?["']/.test(src) && isClientReachable(file, src))
+      .map(({ file }) => file);
     expect(direct).toEqual([]);
   });
 });

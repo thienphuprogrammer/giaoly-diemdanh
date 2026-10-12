@@ -3,8 +3,9 @@ import { Flashlight, FlashlightOff } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { createQrDecoder } from "@/lib/qr/decoder";
 import { createFrameDeduper } from "@/lib/qr/frame-deduper";
+import type { CameraState } from "@/lib/scan-camera-message";
 
-export type CameraState = "starting" | "on" | "restarting" | "denied" | "unavailable";
+export type { CameraState } from "@/lib/scan-camera-message";
 
 const DENIED = new Set(["NotAllowedError", "PermissionDeniedError", "SecurityError"]);
 const TICK_MS = 60;
@@ -75,7 +76,8 @@ export function QrCamera({ onCode, onState, paused }: {
       await video.play().catch(() => undefined);
       const decoder = await decoderReady;
       if (stopped) return;
-      if (!decoder) { emitState("unavailable"); return; }
+      // WASM bị chặn (CSP trên iOS ≤ 15), không tải được hoặc trình duyệt không hỗ trợ: báo riêng, không log chi tiết.
+      if (!decoder) { emitState("decoder-failed"); return; }
       emitState("on");
 
       const tick = async () => {

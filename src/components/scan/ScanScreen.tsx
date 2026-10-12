@@ -15,6 +15,7 @@ import { scanExit, scanVariant } from "@/lib/attendance/scan-variant";
 import { loginHref } from "@/lib/auth/next-path";
 import { dateLabel } from "@/lib/date-label";
 import { nextRadioIndex } from "@/lib/radio-keys";
+import { cameraProblem } from "@/lib/scan-camera-message";
 import { scannerExit } from "@/lib/scan-return";
 import { cancelMassSessionAction } from "@/server/actions/mass";
 import { QrCamera, type CameraState } from "./QrCamera";
@@ -78,6 +79,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [camera, reopenCamera]);
 
+  const problem = cameraProblem(camera);
   const needsAction = s.queue.events.filter((e) => e.state === "needs_confirm" || e.state === "rejected" || e.state === "failed");
   const boardHref = `/lop/${classId}/diem-danh/${heldOn}`;
   const exitTo = exitHref ?? boardHref;
@@ -152,17 +154,15 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
               </button>
             )}
           </Notice>
-        ) : camera === "denied" || camera === "unavailable" ? (
-          <EmptyState icon={VideoOff} title={camera === "denied" ? "Chưa cho phép dùng camera" : "Không mở được camera"}
+        ) : problem ? (
+          <EmptyState icon={VideoOff} title={problem.title}
             action={(
               <div className="flex flex-wrap justify-center gap-2">
-                {camera === "unavailable" && <button type="button" onClick={reopenCamera} className="btn btn-secondary"><RefreshCw aria-hidden size={18} /> Mở lại camera</button>}
+                {problem.canReopen && <button type="button" onClick={reopenCamera} className="btn btn-secondary"><RefreshCw aria-hidden size={18} /> Mở lại camera</button>}
                 <button type="button" onClick={() => setFinding(true)} className="btn btn-primary">Tìm bằng tên</button>
               </div>
             )}>
-            {camera === "denied"
-              ? "Vào cài đặt trình duyệt, cho trang này dùng camera rồi tải lại. iPhone: Cài đặt > Safari > Camera > Hỏi hoặc Cho phép; nếu mở từ biểu tượng ngoài Màn hình chính thì vuốt tắt hẳn app rồi mở lại để được hỏi lại. Trong lúc đó vẫn điểm danh được bằng cách tìm tên."
-              : "Camera đang bị ứng dụng khác dùng, vừa bị tắt khi khóa máy, hoặc thiết bị không có camera. Bấm “Mở lại camera”, hoặc tìm tên để điểm danh."}
+            {problem.body}
           </EmptyState>
         ) : (
           <QrCamera key={cameraKey} onCode={s.handleCode} onState={setCamera} paused={paused} />
