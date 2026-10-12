@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardReducer, initBoardState, mergeFresh, pendingCount, saveChip, type BoardAction, type BoardState } from "./board-state";
+import { boardReducer, initBoardState, mergeFresh, pendingCount, saveChip, saveChipOf, type BoardAction, type BoardState } from "./board-state";
 import type { Mark, Marks } from "./marks";
 
 const P: Mark = { status: "present", reason: null };
@@ -211,5 +211,25 @@ describe("boardReducer: timeouts and late results", () => {
     expect(s.marks.a).toEqual(A);
     expect(s.failures).toEqual([]);
     expect(pendingCount(s)).toBe(2);
+  });
+});
+
+describe("saveChipOf: several queues on one board (class + Mass)", () => {
+  it("adds the pending saves of every queue and the extra bulk count", () => {
+    const a = run(initBoardState({ a: null }), { type: "begin", studentId: "a", next: P, turn: 1 });
+    const b = run(initBoardState({ a: null, b: null }),
+      { type: "begin", studentId: "a", next: P, turn: 1 }, { type: "begin", studentId: "b", next: P, turn: 1 });
+    expect(saveChipOf([a, b], 1)).toEqual({ kind: "saving", count: 4 });
+  });
+
+  it("is 'saved' when any queue saved and no queue has a failure, otherwise idle", () => {
+    const saved = run(initBoardState({ a: null }),
+      { type: "begin", studentId: "a", next: P, turn: 1 }, { type: "settle", studentId: "a", next: P, turn: 1, ok: true });
+    const failed = run(initBoardState({ a: null }),
+      { type: "begin", studentId: "a", next: P, turn: 1 }, { type: "settle", studentId: "a", next: P, turn: 1, ok: false, message: "x" });
+    const idle = initBoardState({ a: null });
+    expect(saveChipOf([idle, saved])).toEqual({ kind: "saved" });
+    expect(saveChipOf([saved, failed])).toEqual({ kind: "idle" });
+    expect(saveChipOf([idle, idle])).toEqual({ kind: "idle" });
   });
 });

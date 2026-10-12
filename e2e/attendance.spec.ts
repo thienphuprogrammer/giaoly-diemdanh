@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import postgres from "postgres";
+import { dateLabel } from "../src/lib/date-label";
+import { massSundayFor } from "../src/lib/attendance/mass-week";
 import { todayInVietnam } from "../src/lib/dates";
 
 const state = () => JSON.parse(readFileSync("e2e/.state.json", "utf8")) as { classA: string; classB: string; classC: string };
@@ -12,6 +14,8 @@ test.beforeEach(async () => {
   const sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1 });
   try {
     await sql`delete from sessions where held_on = ${todayInVietnam()}`;
+    // Thánh lễ của tuần (Chúa nhật trên hoặc trước hôm nay) do phần "Đi lễ Chúa nhật" tạo.
+    await sql`delete from sessions where kind = 'mass' and held_on = ${massSundayFor(todayInVietnam())}`;
   } finally {
     await sql.end();
   }
@@ -136,7 +140,7 @@ test("kết thúc buổi: đánh vắng các em còn lại có xác nhận, ch�
     const rows = await sql`
       select st.full_name, a.status, a.last_event_id from attendance a
       join sessions se on se.id = a.session_id join students st on st.id = a.student_id
-      where se.held_on = ${todayInVietnam()} and se.class_id = ${state().classA} order by st.full_name`;
+      where se.held_on = ${todayInVietnam()} and se.kind = 'class' and se.class_id = ${state().classA} order by st.full_name`;
     expect(rows.map((r) => [r.full_name, r.status, r.last_event_id])).toEqual([
       ["Nguyễn An", "absent_unexcused", null], ["Nguyễn Bình", "present", null], ["Nguyễn Chi", "absent_unexcused", null], ["Nguyễn Dũng", "absent_unexcused", null],
     ]);
@@ -157,7 +161,7 @@ test("bảng lấy dữ liệu mới khi tab hiện lại và khi quay lại b�
     // Thiết bị khác ghi "Đi muộn" cho Bình.
     const [row] = await sql`
       select st.id as student_id, se.id as session_id from students st
-      join sessions se on se.class_id = st.class_id and se.held_on = ${todayInVietnam()}
+      join sessions se on se.class_id = st.class_id and se.held_on = ${todayInVietnam()} and se.kind = 'class'
       where st.class_id = ${state().classA} and st.full_name = 'Nguyễn Bình'`;
     await sql`insert into attendance (session_id, student_id, status) values (${row.session_id}, ${row.student_id}, 'late')`;
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
@@ -238,6 +242,61 @@ test("phiên hết hạn khi chạm trên bảng: về /login có next, đăng n
   await page.getByRole("button", { name: "Đăng nhập" }).click();
   await expect(page).toHaveURL((u) => u.pathname === boardPath);
   await expect(page.getByText(/Đã điểm danh 0\/4/)).toBeVisible(); // lần chạm lúc hết phiên không được ghi
+});
+
+test("đi lễ Chúa nhật: cả lớp đi lễ (hoàn tác được), sửa một em, tải lại thấy đúng; điểm danh buổi học không đổi", async ({ page }) => {
+  await openBoard(page);
+  const sunday = massSundayFor(todayInVietnam());
+  // Gập mặc định: chỉ một dòng tóm tắt, ngày là Chúa nhật trên hoặc trước ngày học.
+  const toggle = page.getByRole("button", { name: /Đi lễ Chúa nhật/ });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toContainText("Đi lễ: 0/4 em");
+  await expect(toggle).toContainText(dateLabel(sunday));
+  await expect(page.getByRole("button", { name: "Cả lớp đi lễ" })).toHaveCount(0);
+  await toggle.click();
+
+  const markAll = page.getByRole("button", { name: "Cả lớp đi lễ" });
+  expect((await markAll.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await markAll.click();
+  await expect(page.getByText("Đã ghi đi lễ 4 em")).toBeVisible();
+  await expect(toggle).toContainText("Đi lễ: 4/4 em");
+  await page.getByRole("button", { name: "Hoàn tác" }).click();
+  await expect(toggle).toContainText("Đi lễ: 0/4 em");
+  await expect(page.getByRole("radiogroup", { name: "Đi lễ của Nguyễn An" }).getByRole("radio", { name: "Chưa hỏi" })).toHaveAttribute("aria-checked", "true");
+
+  await markAll.click();
+  await expect(toggle).toContainText("Đi lễ: 4/4 em");
+  const binh = page.getByRole("radiogroup", { name: "Đi lễ của Nguyễn Bình" });
+  const unexcused = binh.getByRole("radio", { name: "Không đi lễ không phép" });
+  expect((await unexcused.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await unexcused.click();
+  await expect(unexcused).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toContainText("Đi lễ: 3/4 em");
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
+  await expect(page.getByText("Đã điểm danh 0/4")).toBeVisible(); // điểm danh buổi học không đổi
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  await page.reload();
+  await expect(page.getByText("Đã điểm danh 0/4")).toBeVisible();
+  await expect(toggle).toContainText("Đi lễ: 3/4 em");
+  await toggle.click();
+  await expect(binh.getByRole("radio", { name: "Không đi lễ không phép" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("radiogroup", { name: "Đi lễ của Nguyễn An" }).getByRole("radio", { name: "Có đi lễ" })).toHaveAttribute("aria-checked", "true");
+
+  const sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1 });
+  try {
+    const rows = await sql`
+      select se.kind, se.held_on::text as held_on, st.full_name, a.status, a.last_event_id is null as manual from attendance a
+      join sessions se on se.id = a.session_id join students st on st.id = a.student_id
+      where se.class_id = ${state().classA} and (se.held_on = ${todayInVietnam()} or se.kind = 'mass') order by st.full_name`;
+    expect(rows.map((r) => [r.kind, r.held_on, r.full_name, r.status, r.manual])).toEqual([
+      ["mass", sunday, "Nguyễn An", "present", false], ["mass", sunday, "Nguyễn Bình", "absent_unexcused", true],
+      ["mass", sunday, "Nguyễn Chi", "present", false], ["mass", sunday, "Nguyễn Dũng", "present", false],
+    ]);
+  } finally {
+    await sql.end();
+  }
 });
 
 test("GLV lớp khác không xem được lớp này", async ({ page }) => {

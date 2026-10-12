@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth/dal";
 import { dateLabel } from "@/lib/date-label";
 import { classPermissions } from "@/server/guard";
 import { openSession, readBoard } from "@/server/services/attendance";
+import { readMassMarks } from "@/server/services/mass";
 import { AttendanceBoard } from "./AttendanceBoard";
 
 export default async function AttendancePage({ params }: { params: Promise<{ classId: string; date: string }> }) {
@@ -33,15 +34,16 @@ export default async function AttendancePage({ params }: { params: Promise<{ cla
     );
     sessionId = existing.id;
   }
-  const board = await readBoard(db, user, sessionId);
-  if (!board) notFound();
+  // Đi lễ của tuần: chỉ đọc (buổi `mass` được mở ở lần tích đầu tiên).
+  const [board, mass] = await Promise.all([readBoard(db, user, sessionId), readMassMarks(db, user, { classId, heldOn: date })]);
+  if (!board || !mass) notFound();
   return (
     <section className="flex flex-col gap-4">
       <div>
         <p className="font-display text-sm font-medium text-ink-soft">Buổi điểm danh</p>
         <h2 className="mt-0.5 text-xl font-semibold">{dateLabel(date)}</h2>
       </div>
-      <AttendanceBoard board={board} userId={user.id} renderId={crypto.randomUUID()} />
+      <AttendanceBoard board={board} mass={mass} userId={user.id} renderId={crypto.randomUUID()} />
     </section>
   );
 }

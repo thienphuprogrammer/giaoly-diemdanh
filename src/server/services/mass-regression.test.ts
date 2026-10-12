@@ -4,11 +4,12 @@ import { describe, expect, it } from "vitest";
 import { findSession, listSessions, unexcusedCount } from "@/db/queries/attendance";
 import { sessionsHeld, termRecords } from "@/db/queries/stats";
 import { studentTermRecords } from "@/db/queries/student-profile";
-import { attendance, sessions, students } from "@/db/schema";
+import { attendance, attendanceScans, sessions, students } from "@/db/schema";
 import { buildStatsWorkbook } from "@/lib/export/excel";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import { markAllPresent, markRemainingAbsent, openSession, readBoard, setStatus } from "./attendance";
+import { markClassAtMass, setMassStatus, undoClassAtMass } from "./mass";
 import { openMassSession } from "./mass-sessions";
 import { applyScan, getScanResults, getScanRoster } from "./scan";
 import { attentionList, classStats, gradeOverview } from "./stats";
@@ -110,6 +111,23 @@ describe("mass sessions do not change class-session numbers", () => {
     expect(after.classSessionOfDay).not.toBe(m1);
   });
 
+  it("ticking Mass through the board services (Cả lớp đi lễ, per-student, undo) leaves every class number unchanged", async () => {
+    const ctx = await setup();
+    const before = await classNumbers(ctx);
+    const { db, b, an, binh, chi } = ctx;
+    // Lớp ngày 11/10 (Chúa nhật, trùng ngày buổi học) và một ngày thường 14/10 -> cùng thánh lễ 11/10.
+    const all = await markClassAtMass(db, b.glv, { classId: b.classId, heldOn: "2026-10-11" }, LATE_NOW);
+    if (!all.ok) throw new Error(all.error);
+    await setMassStatus(db, b.glv, { classId: b.classId, heldOn: "2026-10-14", studentId: an.id, status: "absent_unexcused" }, LATE_NOW);
+    await setMassStatus(db, b.glv, { classId: b.classId, heldOn: "2026-10-14", studentId: binh.id, status: "absent_unexcused" }, LATE_NOW);
+    await undoClassAtMass(db, b.glv, { classId: b.classId, heldOn: "2026-10-11", batchId: all.data.batchId }, LATE_NOW);
+    await setMassStatus(db, b.glv, { classId: b.classId, heldOn: "2026-10-11", studentId: chi.id, status: "absent_unexcused" }, LATE_NOW);
+    expect(await classNumbers(ctx)).toEqual(before);
+    const massRows = await db.select({ status: attendance.status }).from(attendance)
+      .innerJoin(sessions, eq(sessions.id, attendance.sessionId)).where(eq(sessions.kind, "mass"));
+    expect(massRows.map((r) => r.status)).toEqual(["absent_unexcused", "absent_unexcused", "absent_unexcused"]);
+  });
+
   it("setStatus on a class session reports a warning that ignores mass absences", async () => {
     const ctx = await setup();
     await ctx.addMass();
@@ -176,6 +194,29 @@ describe("scanning against a mass session id", () => {
 
     const results = await getScanResults(db, b.glv, { sessionId, eventIds: [eventId] });
     expect(results).toEqual({ ok: true, data: { results: [{ eventId, kind: "scan", result: "applied", studentId: chi.id, status: "present" }] } });
+  });
+
+  it("refuses 'late' on a mass session (mode or confirmation) and writes nothing; 'present' still works", async () => {
+    const { db, b, an, chi } = await setup();
+    const mass = await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-10-11" }, LATE_NOW);
+    if (!mass.ok) throw new Error(mass.error);
+    const sessionId = mass.data.id;
+    const late = await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId, kind: "scan", token: chi.qrToken, mode: "late" });
+    expect(late).toEqual({ ok: false, code: "bad_request", error: "Buổi đi lễ không có trạng thái đi muộn" });
+    await db.insert(attendance).values({ sessionId, studentId: an.id, status: "absent_unexcused" });
+    const confirmLate = await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId, kind: "manual", studentId: an.id, mode: "present", confirmStatus: "late" });
+    expect(confirmLate).toMatchObject({ ok: false, code: "bad_request" });
+    expect(await db.select().from(attendanceScans)).toHaveLength(0);
+    const rows = await db.select({ studentId: attendance.studentId, status: attendance.status }).from(attendance).where(eq(attendance.sessionId, sessionId));
+    expect(rows).toEqual([{ studentId: an.id, status: "absent_unexcused" }]);
+    const present = await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId, kind: "scan", token: chi.qrToken, mode: "present" });
+    expect(present).toMatchObject({ ok: true, data: { result: "applied", status: "present" } });
+  });
+
+  it("late scans on a class session still work", async () => {
+    const { db, b, chi, c2 } = await setup();
+    const r = await applyScan(db, b.glv, { eventId: crypto.randomUUID(), sessionId: c2, kind: "scan", token: chi.qrToken, mode: "late" });
+    expect(r).toMatchObject({ ok: true, data: { result: "applied", status: "late" } });
   });
 
   it("mass absences do not raise the class priorUnexcused on the scan roster of a class session", async () => {

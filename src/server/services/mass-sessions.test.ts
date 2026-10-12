@@ -4,7 +4,7 @@ import { sessions } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import { openSession } from "./attendance";
-import { openMassSession } from "./mass-sessions";
+import { openMassForClassDate, openMassSession } from "./mass-sessions";
 
 const LATE_NOW = new Date("2027-02-01T05:00:00Z");
 
@@ -40,9 +40,14 @@ describe("openMassSession", () => {
     expect(kinds.map((k) => k.kind).sort()).toEqual(["class", "mass"]);
   });
 
-  it("accepts a manually chosen non-Sunday date (feast days)", async () => {
+  it("accepts a non-Sunday date only when chosen manually (feast days)", async () => {
     const { db, b } = await setup();
-    expect((await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-12-08" }, LATE_NOW)).ok).toBe(true);
+    expect(await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-12-08" }, LATE_NOW))
+      .toEqual({ ok: false, error: "Buổi đi lễ phải vào Chúa nhật (hoặc chọn ngày lễ thủ công)" });
+    expect(await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-12-08", manual: false }, LATE_NOW))
+      .toEqual({ ok: false, error: "Buổi đi lễ phải vào Chúa nhật (hoặc chọn ngày lễ thủ công)" });
+    expect(await db.select().from(sessions)).toHaveLength(0);
+    expect((await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-12-08", manual: true }, LATE_NOW)).ok).toBe(true);
   });
 
   it("only lets assigned catechists open it; others get the same 'not found'", async () => {
@@ -67,5 +72,46 @@ describe("openMassSession", () => {
     expect(await open("2026-10-18")).toEqual({ ok: false, error: "Không thể điểm danh cho ngày chưa tới" });
     expect(await open("2026-08-30")).toEqual({ ok: false, error: "Ngày này không thuộc học kỳ nào" });
     expect((await openMassSession(db, b.glv, null, now)).ok).toBe(false);
+  });
+});
+
+describe("openMassForClassDate (the board's entry point: takes the CLASS date)", () => {
+  const massOf = async (db: Awaited<ReturnType<typeof setup>>["db"], id: string) =>
+    (await db.select().from(sessions).where(eq(sessions.id, id)))[0];
+
+  it.each([
+    ["Saturday class -> the Sunday before", "2026-10-10", "2026-10-04"],
+    ["Sunday class -> that same Sunday", "2026-10-11", "2026-10-11"],
+    ["weekday class -> the Sunday before", "2026-10-14", "2026-10-11"],
+  ])("%s", async (_label, classDate, sunday) => {
+    const { db, b } = await setup();
+    const r = await openMassForClassDate(db, b.glv, { classId: b.classId, heldOn: classDate }, LATE_NOW);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.data.sunday).toBe(sunday);
+    expect(await massOf(db, r.data.id)).toMatchObject({ kind: "mass", heldOn: sunday, termId: b.termId });
+    const again = await openMassForClassDate(db, b.glv, { classId: b.classId, heldOn: classDate }, LATE_NOW);
+    expect(again).toEqual(r);
+  });
+
+  it("first week of the term: a Sunday before terms.starts_on is stored in the class date's term", async () => {
+    // Học kỳ bắt đầu thứ Ba 01/09/2026; lớp thứ Bảy 05/09 -> Chúa nhật 30/08 (ngoài mọi học kỳ).
+    const { db, b } = await setup();
+    const r = await openMassForClassDate(db, b.glv, { classId: b.classId, heldOn: "2026-09-05" }, LATE_NOW);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.data.sunday).toBe("2026-08-30");
+    expect(await massOf(db, r.data.id)).toMatchObject({ kind: "mass", heldOn: "2026-08-30", termId: b.termId });
+  });
+
+  it("rejects a class date outside every term, a future class date, bad input and non-writers", async () => {
+    const { db, b } = await setup();
+    const now = new Date("2026-10-12T05:00:00Z");
+    const open = (input: unknown, user = b.glv) => openMassForClassDate(db, user, input, now);
+    expect(await open({ classId: b.classId, heldOn: "2026-08-29" })).toEqual({ ok: false, error: "Ngày này không thuộc học kỳ nào" });
+    expect(await open({ classId: b.classId, heldOn: "2026-10-17" })).toEqual({ ok: false, error: "Không thể điểm danh cho ngày chưa tới" });
+    expect((await open({ classId: b.classId, heldOn: "2026-02-30" })).ok).toBe(false);
+    expect((await open(null)).ok).toBe(false);
+    expect(await open({ classId: b.classId, heldOn: "2026-10-10" }, b.head)).toEqual({ ok: false, error: "Không tìm thấy lớp" });
+    expect(await open({ classId: b.classId, heldOn: "2026-10-10" }, b.otherGlv)).toEqual({ ok: false, error: "Không tìm thấy lớp" });
+    expect(await db.select().from(sessions)).toHaveLength(0);
   });
 });

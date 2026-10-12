@@ -3,6 +3,7 @@ import { Check, CheckCheck, Ellipsis, LayoutGrid, ListChecks, ScanLine, X } from
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { SeatMap } from "@/components/seating/SeatMap";
+import { MassSection } from "@/components/attendance/MassSection";
 import { SaveStatus, SaveToasts } from "@/components/attendance/SaveStatus";
 import { RemainingAbsentButton, RemainingAbsentSheet } from "@/components/attendance/RemainingAbsent";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
@@ -21,6 +22,7 @@ import { evaluateWarningFromCount } from "@/lib/attendance/warning";
 import { scannerHrefFromBoard } from "@/lib/scan-return";
 import { seatKey } from "@/lib/seating/assignments";
 import type { Board } from "@/server/services/attendance";
+import type { MassBoard } from "@/server/services/mass";
 import { useBoardSaves } from "./useBoardSaves";
 
 /** Lời nhắc khi rời trang: chỉ hứa "tự chuyển" khi không còn em nào lưu lỗi (lỗi thì phải xử lý trước). */
@@ -31,8 +33,10 @@ function leaveMessage(pending: number, failed: number): string {
   return `Còn ${pending} lượt đang lưu — trang sẽ tự chuyển khi lưu xong. Rời trang ngay có thể mất các thay đổi chưa lưu.`;
 }
 
-export function AttendanceBoard({ board, userId, renderId }: { board: Board; userId: string; renderId: string }) {
-  const saves = useBoardSaves(board, renderId);
+const MASS_KEY = "mass:"; // lỗi lưu đi lễ trong vùng thông báo chung: khoá riêng để không trùng lỗi điểm danh của cùng em
+
+export function AttendanceBoard({ board, mass, userId, renderId }: { board: Board; mass: MassBoard; userId: string; renderId: string }) {
+  const saves = useBoardSaves(board, mass, renderId);
   // Lượt quét của buổi còn nằm trên máy này (chưa tới máy chủ): chặn "Đánh vắng" để không đánh vắng nhầm em đã quét.
   const deviceUnsent = useDeviceUnsent(userId, board.sessionId);
   const scannerHref = scannerHrefFromBoard(`/lop/${board.classId}/diem-danh/${board.heldOn}`);
@@ -42,11 +46,13 @@ export function AttendanceBoard({ board, userId, renderId }: { board: Board; use
   const [confirmHoliday, setConfirmHoliday] = useState(false);
   const [confirmAbsent, setConfirmAbsent] = useState(false);
   const readOnly = !board.canWrite || cancelled || saves.stale;
-  const guard = useLeaveGuard(saves.pending + saves.failures.length);
+  const failedCount = saves.failures.length + saves.massFailures.length;
+  const guard = useLeaveGuard(saves.pending + failedCount);
 
   const byId = useMemo(() => new Map(board.students.map((st) => [st.id, st])), [board.students]);
   const nameOf = (id: string) => byId.get(id)?.fullName ?? "thiếu nhi";
   const failedIds = new Set(saves.failures.map((f) => f.studentId));
+  const massFailedIds = new Set(saves.massFailures.map((f) => f.studentId));
   const warnOf = (id: string) =>
     evaluateWarningFromCount((byId.get(id)?.priorUnexcused ?? 0) + (!cancelled && marks[id]?.status === "absent_unexcused" ? 1 : 0));
   const levelOf = (id: string) => warnOf(id).level;
@@ -71,8 +77,12 @@ export function AttendanceBoard({ board, userId, renderId }: { board: Board; use
   const total = board.students.length;
   const marked = countMarked(marks);
   const remaining = unmarkedStudents(board.students, marks);
-  const absentBlock = remainingAbsentBlock({ unsaved: saves.pending + saves.failures.length, busy: saves.busy, notReady: saves.stale, deviceUnsent });
+  const absentBlock = remainingAbsentBlock({ unsaved: saves.pending + failedCount, busy: saves.busy, notReady: saves.stale, deviceUnsent });
   const unsentNotice = board.canWrite && !cancelled ? deviceUnsentNotice(deviceUnsent) : null;
+  const undo = saves.undo && !(saves.undo.scope === "class" && cancelled) ? saves.undo : null;
+  const undoToast = undo
+    ? { text: `${undo.scope === "mass" ? "Đã ghi đi lễ" : "Đã ghi có mặt"} ${undo.count} em`, onUndo: () => void saves.undoMarkAll(), onClose: saves.closeUndo }
+    : null;
   const tally = (key: StatusKey) => board.students.filter((st) => (marks[st.id]?.status ?? "none") === key).length;
   const choice = (pressed: boolean, key: "present" | "absent_unexcused", failed: boolean) =>
     `btn btn-sm w-full border-2 ${pressed ? STATUS_META[key].solid : "btn-secondary"} ${failed ? "ring-[3px] ring-warn-alert ring-offset-2" : ""}`;
@@ -135,6 +145,11 @@ export function AttendanceBoard({ board, userId, renderId }: { board: Board; use
           )}
         </Notice>
       )}
+
+      <MassSection sunday={mass.sunday} students={board.students} marks={saves.massMarks} failedIds={massFailedIds}
+        canWrite={mass.canWrite} cancelled={mass.cancelled} locked={saves.stale} busy={saves.busy}
+        onPick={(id, status) => void saves.saveMass(id, status ? { status, reason: null } : null)}
+        onMarkAll={() => void saves.markAllMass()} />
 
       <div role="tablist" aria-label="Cách điểm danh" className="grid grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
         {(["map", "list"] as const).map((m) => {
@@ -244,7 +259,7 @@ export function AttendanceBoard({ board, userId, renderId }: { board: Board; use
         <Sheet label="Chưa lưu xong" onClose={guard.stay}>
           <h2 className="font-display text-lg font-semibold">Chưa lưu xong</h2>
           <p className="text-ink-soft">
-            {leaveMessage(saves.pending, saves.failures.length)}
+            {leaveMessage(saves.pending, failedCount)}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" className="btn btn-primary btn-lg" onClick={guard.stay}>Ở lại</button>
@@ -254,9 +269,13 @@ export function AttendanceBoard({ board, userId, renderId }: { board: Board; use
       )}
 
       <SaveToasts
-        failures={saves.failures.map((f) => ({ studentId: f.studentId, name: nameOf(f.studentId), message: f.message }))}
-        onRetry={saves.retry} onDismiss={saves.dismiss}
-        undo={saves.undo && !cancelled ? { text: `Đã ghi có mặt ${saves.undo.count} em`, onUndo: () => void saves.undoMarkAll(), onClose: saves.closeUndo } : null} />
+        failures={[
+          ...saves.failures.map((f) => ({ studentId: f.studentId, name: nameOf(f.studentId), message: f.message })),
+          ...saves.massFailures.map((f) => ({ studentId: MASS_KEY + f.studentId, name: `${nameOf(f.studentId)} (đi lễ)`, message: f.message })),
+        ]}
+        onRetry={(key) => (key.startsWith(MASS_KEY) ? saves.retryMass(key.slice(MASS_KEY.length)) : saves.retry(key))}
+        onDismiss={(key) => (key.startsWith(MASS_KEY) ? saves.dismissMass(key.slice(MASS_KEY.length)) : saves.dismiss(key))}
+        undo={undoToast} />
     </div>
   );
 }

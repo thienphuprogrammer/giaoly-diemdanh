@@ -21,3 +21,12 @@ export function massSundayFor(heldOn: string): string {
   const weekday = new Date(ms).getUTCDay(); // 0 = Chúa nhật
   return new Date(ms - weekday * DAY_MS).toISOString().slice(0, 10);
 }
+
+/** Ngày YYYY-MM-DD có phải Chúa nhật không (sai định dạng/không có thật => false). */
+export function isSunday(day: string): boolean {
+  try {
+    return massSundayFor(day) === day;
+  } catch {
+    return false;
+  }
+}

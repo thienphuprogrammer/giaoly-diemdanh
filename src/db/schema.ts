@@ -9,6 +9,8 @@ export const attendanceStatus = pgEnum("attendance_status", [
 ]);
 
 export const sessionKind = pgEnum("session_kind", ["class", "mass"]);
+/** Loại buổi: `class` = buổi học giáo lý, `mass` = thánh lễ Chúa nhật của lớp. */
+export type SessionKind = (typeof sessionKind.enumValues)[number];
 
 export const grades = pgTable("grades", {
   id: uuid("id").primaryKey().defaultRandom(),

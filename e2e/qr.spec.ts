@@ -28,7 +28,7 @@ const tokenOf = async (name: string) => { const db = sql(); try { return (await 
 const feed = (page: Page, token: string) => page.evaluate((t) => (window as unknown as { __scanFeed: (p: string) => Promise<void> }).__scanFeed(`dd1.${t}`), token);
 // global-setup có sẵn một dòng điểm danh của buổi trước (An vắng), nên chỉ đếm dòng của buổi hôm nay.
 const todayMarks = (db: postgres.Sql) =>
-  db`select st.full_name, a.status from attendance a join sessions se on se.id = a.session_id join students st on st.id = a.student_id where se.held_on = ${today()} order by st.full_name`;
+  db`select st.full_name, a.status from attendance a join sessions se on se.id = a.session_id join students st on st.id = a.student_id where se.held_on = ${today()} and se.kind = 'class' order by st.full_name`;
 
 const scanRegion = (page: Page) => page.getByRole("region", { name: "Quét thẻ QR" });
 
@@ -307,7 +307,7 @@ test("kết thúc buổi: Đánh vắng các em còn lại từ sheet cuối bu�
     expect((await todayMarks(db)).map((r) => [r.full_name, r.status])).toEqual([
       ["Nguyễn An", "present"], ["Nguyễn Bình", "absent_unexcused"], ["Nguyễn Chi", "absent_unexcused"], ["Nguyễn Dũng", "absent_unexcused"],
     ]);
-    const [ev] = await db`select count(*)::int as n from attendance a join sessions se on se.id = a.session_id where se.held_on = ${today()} and a.status = 'absent_unexcused' and a.last_event_id is not null`;
+    const [ev] = await db`select count(*)::int as n from attendance a join sessions se on se.id = a.session_id where se.held_on = ${today()} and se.kind = 'class' and a.status = 'absent_unexcused' and a.last_event_id is not null`;
     expect(ev.n).toBe(0); // dòng đánh vắng không mang mã lượt quét/lô nào
   } finally {
     await db.end();

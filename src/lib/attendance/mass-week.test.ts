@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { massSundayFor } from "./mass-week";
+import { isSunday, massSundayFor } from "./mass-week";
 
 describe("massSundayFor", () => {
   it.each([
@@ -31,5 +31,11 @@ describe("massSundayFor", () => {
 
   it.each(["", "2026-1-1", "11/10/2026", "2026-02-30", "2026-13-01", "abcd-ef-gh"])("rejects %j", (bad) => {
     expect(() => massSundayFor(bad)).toThrow();
+  });
+});
+
+describe("isSunday", () => {
+  it.each([["2026-10-11", true], ["2026-10-10", false], ["2026-10-12", false], ["bad", false], ["2026-02-30", false]])("%s -> %s", (day, expected) => {
+    expect(isSunday(day)).toBe(expected);
   });
 });

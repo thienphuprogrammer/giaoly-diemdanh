@@ -128,8 +128,14 @@ export const pendingCount = (state: BoardState): number => Object.values(state.i
 
 /** Chip trạng thái lưu: đang lưu (kể cả `extraPending` như thao tác hàng loạt) / đã lưu / chưa có gì. */
 export function saveChip(state: BoardState, extraPending = 0): SaveChip {
-  const count = pendingCount(state) + extraPending;
+  return saveChipOf([state], extraPending);
+}
+
+/** Như `saveChip` cho một bảng có nhiều hàng đợi lưu (điểm danh buổi học + đi lễ): một chip chung. */
+export function saveChipOf(states: readonly BoardState[], extraPending = 0): SaveChip {
+  const count = states.reduce((n, s) => n + pendingCount(s), extraPending);
   if (count > 0) return { kind: "saving", count };
-  if (state.savedCount > 0 && state.failures.length === 0) return { kind: "saved" };
+  const saved = states.some((s) => s.savedCount > 0);
+  if (saved && states.every((s) => s.failures.length === 0)) return { kind: "saved" };
   return { kind: "idle" };
 }

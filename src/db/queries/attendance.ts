@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { visibleAssignments } from "@/lib/seating/assignments";
 import type { Assignment, Layout } from "@/lib/seating/types";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
-import { attendance, seatAssignments, seatingPlans, sessions, students, terms } from "../schema";
+import { attendance, seatAssignments, seatingPlans, sessions, students, terms, type SessionKind } from "../schema";
 import type { Db } from "../types";
 import { studentColumns } from "./students";
 
@@ -15,7 +15,7 @@ export async function findTermFor(db: Db, date: string) {
 }
 
 /** Buổi của lớp trong ngày theo loại; mặc định buổi học (`class`), không bao giờ lẫn buổi đi lễ cùng ngày. */
-export async function findSession(db: Db, classId: string, heldOn: string, kind: (typeof sessions.$inferSelect)["kind"] = "class") {
+export async function findSession(db: Db, classId: string, heldOn: string, kind: SessionKind = "class") {
   const [row] = await db.select().from(sessions)
     .where(and(eq(sessions.classId, classId), eq(sessions.heldOn, heldOn), eq(sessions.kind, kind)));
   return row ?? null;

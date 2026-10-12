@@ -11,6 +11,7 @@ export async function loadScanContext(db: Reader, userId: string, sessionId: str
       sessionId: sessions.id,
       classId: sessions.classId,
       cancelled: sessions.cancelled,
+      kind: sessions.kind, // buổi đi lễ không có "đi muộn": kiểm tra ngay trong truy vấn này, không thêm lượt DB
       canWrite: sql<boolean>`exists (select 1 from ${classCatechists} where ${classCatechists.classId} = ${sessions.classId} and ${classCatechists.userId} = ${userId})`,
       event: attendanceScans,
     })
