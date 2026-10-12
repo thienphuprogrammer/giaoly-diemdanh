@@ -65,15 +65,28 @@ describe("redactText", () => {
     ["sdt0901234567", "••••••567"],
     ["SDT:0901234567", "SDT:••••••567"],
     ["84901234567", "••••••567"],
+    ["sdt-0901234567", "sdt-••••••567"],
+    ["SĐT-0901234567", "SĐT-••••••567"],
+    ["mẹ-0901234567", "mẹ-••••••567"],
+    ["0901/234/567", "••••••567"],
+    ["0901–234–567", "••••••567"],
+    ["+84 (0) 90 123 4567", "••••••567"],
   ])("masks phone-shaped %s", (raw, masked) => {
     expect(redactText(raw)).toBe(masked);
     expect(redactText(`gọi mẹ ${raw} nhé`)).toContain("••••••567");
     expect(redactText(`gọi mẹ ${raw} nhé`)).not.toMatch(/0901|123|90-/);
   });
 
+  it("masks an old 11-digit landline", () => {
+    expect(redactText("máy bàn 0236 3822 123")).toBe("máy bàn ••••••123");
+    expect(redactText("028 3822 1234")).toBe("••••••234");
+  });
+
   it.each([
     "2026-10-12", "ngày 2026-10-12", "12 em", "2 tuần", "đã nghỉ 12345678 lần", "buổi 12/10", "Khối 1 - Lớp 2A",
     "12345678-1234-4123-8123-123456789012", "f0123456789e", "id-e09012345678", "2026-10-12 2026-10-13",
+    "08-10-2026", "05.10.2026", "08 10 2026", "ngày 05.10.2026 12", "05/10/2026", "mã HS 00012345", "0 1 2 3 4 5 6 7", "0123456",
+    "a1b2c3d4-0901234567ab", "0b1c2d3e-0901234567",
   ])("keeps %s untouched", (text) => {
     expect(redactText(text)).toBe(text);
     expect(() => sanitizeSummary({ note: text })).not.toThrow();
@@ -161,5 +174,18 @@ describe("sanitizeSummary", () => {
     } catch (e) {
       expect(String((e as Error).message)).not.toContain(sampleToken);
     }
+  });
+});
+
+describe("redactText cost", () => {
+  it.each([
+    ["digits", "0".repeat(32_000)], ["spaced zeros", "0 ".repeat(16_000)], ["dashed", "0-".repeat(16_000)],
+    ["parens", "(0".repeat(16_000)], ["letters", "a".repeat(32_000)], ["prefix + zeros", `sdt${"0 ".repeat(15_000)}`],
+    ["84 runs", "84".repeat(16_000)], ["seps", "0".concat(" ".repeat(32_000), "1")],
+  ])("is fast on adversarial input (%s)", (_n, input) => {
+    const t = performance.now();
+    redactText(input);
+    try { sanitizeSummary({ note: input }); } catch { /* chỉ đo thời gian: nội dung có thể bị từ chối */ }
+    expect(performance.now() - t).toBeLessThan(150);
   });
 });

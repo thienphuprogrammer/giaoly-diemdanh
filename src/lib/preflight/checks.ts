@@ -102,6 +102,13 @@ export function migrationStatus(inJournal: number, applied: number): Check {
   return { id: "MIGRATIONS", level: "warn", message: `Database có ${applied} migration, nhiều hơn mã hiện tại (${inJournal}). Có thể đang chạy bản mã cũ hơn database.` };
 }
 
+/** TimeZone của phiên DB. Nhật ký/quét đã đọc đúng ở mọi múi giờ, nhưng cột `timestamp` không múi giờ nên UTC vẫn là cấu hình nên dùng. */
+export function timezoneCheck(tz: string | null | undefined): Check {
+  const name = (tz ?? "").trim();
+  if (/^(utc|etc\/utc|gmt|etc\/gmt|z)$/i.test(name)) return { id: "DB_TIMEZONE", level: "ok", message: `Múi giờ DB là ${name}.` };
+  return { id: "DB_TIMEZONE", level: "warn", message: `Múi giờ DB là "${name || "không rõ"}" (không phải UTC). Ứng dụng vẫn đọc đúng, nhưng nên đặt UTC cho các cột timestamp không múi giờ.` };
+}
+
 export interface Summary { ok: number; warn: number; fail: number; info: number; failed: boolean }
 
 export function summarize(checks: readonly Check[]): Summary {

@@ -52,11 +52,20 @@ const MASK = "••••••";
 const CARD_PAYLOAD = /dd1\.[0-9a-f]{32}/i;
 const HEX_TOKEN = /(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])/i;
 /**
- * SĐT Việt Nam: bắt đầu bằng 0, 84 hoặc +84 (có thể "(0"), các chữ số xen khoảng trắng/dấu chấm/gạch ngang/ngoặc, có thể
- * dính tiền tố chữ ASCII ("sdt0901…"). Neo ở đầu số để ngày ISO (2026-10-12), số đếm và đoạn toàn số của UUID không bị che:
- * trước tiền tố/chữ số đầu không được có chữ, số hoặc gạch ngang, nên "…-e0901…" trong UUID không khớp.
+ * SĐT Việt Nam: 0 / 84 / +84 rồi đủ chữ số (10 hoặc 11 chữ số kể cả đầu số 0; 84 + 9 số, có thể "(0)" sau 84), xen tối đa
+ * 2 ký tự ngăn cách (khoảng trắng . - – — / ngoặc) giữa hai chữ số, có thể dính tiền tố chữ ASCII ("sdt0901…").
+ * - Số phải có hình dạng SĐT (đủ 10-11 chữ số) nên mã ngắn ("mã HS 00012345") và đếm không bị che.
+ * - Loại bỏ ngày DD-MM-YYYY / DD.MM.YYYY / DD MM YYYY ngay tại đầu số; ngày ISO (2026-10-12) bị chặn bởi lookbehind.
+ * - Trước tiền tố/đầu số không được có chữ hoặc số; gạch ngang chỉ bị loại khi đứng sau một ký tự hex ("…e-0901…" của UUID),
+ *   nên "sdt-0901234567" hay "mẹ-0901234567" vẫn bị che. Mỗi vòng lặp đều tiêu thụ một chữ số và bị chặn số lần: không backtrack bùng nổ.
  */
-const PHONE_LIKE = /(?<![0-9A-Za-z-])(?:[A-Za-z]{1,10})?(?:\+?84|(?:\(\s?)?0)(?:[ .\-()]*\d){7,}(?![0-9A-Za-z-])/;
+const SEP = String.raw`[\s.\-–—/()]`;
+const PHONE_LIKE = new RegExp(
+  String.raw`(?<![0-9A-Za-z])(?<![0-9a-f]-)(?:[A-Za-z]{1,10})?` +
+  String.raw`(?!\d{1,2}[\s.\-–/]\d{1,2}[\s.\-–/](?:19|20)\d{2}(?!\d))` +
+  String.raw`(?:\+?84(?:[\s.\-–—/]{0,2}\(0\))?(?:${SEP}{0,2}\d){9}|(?:\(\s?)?0(?:${SEP}{0,2}\d){9,10})` +
+  String.raw`(?![0-9A-Za-z])(?!-[0-9a-f])`,
+);
 const MASKED_PHONE = /^•+\d{0,3}$/;
 
 /** Che SĐT: chỉ giữ 3 số cuối, độ dài cố định để không lộ độ dài số. */

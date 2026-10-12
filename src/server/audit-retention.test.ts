@@ -36,11 +36,11 @@ describe("pruneAudit", () => {
   it("honours a custom window and is idempotent", async () => {
     const db = await createTestDb();
     const b = await seedBasics(db);
-    await event(db, b.classId, "2027-10-01T00:00:00Z");
+    const keep = await event(db, b.classId, "2027-10-01T00:00:00Z");
     await event(db, b.classId, "2027-09-01T00:00:00Z");
     expect(await pruneAudit(db, { olderThanDays: 30, now: NOW })).toEqual({ deleted: 1 });
     expect(await pruneAudit(db, { olderThanDays: 30, now: NOW })).toEqual({ deleted: 0 });
-    expect(await db.select().from(auditEvents)).toHaveLength(1);
+    expect((await db.select({ id: auditEvents.id }).from(auditEvents)).map((r) => r.id)).toEqual([keep]);
   });
 
   it("never touches attendance_scans, however old", async () => {
@@ -52,14 +52,15 @@ describe("pruneAudit", () => {
       values (${crypto.randomUUID()}::uuid, 'scan', ${sid.rows[0].id}::uuid, ${kid.id}::uuid, 'h', 'applied', '2019-01-01T00:00:00')`);
     await event(db, b.classId, "2019-01-01T00:00:00Z");
     expect(await pruneAudit(db, { now: NOW })).toEqual({ deleted: 1 });
-    expect(await db.select().from(attendanceScans)).toHaveLength(1);
+    expect(await db.select().from(auditEvents)).toEqual([]);
+    expect((await db.select({ id: attendanceScans.eventId }).from(attendanceScans))).toHaveLength(1);
   });
 
   it("rejects a nonsensical window instead of deleting everything", async () => {
     const db = await createTestDb();
     const b = await seedBasics(db);
-    await event(db, b.classId, "2020-01-01T00:00:00Z");
+    const survivor = await event(db, b.classId, "2020-01-01T00:00:00Z");
     for (const bad of [0, -5, Number.NaN, 1.5, Infinity, 0.0001]) await expect(pruneAudit(db, { olderThanDays: bad, now: NOW })).rejects.toThrow(/olderThanDays/);
-    expect(await db.select().from(auditEvents)).toHaveLength(1);
+    expect((await db.select({ id: auditEvents.id }).from(auditEvents)).map((r) => r.id)).toEqual([survivor]);
   });
 });

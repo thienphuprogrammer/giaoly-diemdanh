@@ -17,6 +17,8 @@ export interface AuditLogQuery {
   from?: string;
   to?: string;
   group: AuditLogGroup;
+  /** Mốc ISO: không trả dòng cũ hơn (giữ 12 tháng, khớp `pruneAudit`). */
+  floor?: string;
   /** Chỉ lấy các dòng ĐỨNG SAU mốc này (cũ hơn) theo thứ tự (thời điểm, id) giảm dần. */
   before?: AuditBound;
   limit: number;
@@ -76,6 +78,7 @@ export async function listAuditRows(db: Reader, q: AuditLogQuery): Promise<Audit
     .leftJoin(users, eq(users.id, auditEvents.actorId))
     .where(and(
       eq(auditEvents.classId, q.classId),
+      q.floor ? gte(auditEvents.at, sql`${q.floor}::timestamptz`) : undefined,
       q.from ? gte(auditEvents.at, sql`${q.from}::timestamptz`) : undefined,
       q.to ? lt(auditEvents.at, sql`${q.to}::timestamptz`) : undefined,
       q.before ? sql`(${auditEvents.at}, ${auditEvents.id}) < (${q.before.at}::timestamptz, ${q.before.id}::uuid)` : undefined,
@@ -86,16 +89,19 @@ export async function listAuditRows(db: Reader, q: AuditLogQuery): Promise<Audit
 }
 
 /**
- * Lượt quét/chọn tên/hoàn tác ĐÃ ÁP DỤNG của các buổi thuộc lớp. `received_at` là `timestamp` không múi giờ lưu theo UTC
- * (như mọi nơi khác đọc cột này), nên mốc được so như UTC.
+ * Lượt quét/chọn tên/hoàn tác ĐÃ ÁP DỤNG của các buổi thuộc lớp. `received_at` là `timestamp` KHÔNG múi giờ: `now()` lưu
+ * giờ địa phương của phiên kết nối. Đọc nó như UTC chỉ đúng khi TimeZone của DB là UTC; ở đây đổi sang `timestamptz` bằng
+ * chính TimeZone của phiên (`at time zone current_setting('TimeZone')`) nên đúng ở mọi múi giờ (cùng phiên ghi và đọc).
+ * Nhóm: `attendance` = buổi học, `mass` = buổi đi lễ, `scan` = tất cả, `all` = tất cả.
  */
 export async function listScanRows(db: Reader, q: AuditLogQuery): Promise<ScanRow[]> {
-  if (q.group !== "all" && q.group !== "scan" && q.group !== "mass") return [];
-  const at = attendanceScans.receivedAt;
+  if (q.group !== "all" && q.group !== "scan" && q.group !== "mass" && q.group !== "attendance") return [];
+  const at = sql`(${attendanceScans.receivedAt} at time zone current_setting('TimeZone'))`;
+  const kind = q.group === "mass" ? eq(sessions.kind, "mass") : q.group === "attendance" ? eq(sessions.kind, "class") : undefined;
   return db
     .select({
       id: attendanceScans.eventId,
-      atKey: sql<string>`to_char(${at}, ${sql.raw(`'${ISO_MICROS}'`)})`,
+      atKey: sql<string>`to_char(${at} at time zone 'UTC', ${sql.raw(`'${ISO_MICROS}'`)})`,
       actorName: users.name,
       kind: attendanceScans.kind,
       mode: attendanceScans.mode,
@@ -112,10 +118,11 @@ export async function listScanRows(db: Reader, q: AuditLogQuery): Promise<ScanRo
     .where(and(
       eq(sessions.classId, q.classId),
       eq(attendanceScans.result, "applied"),
-      q.group === "mass" ? eq(sessions.kind, "mass") : undefined,
-      q.from ? gte(at, sql`(${q.from}::timestamptz at time zone 'UTC')`) : undefined,
-      q.to ? lt(at, sql`(${q.to}::timestamptz at time zone 'UTC')`) : undefined,
-      q.before ? sql`(${at}, ${attendanceScans.eventId}) < ((${q.before.at}::timestamptz at time zone 'UTC'), ${q.before.id}::uuid)` : undefined,
+      kind,
+      q.floor ? sql`${at} >= ${q.floor}::timestamptz` : undefined,
+      q.from ? sql`${at} >= ${q.from}::timestamptz` : undefined,
+      q.to ? sql`${at} < ${q.to}::timestamptz` : undefined,
+      q.before ? sql`(${at}, ${attendanceScans.eventId}) < (${q.before.at}::timestamptz, ${q.before.id}::uuid)` : undefined,
     ))
     .orderBy(desc(at), desc(attendanceScans.eventId))
     .limit(q.limit);

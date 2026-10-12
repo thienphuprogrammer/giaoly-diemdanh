@@ -7,6 +7,7 @@ import type { AppUser } from "@/lib/access/can-access";
 import { decodeCursor, encodeCursor } from "@/lib/audit/cursor";
 import { describeAuditEvent, describeScanEvent } from "@/lib/audit/describe";
 import { shortDate } from "@/lib/date-label";
+import { AUDIT_RETENTION_DAYS } from "../audit-retention";
 import { todayInVietnam } from "@/lib/dates";
 import { guardClass } from "../guard";
 
@@ -27,12 +28,24 @@ export interface AuditLogItem {
   action: string;
 }
 
+/** Bộ lọc ĐÃ ÁP DỤNG (sau khi bỏ giá trị sai): trang dùng nó để vẽ "Xoá lọc", lời nhắn trống và liên kết. */
+export interface EffectiveFilters {
+  from: string | null;
+  to: string | null;
+  group: AuditLogGroup;
+  cursorUsed: boolean;
+  /** `from` sau `to`: khoảng rỗng. */
+  rangeInverted: boolean;
+}
+
 export interface AuditLogPage {
+  filters: EffectiveFilters;
   items: AuditLogItem[];
   nextCursor: string | null;
 }
 
-const isoDay = z.string().refine((v) => shortDate(v) !== v, "bad day");
+/** Ngày thật, năm 2000-9998 (9999-12-31 + 1 ngày vượt giới hạn của Postgres/ISO; năm 0000 bị Postgres từ chối). */
+const isoDay = z.string().refine((v) => shortDate(v) !== v && Number(v.slice(0, 4)) >= 2000 && Number(v.slice(0, 4)) <= 9998, "bad day");
 const inputSchema = z.object({
   classId: z.string(),
   from: isoDay.optional().catch(undefined),
@@ -61,7 +74,7 @@ const newestFirst = (a: Merged, b: Merged) =>
  * dòng mới nhất của phần hợp nhất luôn nằm trong hợp của hai nhóm đó, nên ghép lại đúng qua mọi ranh giới trang.
  * Quyền đọc = người đọc được lớp; null (như "không tồn tại") nếu không. Sự kiện cấp khối (`class_id` rỗng) không vào đây.
  */
-export async function listAuditLog(db: Db, user: AppUser, raw: unknown): Promise<AuditLogPage | null> {
+export async function listAuditLog(db: Db, user: AppUser, raw: unknown, now: Date = new Date()): Promise<AuditLogPage | null> {
   const parsed = inputSchema.safeParse(raw);
   if (!parsed.success) return null;
   const { classId, from, to, group, cursor } = parsed.data;
@@ -70,6 +83,7 @@ export async function listAuditLog(db: Db, user: AppUser, raw: unknown): Promise
   const bound = decodeCursor(cursor);
   const q: AuditLogQuery = {
     classId, group, limit: limit + 1,
+    floor: new Date(now.getTime() - AUDIT_RETENTION_DAYS * 86_400_000).toISOString(),
     from: from ? startOfDay(from) : undefined,
     to: to ? startOfNextDay(to) : undefined,
     before: bound ?? undefined,
@@ -92,7 +106,10 @@ export async function listAuditLog(db: Db, user: AppUser, raw: unknown): Promise
   const page = merged.slice(0, limit);
   const last = page[limit - 1];
   const nextCursor = merged.length > limit && last ? encodeCursor({ at: last.sortAt, id: last.id }) : null;
-  return { items: page.map((m) => m.item), nextCursor };
+  const filters: EffectiveFilters = {
+    from: from ?? null, to: to ?? null, group, cursorUsed: bound !== null, rangeInverted: Boolean(from && to && from > to),
+  };
+  return { filters, items: page.map((m) => m.item), nextCursor };
 }
 
 export type { AuditLogGroup };

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { checkEnv, maskDatabaseUrl, migrationStatus, summarize, type Check } from "./checks";
+import { checkEnv, maskDatabaseUrl, migrationStatus, summarize, timezoneCheck, type Check } from "./checks";
 
 const goodSecret = () => randomBytes(36).toString("base64");
 const DB = "postgres://appuser:s3cretpw@ep-quiet-sky-123456.ap-southeast-1.aws.neon.tech:5432/diemdanh?sslmode=require";
@@ -132,5 +132,14 @@ describe("summarize", () => {
       { id: "c", level: "fail", message: "" },
     ]);
     expect(s).toEqual({ ok: 1, warn: 1, fail: 1, info: 0, failed: true });
+  });
+});
+
+describe("timezoneCheck", () => {
+  it.each(["UTC", "Etc/UTC", "utc", "GMT"])("%s is fine", (tz) => {
+    expect(timezoneCheck(tz)).toMatchObject({ id: "DB_TIMEZONE", level: "ok" });
+  });
+  it.each(["Asia/Ho_Chi_Minh", "America/New_York", "", null, undefined])("%s warns", (tz) => {
+    expect(timezoneCheck(tz)).toMatchObject({ id: "DB_TIMEZONE", level: "warn" });
   });
 });

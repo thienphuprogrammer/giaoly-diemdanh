@@ -21,12 +21,12 @@ export default async function AuditLogPage({
   const { classId } = await params;
   const sp = await searchParams;
   const user = await requireUser();
-  const [tu, den, sau] = [first(sp.tu), first(sp.den), first(sp.sau)];
-  const group = groupFromSlug(first(sp.loai));
-  const page = await listAuditLog(db, user, { classId, from: tu, to: den, group, cursor: sau });
+  const page = await listAuditLog(db, user, { classId, from: first(sp.tu), to: first(sp.den), group: groupFromSlug(first(sp.loai)), cursor: first(sp.sau) });
   if (!page) notFound();
+  // Dùng bộ lọc ĐÃ ÁP DỤNG (giá trị sai trên URL đã bị bỏ), không dùng chuỗi thô từ URL.
+  const { from: tu, to: den, group, cursorUsed: sau, rangeInverted } = page.filters;
   const filtered = Boolean(tu || den || group !== "all");
-  const keep = { from: tu, to: den, group };
+  const keep = { from: tu ?? undefined, to: den ?? undefined, group };
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -37,7 +37,7 @@ export default async function AuditLogPage({
         {LOG_GROUPS.map((g) => {
           const active = g.group === group;
           return (
-            <Link key={g.group} prefetch={false} href={logHref(classId, { from: tu, to: den, group: g.group })} aria-current={active ? "page" : undefined}
+            <Link key={g.group} prefetch={false} href={logHref(classId, { ...keep, group: g.group })} aria-current={active ? "page" : undefined}
               className={`btn btn-sm shrink-0 ${active ? "btn-primary" : "btn-secondary"}`}>
               {g.label}
             </Link>
@@ -54,6 +54,7 @@ export default async function AuditLogPage({
           {filtered && <Link prefetch={false} href={logHref(classId)} className="btn btn-secondary btn-lg">Xoá lọc</Link>}
         </div>
       </form>
+      {rangeInverted && <p role="alert" className="rounded-control bg-warn-watch-tint px-4 py-3 text-sm text-warn-watch">Ngày bắt đầu sau ngày kết thúc.</p>}
       {page.items.length === 0 ? (
         <EmptyState icon={History} title={sau ? "Hết nhật ký" : "Chưa có dòng nhật ký nào"}
           action={sau ? <Link prefetch={false} href={logHref(classId, keep)} className="btn btn-secondary btn-lg">Về đầu danh sách</Link> : undefined}>

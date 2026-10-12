@@ -6,6 +6,13 @@ export interface AuditCursor { at: string; id: string }
 const ISO_MICROS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const cursorSchema = z.object({ a: z.string().regex(ISO_MICROS), i: z.uuid() }).strict();
 
+/** Thời điểm thật (không 30/02, không giờ 25) và năm 2000-9999: Postgres từ chối năm 0000 và JS vẫn "sửa" ngày sai. */
+function isRealInstant(micros: string): boolean {
+  const ms = micros.slice(0, 23);
+  const d = new Date(`${ms}Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 23) === ms && d.getUTCFullYear() >= 2000;
+}
+
 /** Không trong suốt với người dùng (base64url của JSON); không có bí mật nào trong đó. */
 export function encodeCursor(c: AuditCursor): string {
   return Buffer.from(JSON.stringify({ a: c.at, i: c.id }), "utf8").toString("base64url");
@@ -16,7 +23,7 @@ export function decodeCursor(raw: unknown): AuditCursor | null {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > 256 || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
   try {
     const parsed = cursorSchema.safeParse(JSON.parse(Buffer.from(raw, "base64url").toString("utf8")));
-    if (!parsed.success || Number.isNaN(Date.parse(parsed.data.a))) return null;
+    if (!parsed.success || !isRealInstant(parsed.data.a)) return null;
     return { at: parsed.data.a, id: parsed.data.i.toLowerCase() };
   } catch {
     return null;

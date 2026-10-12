@@ -1,4 +1,4 @@
-import { lt } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { auditEvents } from "@/db/schema";
 import type { Db } from "@/db/types";
 
@@ -18,6 +18,10 @@ export async function pruneAudit(
   const days = opts.olderThanDays ?? AUDIT_RETENTION_DAYS;
   if (!Number.isInteger(days) || days < 1) throw new Error("pruneAudit: olderThanDays must be an integer >= 1");
   const cutoff = new Date((opts.now ?? new Date()).getTime() - days * DAY_MS);
-  const deleted = await db.delete(auditEvents).where(lt(auditEvents.at, cutoff)).returning({ id: auditEvents.id });
-  return { deleted: deleted.length };
+  // Đếm trong SQL: không kéo hàng chục nghìn id về chỉ để lấy độ dài.
+  const res: unknown = await db.execute(sql`
+    with d as (delete from ${auditEvents} where ${auditEvents.at} < ${cutoff.toISOString()}::timestamptz returning 1)
+    select count(*)::int as n from d`);
+  const rows = (Array.isArray(res) ? res : (res as { rows: Record<string, unknown>[] }).rows) as Record<string, unknown>[];
+  return { deleted: Number(rows[0]?.n ?? 0) };
 }
