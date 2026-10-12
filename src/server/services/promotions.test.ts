@@ -11,6 +11,7 @@ import { applyScan } from "./scan";
 import { massAttentionList, massStats } from "./mass-stats";
 import { attentionList, classStats, gradeOverview } from "./stats";
 import { getStudentProfile } from "./student-profile";
+import { classTermReport, gradeReport } from "./term-report";
 
 const NOT_FOUND = "Không tìm thấy lớp";
 
@@ -242,10 +243,56 @@ describe("after a promotion: history, stats and scanning", () => {
     expect(await attentionList(db, b.glv, b.termId, LATER)).toEqual([]);
     const overview = await gradeOverview(db, b.head, b.termId, LATER);
     expect(overview?.find((r) => r.classId === b.classId)).toMatchObject({ studentCount: 3, sessions: 3, warningCount: 1 });
-    expect(overview?.find((r) => r.classId === cls2.id)).toMatchObject({ studentCount: 2, sessions: 0 });
-    // Lớp mới, học kỳ cũ: các em là thành viên hiện tại nhưng không mang theo dòng của lớp cũ.
+    // Lớp mới, học kỳ cũ: các em được chuyển vào SAU (đã có dòng ở lớp khác trong học kỳ đó) không phải thành viên.
+    expect(overview?.find((r) => r.classId === cls2.id)).toMatchObject({ studentCount: 0, sessions: 0, warningCount: 0 });
     const newer = await classStats(db, glv2, cls2.id, b.termId, LATER);
-    expect(newer?.rows.map((r) => [r.fullName, r.summary.marked, r.former])).toEqual([["An", 0, false], ["Bình", 0, false]]);
+    expect(newer?.rows).toEqual([]);
+  });
+
+  it("past term of the destination class: a member never marked that term stays; a promoted-in pupil marked elsewhere does not", async () => {
+    const { db, b, cls2, glv2, an, apply, kid } = await withHistory();
+    const quiet = await kid("Dung", {}, cls2.id); // thành viên A2 từ đầu, chưa từng được điểm danh trong học kỳ
+    const [s2] = await db.insert(sessions).values({ classId: cls2.id, termId: b.termId, heldOn: "2026-10-04" }).returning();
+    const regular = await kid("Đạt", {}, cls2.id);
+    await db.insert(attendance).values({ sessionId: s2.id, studentId: regular.id, status: "present" });
+    await apply(b.head, [an.id]);
+    const past = await classStats(db, glv2, cls2.id, b.termId, LATER);
+    expect(past?.rows.map((r) => [r.fullName, r.former])).toEqual([["Dung", false], ["Đạt", false]]);
+    expect(JSON.stringify(past)).not.toContain(an.id);
+    expect(past?.rows.map((r) => r.studentId)).toContain(quiet.id);
+    // Học kỳ hiện tại giữ nguyên: mọi thành viên hiện tại.
+    const now = await classStats(db, glv2, cls2.id, b.termId, CURRENT);
+    expect(now?.rows.map((r) => r.fullName)).toEqual(["An", "Dung", "Đạt"]);
+    // Lớp nguồn vẫn liệt kê An với nhãn.
+    const source = await classStats(db, b.glv, b.classId, b.termId, LATER);
+    expect(source?.rows.find((r) => r.studentId === an.id)?.former).toBe(true);
+  });
+
+  it("past term of the destination class: mass stats follow the same roster rule (parity with class stats)", async () => {
+    const { db, b, cls2, glv2, an, binh, apply, kid } = await withHistory();
+    const [m1] = await db.insert(sessions).values({ classId: b.classId, termId: b.termId, heldOn: "2026-10-04", kind: "mass" }).returning();
+    await db.insert(attendance).values({ sessionId: m1.id, studentId: an.id, status: "present" });
+    const [m2] = await db.insert(sessions).values({ classId: cls2.id, termId: b.termId, heldOn: "2026-10-04", kind: "mass" }).returning();
+    const member = await kid("Dung", {}, cls2.id);
+    await db.insert(attendance).values({ sessionId: m2.id, studentId: member.id, status: "present" });
+    await apply(b.head, [an.id, binh.id]);
+    const mass = await massStats(db, glv2, { classId: cls2.id, termId: b.termId, today: LATER });
+    const stats = await classStats(db, glv2, cls2.id, b.termId, LATER);
+    expect(mass?.rows.map((r) => r.fullName)).toEqual(["Dung"]);
+    expect(mass?.rows.map((r) => r.fullName)).toEqual(stats?.rows.map((r) => r.fullName));
+    const current = await massStats(db, glv2, { classId: cls2.id, termId: b.termId, today: CURRENT });
+    expect(current?.rows.map((r) => r.fullName)).toEqual(["An", "Bình", "Dung"]);
+  });
+
+  it("past term of the destination class: the printable term report and the grade report inherit the rule", async () => {
+    const { db, b, cls2, glv2, an, binh, apply } = await withHistory();
+    await apply(b.head, [an.id, binh.id]);
+    const report = await classTermReport(db, glv2, cls2.id, b.termId, LATER);
+    expect(report).not.toBeNull();
+    expect(JSON.stringify(report)).not.toContain(an.id);
+    expect(JSON.stringify(report)).not.toContain(binh.id);
+    const grade = await gradeReport(db, b.head, b.termId, LATER);
+    expect(grade?.classes.find((c) => c.classId === cls2.id)).toMatchObject({ studentCount: 0, sessions: 0, unexcusedWarnings: 0, massWarnings: 0 });
   });
 
   it("past term: mass stats of the old class keep promoted students and their weeks", async () => {
@@ -315,12 +362,13 @@ describe("past term after promotions: one labelling rule, attention lists stay a
     expect(labels(stats?.rows)).toEqual([["An", true, false], ["Bình", true, false], ["Chi", false, false], ["Nghỉ", false, true]]);
     const mass = await massStats(db, b.head, { classId: b.classId, termId: b.termId, today: LATER });
     expect(labels(mass?.rows)).toEqual(labels(stats?.rows));
-    // Lớp A2: Bình (đã chuyển tiếp sang A3) mang nhãn ở A2; An là thành viên hiện tại của A2.
+    // Lớp A2: Bình (đã chuyển tiếp sang A3) mang nhãn ở A2; An (chuyển vào A2 sau, có dòng ở lớp A trong học kỳ) không
+    // thuộc số liệu học kỳ cũ của A2.
     const a2 = await classStats(db, b.head, cls2.id, b.termId, LATER);
-    expect(a2?.rows.map((r) => [r.fullName, r.former, r.summary.marked])).toEqual([["An", false, 0], ["Bình", true, 1]]);
+    expect(a2?.rows.map((r) => [r.fullName, r.former, r.summary.marked])).toEqual([["Bình", true, 1]]);
     const overview = await gradeOverview(db, b.head, b.termId, LATER);
     expect(overview?.find((r) => r.classId === b.classId)?.studentCount).toBe(4);
-    expect(overview?.find((r) => r.classId === cls2.id)?.studentCount).toBe(2);
+    expect(overview?.find((r) => r.classId === cls2.id)?.studentCount).toBe(1);
   });
 
   it("attention lists (home, Cần chú ý) never list former or inactive students, even in the summer-gap default term", async () => {

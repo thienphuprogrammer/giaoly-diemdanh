@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { postgresOptionsFromEnv, sanitizeDatabaseUrl } from "../src/db/connection-options";
 import { errorSummary } from "../src/lib/error-summary";
-import { checkEnv, migrationStatus, summarize, timezoneCheck, type Check } from "../src/lib/preflight/checks";
+import { checkEnv, migrationStatus, postgresVersionCheck, summarize, timezoneCheck, type Check } from "../src/lib/preflight/checks";
 import { appliedMigrationCount, journalCount } from "../src/lib/preflight/db";
 
 /**
@@ -19,6 +19,8 @@ async function dbChecks(): Promise<Check[]> {
   try {
     await sql`select 1`;
     const out: Check[] = [{ id: "DB_CONNECT", level: "ok", message: "Kết nối database thành công." }];
+    const version = (await sql`show server_version_num`) as unknown as { server_version_num?: string }[];
+    out.push(postgresVersionCheck(version[0]?.server_version_num));
     const applied = await appliedMigrationCount((q) => sql.unsafe(q));
     out.push(migrationStatus(journalCount(readFileSync("./drizzle/meta/_journal.json", "utf8")), applied));
     const tz = (await sql`show timezone`) as unknown as { TimeZone?: string }[];

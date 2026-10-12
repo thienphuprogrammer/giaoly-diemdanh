@@ -3,7 +3,7 @@ import { sessions, students } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
 import { setStatus } from "./attendance";
-import { applyScan, getScanResults, getScanRoster } from "./scan";
+import { getScanRoster } from "./scan";
 
 async function setup() {
   const db = await createTestDb();
@@ -32,25 +32,5 @@ describe("getScanRoster", () => {
     expect(await getScanRoster(db, b.head, s.id)).toBeNull();
     expect(await getScanRoster(db, b.otherGlv, s.id)).toBeNull();
     expect(await getScanRoster(db, b.glv, "nope")).toBeNull();
-  });
-});
-
-describe("getScanResults", () => {
-  it("returns the stored result of known events and skips unknown ones", async () => {
-    const { db, b, mk } = await setup();
-    const [an] = await db.insert(students).values({ classId: b.classId, fullName: "An" }).returning();
-    const s = await mk("2026-10-11");
-    const eventId = crypto.randomUUID();
-    await applyScan(db, b.glv, { eventId, sessionId: s.id, kind: "scan", token: an.qrToken, mode: "present" });
-    const r = await getScanResults(db, b.glv, { sessionId: s.id, eventIds: [eventId, crypto.randomUUID()] });
-    expect(r).toEqual({ ok: true, data: { results: [{ eventId, kind: "scan", result: "applied", studentId: an.id, status: "present" }] } });
-  });
-
-  it("is forbidden for non-writers and rejects more than 50 ids", async () => {
-    const { db, b, mk } = await setup();
-    const s = await mk("2026-10-11");
-    expect(await getScanResults(db, b.head, { sessionId: s.id, eventIds: [] })).toMatchObject({ ok: false, code: "forbidden" });
-    const many = Array.from({ length: 51 }, () => crypto.randomUUID());
-    expect(await getScanResults(db, b.glv, { sessionId: s.id, eventIds: many })).toMatchObject({ ok: false, code: "bad_request" });
   });
 });

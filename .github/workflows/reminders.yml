@@ -1,5 +1,9 @@
 # Gọi route nhắc việc mỗi ~10 phút (docs/deploy-vercel-ios.md, mục 9 "Nhắc việc tự động").
-# Cần hai repository secret: APP_URL (https://ten-app.vercel.app) và CRON_SECRET (giống trên Vercel).
+# Cần hai repository secret: APP_URL (https://ten-app.vercel.app) và CRON_SECRET (giống trên Vercel), rồi mới bật
+# repository variable REMINDERS_ENABLED=true (Settings → Secrets and variables → Actions → Variables). Chưa bật biến thì
+# lịch bỏ qua job (không có lần chạy đỏ trước khi đặt secret); nút "Run workflow" (chạy tay) luôn chạy để thử.
+# Phút GitHub Actions chỉ miễn phí cho repo công khai: repo riêng tư lịch 10 phút tốn ~4.400 phút/tháng (vượt 2.000
+# phút miễn phí) — đổi sang "*/30 * * * *" hoặc dùng bộ gọi ngoài (cron-job.org), xem docs/deploy-vercel-ios.md mục 9.
 # Lịch của GitHub chỉ chạy trên nhánh mặc định, có thể trễ (khoảng cách tối thiểu 5 phút) và bị GitHub tự tắt sau
 # 60 ngày repo không có hoạt động. Cửa sổ nhắc của app dài 2,5 giờ nên trễ vài phút không sao.
 name: Nhắc việc
@@ -17,6 +21,7 @@ concurrency:
 
 jobs:
   ping:
+    if: github.event_name == 'workflow_dispatch' || vars.REMINDERS_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:

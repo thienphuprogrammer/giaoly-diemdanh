@@ -1,6 +1,6 @@
 import { massGrid } from "@/db/queries/mass-stats";
 import {
-  catechistsOf, claimNotifications, classesOfGrades, currentTerm, gradeHeads, pruneNotificationLog, releaseNotification,
+  catechistsOf, claimNotifications, classNamesOfGrades, currentTerm, gradeHeads, pruneNotificationLog, releaseNotification,
   scheduledClasses, type Recipient,
 } from "@/db/queries/reminders";
 import { termRecords, termRoster } from "@/db/queries/stats";
@@ -11,7 +11,7 @@ import type { PushMessage } from "@/lib/push/payload";
 import type { PushSender } from "@/lib/push/send-many";
 import { checkVapid } from "@/lib/push/vapid";
 import {
-  classReminderKey, classReminderMessage, thresholdKey, thresholdMessage, type ReminderKind, type ThresholdKind,
+  THRESHOLD_KINDS, classReminderKey, classReminderMessage, thresholdKey, thresholdMessage, type ReminderKind, type ThresholdKind,
 } from "@/lib/reminders/messages";
 import { isClassReminderDue, vnClock, type VnClock } from "@/lib/reminders/schedule";
 import type { CronSummary } from "../http/cron";
@@ -22,7 +22,7 @@ import { buildRows } from "./stats";
 /**
  * Tác vụ nhắc việc (spec §4), gọi từ `/api/cron/nhac-viec` mỗi ~10 phút:
  * 1. nhắc GLV được phân công khi 30 phút–3 giờ sau giờ học mà buổi HỌC hôm nay chưa có dấu điểm danh nào (bỏ buổi huỷ);
- *    một lần mỗi (lớp, ngày) mỗi GLV;
+ *    chỉ khi hôm nay nằm trong một học kỳ và lớp còn em đang học; một lần mỗi (lớp, ngày) mỗi GLV;
  * 2. báo trưởng khối khi em đang học ở lớp đang ở trạng thái cảnh báo vắng học hoặc vắng lễ trong học kỳ hiện tại; một
  *    lần mỗi (em, học kỳ, loại) mỗi trưởng khối, GỘP thành một thông báo mỗi trưởng khối mỗi loại mỗi lần chạy. Lần chạy
  *    đầu tiên sau khi triển khai (hoặc sau khi trưởng khối bật thông báo) gửi MỘT thông báo gộp cho các cảnh báo đang có;
@@ -121,6 +121,8 @@ async function notify(ctx: Ctx, kind: ReminderKind, recipient: Recipient, keys: 
 
 async function classReminders(ctx: Ctx): Promise<Step> {
   const { date } = ctx.clock;
+  // Chỉ nhắc trong học kỳ (không nhắc dịp hè / giữa hai học kỳ).
+  if (!(await currentTerm(ctx.db, date))) return DONE(ZERO);
   const due = (await scheduledClasses(ctx.db, ctx.clock.weekday, date))
     .filter((c) => isClassReminderDue(c, ctx.clock) && !c.cancelled && !c.marked);
   const recipients = await catechistsOf(ctx.db, due.map((c) => c.id));
@@ -135,13 +137,11 @@ async function classReminders(ctx: Ctx): Promise<Step> {
   return DONE(tally);
 }
 
-const THRESHOLD_KINDS: readonly ThresholdKind[] = ["absence_threshold", "mass_threshold"];
-
 async function thresholdNotices(ctx: Ctx, hitsOf: typeof thresholdHits): Promise<Step> {
   const heads = await gradeHeads(ctx.db);
   const term = heads.length > 0 ? await currentTerm(ctx.db, ctx.clock.date) : null;
   if (!term) return DONE(ZERO);
-  const classList = await classesOfGrades(ctx.db, [...new Set(heads.map((h) => h.gradeId))]);
+  const classList = await classNamesOfGrades(ctx.db, [...new Set(heads.map((h) => h.gradeId))]);
   if (ctx.outOfTime()) return STOPPED(ZERO);
   const gradeOf = new Map(classList.map((c) => [c.id, c.gradeId]));
   const nameOf = new Map(classList.map((c) => [c.id, c.name]));

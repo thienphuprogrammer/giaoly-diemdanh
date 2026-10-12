@@ -1,10 +1,17 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import { attendance, classes, sessions, students, terms } from "../schema";
 import type { Db } from "../types";
 import { membershipOf, type Membership } from "@/lib/promotion";
 import { studentColumns } from "./students";
 
 export const listTerms = (db: Db) => db.select().from(terms).orderBy(desc(terms.startsOn));
+
+/** Học kỳ theo id; id không phải uuid hoặc không tồn tại => null (không để truy vấn lỗi với id giả). */
+export async function termById(db: Db, termId: string) {
+  if (!z.uuid().safeParse(termId).success) return null;
+  return (await db.select().from(terms).where(eq(terms.id, termId)))[0] ?? null;
+}
 
 export async function resolveTerm(db: Db, termId: string | undefined, today: string) {
   const all = await listTerms(db);
@@ -33,26 +40,39 @@ export type RosterEntry = Awaited<ReturnType<typeof rosterOf>>[number] & Members
 /**
  * Danh sách em để thống kê một học kỳ:
  * - học kỳ hiện tại/tương lai: em ĐANG học ở lớp (theo lớp hiện tại);
- * - học kỳ đã qua: em đang học ở lớp ∪ em có dòng điểm danh (buổi học hoặc đi lễ) ở các buổi của lớp trong học kỳ đó,
- *   để em đã lên lớp (hoặc đã nghỉ) không biến mất khỏi số liệu cũ. `classId` của dòng là lớp đang thống kê; nhãn
- *   `former`/`inactive` theo `membershipOf` (lớp hiện tại của em ≠ lớp của buổi => `former`).
+ * - học kỳ đã qua: em có dòng điểm danh (buổi học hoặc đi lễ) ở các buổi của lớp trong học kỳ đó (em đã lên lớp/đã
+ *   nghỉ không biến mất khỏi số liệu cũ) ∪ em đang học ở lớp mà KHÔNG có dòng nào ở buổi của lớp KHÁC trong học kỳ đó
+ *   (em được chuyển vào lớp sau học kỳ, vd. lên lớp, không thành thành viên "trống" của học kỳ cũ; em của lớp chưa
+ *   từng được điểm danh vẫn ở lại). `classId` của dòng là lớp đang thống kê; nhãn `former`/`inactive` theo
+ *   `membershipOf` (lớp hiện tại của em ≠ lớp của buổi => `former`). `massGrid` (`includeFormer`) dùng cùng quy tắc.
  * Không bao giờ chọn `qr_token`.
  */
 export async function termRoster(db: Db, classIds: string[], term: { id: string; endsOn: string }, today: string): Promise<RosterEntry[]> {
-  const current = (await rosterOf(db, classIds)).map((s) => ({ ...s, ...membershipOf({ currentClassId: s.classId, active: s.active }, s.classId) }));
-  if (!isPastTerm(term, today) || classIds.length === 0) return current;
+  const label = <T extends { classId: string; active: boolean }>(s: T) => ({ ...s, ...membershipOf({ currentClassId: s.classId, active: s.active }, s.classId) });
+  if (!isPastTerm(term, today) || classIds.length === 0) return (await rosterOf(db, classIds)).map(label);
+  const members = (await db.select(studentColumns).from(students)
+    .where(and(inArray(students.classId, classIds), eq(students.active, true), notMarkedElsewhereIn(term.id)))
+    .orderBy(asc(students.fullName))).map(label);
   const pairs = await db
     .selectDistinct({ ...studentColumns, currentClassId: students.classId, classId: sessions.classId })
     .from(attendance)
     .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
     .innerJoin(students, eq(students.id, attendance.studentId))
     .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, term.id)));
-  const have = new Set(current.map((s) => `${s.classId}:${s.id}`));
-  const former = pairs
+  const have = new Set(members.map((s) => `${s.classId}:${s.id}`));
+  const marked = pairs
     .filter((p) => !have.has(`${p.classId}:${p.id}`))
     .map(({ currentClassId, ...p }) => ({ ...p, ...membershipOf({ currentClassId, active: p.active }, p.classId) }));
-  return [...current, ...former].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
+  return [...members, ...marked].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
 }
+
+/**
+ * Điều kiện trên bảng `students`: em KHÔNG có dòng điểm danh nào ở buổi (học hoặc đi lễ) của một lớp khác lớp hiện tại
+ * của em trong học kỳ `termId`. Viết rõ tên bảng "students" (drizzle bỏ tiền tố khi truy vấn chỉ có một bảng).
+ */
+export const notMarkedElsewhereIn = (termId: string) => sql`not exists (
+  select 1 from ${attendance} a join ${sessions} se on se.id = a.session_id
+  where a.student_id = "students"."id" and se.term_id = ${termId} and se.class_id <> "students"."class_id")`;
 
 /** Dòng điểm danh các buổi HỌC (không huỷ, không gồm đi lễ) của các lớp trong học kỳ, kèm lớp của buổi. */
 export async function termRecords(db: Db, classIds: string[], termId: string) {

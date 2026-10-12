@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { sessions, students } from "@/db/schema";
 import { createRateLimiter } from "@/lib/rate-limit";
@@ -180,17 +181,8 @@ describe("handleScanApi fix round 1", () => {
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
-  it("serves the results route through the same guards", async () => {
-    const { b, session, deps, post, scanBody } = await setup();
-    const body = scanBody();
-    await handleScanApi("scan", post(body), deps(b.glv));
-    const res = await handleScanApi("results", post({ sessionId: session.id, eventIds: [body.eventId] }), deps(b.glv));
-    expect(res.status).toBe(200);
-    expect(res.headers.get("cache-control")).toBe("private, no-store");
-    expect(await res.json()).toMatchObject({ ok: true, data: { results: [{ eventId: body.eventId, kind: "scan", result: "applied", status: "present" }] } });
-    expect((await handleScanApi("results", post({ sessionId: session.id, eventIds: [] }), deps(b.head))).status).toBe(404);
-    expect((await handleScanApi("results", post({ sessionId: session.id, eventIds: [] }, { ...goodHeaders, origin: "https://evil.example" }), deps(b.glv))).status).toBe(403);
-    expect((await handleScanApi("results", post({}), deps(null))).status).toBe(401);
+  it("has no results route: the unused /api/diem-danh/ket-qua surface was removed", () => {
+    expect(existsSync("./src/app/api/diem-danh/ket-qua")).toBe(false);
   });
 
   it("lets Next.js control-flow errors propagate instead of turning them into a 500", async () => {

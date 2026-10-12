@@ -2,9 +2,9 @@ import { unstable_rethrow } from "next/navigation";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import type { RateLimiter } from "@/lib/rate-limit";
-import { applyScan, applyUndo, getScanResults, getScanRoster, type ScanErrorCode } from "../services/scan";
+import { applyScan, applyUndo, getScanRoster, type ScanErrorCode } from "../services/scan";
 
-export type ScanRoute = "scan" | "undo" | "roster" | "results";
+export type ScanRoute = "scan" | "undo" | "roster";
 export interface ScanApiDeps { db: Db; getUser: () => Promise<AppUser | null>; limiter: RateLimiter; rosterLimiter: RateLimiter }
 
 const MAX_BODY = 4096;
@@ -103,8 +103,6 @@ async function dispatch(route: ScanRoute, request: Request, deps: ScanApiDeps): 
   const body = await readBody(request);
   if (!body.ok) return body.response;
 
-  const result = route === "scan" ? await applyScan(deps.db, user, body.body)
-    : route === "undo" ? await applyUndo(deps.db, user, body.body)
-    : await getScanResults(deps.db, user, body.body);
+  const result = route === "scan" ? await applyScan(deps.db, user, body.body) : await applyUndo(deps.db, user, body.body);
   return result.ok ? respond(result) : respond(result, STATUS[result.code]);
 }

@@ -38,7 +38,7 @@ export async function subscribePush(
       .values({ userId: user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent })
       .onConflictDoUpdate({
         target: pushSubscriptions.endpoint,
-        set: { userId: user.id, p256dh: keys.p256dh, auth: keys.auth, userAgent, createdAt: sql`now()`, failureCount: 0 },
+        set: { userId: user.id, p256dh: keys.p256dh, auth: keys.auth, userAgent, createdAt: sql`now()`, failureCount: 0, authFailureCount: 0 },
       });
     // Giữ tối đa PUSH_MAX_PER_USER thiết bị mới nhất của người này.
     await tx.execute(sql`

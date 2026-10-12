@@ -142,6 +142,23 @@ export function timezoneCheck(tz: string | null | undefined): Check {
   return { id: "DB_TIMEZONE", level: "warn", message: `Múi giờ DB là "${name || "không rõ"}" (không phải UTC). Ứng dụng vẫn đọc đúng, nhưng nên đặt UTC cho các cột timestamp không múi giờ.` };
 }
 
+/** PostgreSQL tối thiểu: migration 0008 dùng chỉ mục duy nhất NULLS NOT DISTINCT (có từ PostgreSQL 15). */
+export const MIN_SERVER_VERSION_NUM = 150000;
+
+/** `show server_version_num` (vd. "160002") — dưới 15 hoặc không đọc được thì migration sẽ hỏng: lỗi. */
+export function postgresVersionCheck(raw: string | number | null | undefined): Check {
+  const text = String(raw ?? "").trim();
+  const num = /^\d+$/.test(text) ? Number(text) : NaN;
+  if (!Number.isFinite(num)) {
+    return { id: "DB_VERSION", level: "fail", message: "Không đọc được phiên bản PostgreSQL (server_version_num). Ứng dụng cần PostgreSQL 15 trở lên." };
+  }
+  const label = `${Math.floor(num / 10000)}.${num % 10000}`;
+  if (num < MIN_SERVER_VERSION_NUM) {
+    return { id: "DB_VERSION", level: "fail", message: `PostgreSQL ${label} quá cũ: cần PostgreSQL 15 trở lên (migration dùng chỉ mục NULLS NOT DISTINCT, chỉ có từ bản 15). Hãy tạo database PostgreSQL 15+ (Neon/Supabase mặc định đã là 15+).` };
+  }
+  return { id: "DB_VERSION", level: "ok", message: `PostgreSQL ${label} (cần ≥ 15).` };
+}
+
 export interface Summary { ok: number; warn: number; fail: number; info: number; failed: boolean }
 
 export function summarize(checks: readonly Check[]): Summary {

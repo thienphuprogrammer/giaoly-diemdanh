@@ -24,7 +24,7 @@ export async function getPromotionClass(db: Reader, classId: string): Promise<Pr
 }
 
 /** Các lớp của những khối cho trước, kèm số em đang học, theo tên lớp. */
-export function classesOfGrades(db: Reader, gradeIds: string[]) {
+export function classesWithCountsOfGrades(db: Reader, gradeIds: string[]) {
   return db
     .select({ id: classes.id, name: classes.name, gradeId: classes.gradeId, gradeName: grades.name, activeCount: count(students.id) })
     .from(classes)

@@ -11,6 +11,13 @@ describe("workflow nhắc việc", () => {
     expect(yml).toMatch(/^\s*workflow_dispatch:/m);
   });
 
+  it("lịch chỉ chạy khi bật biến repository REMINDERS_ENABLED=true; chạy tay luôn chạy", () => {
+    expect(yml).toMatch(/^\s{4}if: github\.event_name == 'workflow_dispatch' \|\| vars\.REMINDERS_ENABLED == 'true'$/m);
+    // Điều kiện nằm ở job (trước runs-on), không phải ở một bước.
+    expect(yml.indexOf("if: github.event_name")).toBeLessThan(yml.indexOf("runs-on:"));
+    expect(yml.indexOf("if: github.event_name")).toBeGreaterThan(yml.indexOf("ping:"));
+  });
+
   it("bí mật chỉ đến từ GitHub secrets qua env, không bao giờ in ra", () => {
     expect(yml).toContain("CRON_SECRET: ${{ secrets.CRON_SECRET }}");
     expect(yml).toContain("APP_URL: ${{ secrets.APP_URL }}");

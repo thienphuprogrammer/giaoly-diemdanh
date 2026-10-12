@@ -1,6 +1,5 @@
-import { z } from "zod";
 import { getGrade } from "@/db/queries/grades";
-import { listTerms } from "@/db/queries/stats";
+import { termById } from "@/db/queries/stats";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { todayInVietnam } from "@/lib/dates";
@@ -12,8 +11,7 @@ import { attentionList, classStats, gradeOverview } from "./stats";
 export interface ReportTerm { id: string; name: string; startsOn: string; endsOn: string }
 
 async function findTerm(db: Db, termId: string): Promise<ReportTerm | null> {
-  if (!z.uuid().safeParse(termId).success) return null;
-  const t = (await listTerms(db)).find((x) => x.id === termId);
+  const t = await termById(db, termId);
   return t ? { id: t.id, name: t.name, startsOn: t.startsOn, endsOn: t.endsOn } : null;
 }
 

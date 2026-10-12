@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import webpush from "web-push";
 import { describe, expect, it } from "vitest";
-import { checkEnv, maskDatabaseUrl, migrationStatus, summarize, timezoneCheck, type Check } from "./checks";
+import { checkEnv, maskDatabaseUrl, migrationStatus, postgresVersionCheck, summarize, timezoneCheck, type Check } from "./checks";
 
 const goodSecret = () => randomBytes(36).toString("base64");
 const DB = "postgres://appuser:s3cretpw@ep-quiet-sky-123456.ap-southeast-1.aws.neon.tech:5432/diemdanh?sslmode=require";
@@ -186,5 +186,20 @@ describe("timezoneCheck", () => {
   });
   it.each(["Asia/Ho_Chi_Minh", "America/New_York", "", null, undefined])("%s warns", (tz) => {
     expect(timezoneCheck(tz)).toMatchObject({ id: "DB_TIMEZONE", level: "warn" });
+  });
+});
+
+describe("postgresVersionCheck", () => {
+  it.each(["150000", "150004", "160002", "170000", 170004])("%s (PostgreSQL ≥ 15) đạt", (v) => {
+    expect(postgresVersionCheck(v)).toMatchObject({ id: "DB_VERSION", level: "ok" });
+  });
+  it.each(["140011", "130000", 120000])("%s (PostgreSQL < 15) là lỗi, nêu NULLS NOT DISTINCT", (v) => {
+    const c = postgresVersionCheck(v);
+    expect(c).toMatchObject({ id: "DB_VERSION", level: "fail" });
+    expect(c.message).toContain("NULLS NOT DISTINCT");
+    expect(c.message).toContain("15");
+  });
+  it.each(["", "abc", null, undefined, "15.4"])("%s không đọc được là lỗi", (v) => {
+    expect(postgresVersionCheck(v)).toMatchObject({ id: "DB_VERSION", level: "fail" });
   });
 });

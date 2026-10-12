@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { attendance, attendanceScans, classCatechists, sessions, students } from "../schema";
 import type { Db } from "../types";
 
@@ -46,11 +46,6 @@ export async function findScanTarget(
 
 export const getScanEvent = async (db: Reader, eventId: string) =>
   (await db.select().from(attendanceScans).where(eq(attendanceScans.eventId, eventId)))[0] ?? null;
-
-export const listScanEvents = (db: Reader, sessionId: string, eventIds: string[]) =>
-  eventIds.length === 0
-    ? Promise.resolve([])
-    : db.select().from(attendanceScans).where(and(eq(attendanceScans.sessionId, sessionId), inArray(attendanceScans.eventId, eventIds)));
 
 export const listClassTokens = (db: Reader, classId: string) =>
   db.select({ id: students.id, token: students.qrToken }).from(students).where(and(eq(students.classId, classId), eq(students.active, true)));

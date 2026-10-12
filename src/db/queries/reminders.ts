@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import type { ThresholdKind } from "@/lib/reminders/messages";
-import { attendance, classCatechists, classes, notificationLog, pushSubscriptions, sessions, users } from "../schema";
+import { THRESHOLD_KINDS } from "@/lib/reminders/messages";
+import { attendance, classCatechists, classes, notificationLog, pushSubscriptions, sessions, students, users } from "../schema";
 import type { Db } from "../types";
 import { listTerms } from "./stats";
 
@@ -20,7 +20,10 @@ export interface ScheduledClass {
   marked: boolean;
 }
 
-/** Lớp học vào `weekday`, kèm trạng thái buổi học (`kind='class'`) của ngày `date`. Buổi đi lễ không được tính. */
+/**
+ * Lớp học vào `weekday` và còn ít nhất một em đang học, kèm trạng thái buổi học (`kind='class'`) của ngày `date`. Buổi
+ * đi lễ không được tính. Lớp trống (vd. cả lớp đã lên lớp) không được nhắc.
+ */
 export async function scheduledClasses(db: Db, weekday: number, date: string): Promise<ScheduledClass[]> {
   const rows = await db
     .select({
@@ -30,7 +33,10 @@ export async function scheduledClasses(db: Db, weekday: number, date: string): P
     })
     .from(classes)
     .leftJoin(sessions, and(eq(sessions.classId, classes.id), eq(sessions.heldOn, date), eq(sessions.kind, "class")))
-    .where(and(eq(classes.meetsOn, weekday), isNotNull(classes.meetsAt)))
+    .where(and(
+      eq(classes.meetsOn, weekday), isNotNull(classes.meetsAt),
+      sql`exists (select 1 from ${students} st where st.class_id = ${classes.id} and st.active)`,
+    ))
     .orderBy(asc(classes.name), asc(classes.id));
   return rows.map((r) => ({ ...r, cancelled: Boolean(r.cancelled), marked: Boolean(r.marked) }));
 }
@@ -64,7 +70,8 @@ export async function currentTerm(db: Db, today: string) {
   return (await listTerms(db)).find((t) => t.startsOn <= today && today <= t.endsOn) ?? null;
 }
 
-export const classesOfGrades = (db: Db, gradeIds: string[]) =>
+/** Lớp (id, tên, khối) của các khối cho trước — chỉ cho thông báo ngưỡng. */
+export const classNamesOfGrades = (db: Db, gradeIds: string[]) =>
   gradeIds.length === 0
     ? Promise.resolve([])
     : db.select({ id: classes.id, name: classes.name, gradeId: classes.gradeId }).from(classes).where(inArray(classes.gradeId, gradeIds));
@@ -96,7 +103,6 @@ export const NOTIFICATION_LOG_RETENTION_DAYS = 120;
  * Giữ hơn một năm học.
  */
 export const THRESHOLD_LOG_RETENTION_DAYS = 400;
-const THRESHOLD_KINDS: readonly ThresholdKind[] = ["absence_threshold", "mass_threshold"];
 const DAY_MS = 86_400_000;
 
 export async function pruneNotificationLog(db: Db, now: Date): Promise<number> {

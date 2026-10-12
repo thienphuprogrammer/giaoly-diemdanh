@@ -45,6 +45,8 @@ async function setup() {
   await addDevice(db, b.glv.id);
   await addDevice(db, glv2.id);
   await addDevice(db, b.head.id);
+  // Lớp có ít nhất một em đang học (lớp trống không được nhắc).
+  await db.insert(students).values({ classId: b.classId, fullName: "Trần Thị Sẵn", parentPhone: "0901234567" });
   return { db, b, glv2 };
 }
 
@@ -123,6 +125,28 @@ describe("runReminders: nhắc điểm danh", () => {
     const cancelled = fakeDeliver();
     await run(db, at("08:30"), cancelled.deliver);
     expect(reminders(cancelled.captured)).toEqual([]);
+  });
+
+  it("ngoài mọi học kỳ (hè, giữa hai học kỳ) thì không nhắc điểm danh", async () => {
+    const { db } = await setup();
+    // 2027-01-17 là Chủ nhật, sau khi "Học kỳ 1" kết thúc (2027-01-15) và chưa có học kỳ nào khác.
+    const summer = fakeDeliver();
+    await run(db, at("08:30", "2027-01-17"), summer.deliver);
+    expect(reminders(summer.captured)).toEqual([]);
+    expect(await logRows(db, "class_reminder")).toEqual([]);
+  });
+
+  it("lớp không còn em nào đang học (vd. cả lớp đã lên lớp) thì không nhắc", async () => {
+    const { db, b } = await setup();
+    await db.update(students).set({ active: false }).where(eq(students.classId, b.classId));
+    const inactive = fakeDeliver();
+    await run(db, at("08:30"), inactive.deliver);
+    expect(reminders(inactive.captured)).toEqual([]);
+
+    await db.update(students).set({ active: true, classId: b.otherClassId }).where(eq(students.classId, b.classId));
+    const moved = fakeDeliver();
+    await run(db, at("08:30"), moved.deliver);
+    expect(reminders(moved.captured)).toEqual([]);
   });
 
   it("chạy lại không gửi trùng; hai lần chạy chồng nhau cũng chỉ gửi một lần mỗi người", async () => {
@@ -412,6 +436,7 @@ describe("runReminders: ngân sách thời gian", () => {
     expect(REMINDER_BUDGET_MS).toBe(20_000);
     const [cls2] = await db.insert(classes).values({ gradeId: b.gradeId, name: "Lớp C", meetsOn: 0, meetsAt: "08:00" }).returning();
     await db.insert(classCatechists).values({ classId: cls2.id, userId: b.glv.id });
+    await kid(db, cls2.id, "Lê Văn Cờ");
     let t = 0;
     const d = fakeDeliver({ onSend: () => { t += 15_000; } });
     const s = await run(db, at("08:30"), d.deliver, { clock: () => t, budgetMs: REMINDER_BUDGET_MS });

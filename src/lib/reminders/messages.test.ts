@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPushPayload } from "@/lib/push/payload";
-import { classReminderKey, classReminderMessage, thresholdKey, thresholdMessage } from "./messages";
+import { THRESHOLD_KINDS, classReminderKey, classReminderMessage, thresholdKey, thresholdMessage } from "./messages";
 
 const ID = "6f1c2a7e-0d3b-4c5e-9f8a-1b2c3d4e5f60";
 const TERM = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
@@ -53,5 +53,11 @@ describe("thresholdMessage", () => {
     const names = Array.from({ length: 8 }, (_, i) => `Lớp ${i + 1}`);
     expect(thresholdMessage("mass_threshold", names).body)
       .toBe("Có 8 em đạt ngưỡng cảnh báo vắng lễ ở Lớp 1, Lớp 2, Lớp 3, Lớp 4 và 4 lớp khác");
+  });
+});
+
+describe("THRESHOLD_KINDS", () => {
+  it("lists the two threshold kinds once, in a fixed order", () => {
+    expect(THRESHOLD_KINDS).toEqual(["absence_threshold", "mass_threshold"]);
   });
 });

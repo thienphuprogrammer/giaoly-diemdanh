@@ -3,6 +3,7 @@ import { tallyMass, type MassWeek } from "@/lib/attendance/mass-tally";
 import { membershipOf } from "@/lib/promotion";
 import { attendance, classes, grades, sessions, students } from "../schema";
 import type { Db } from "../types";
+import { notMarkedElsewhereIn } from "./stats";
 
 type Reader = Pick<Db, "select" | "selectDistinct">;
 
@@ -41,8 +42,9 @@ interface GridInput {
   /** Chỉ một em (kể cả em đã ẩn: trang hồ sơ); mặc định mọi em đang hoạt động của các lớp. */
   studentId?: string;
   /**
-   * Học kỳ đã qua: thêm các em có dòng điểm danh (học hoặc đi lễ) ở buổi của lớp trong học kỳ nhưng nay đã ở lớp khác
-   * (lên lớp), tính theo lớp của buổi. Không dùng cho học kỳ hiện tại.
+   * Học kỳ đã qua (quy tắc của `termRoster`): thêm các em có dòng điểm danh (học hoặc đi lễ) ở buổi của lớp trong học
+   * kỳ nhưng nay đã ở lớp khác (lên lớp), tính theo lớp của buổi; bỏ em đang học ở lớp mà đã có dòng ở buổi của lớp
+   * khác trong học kỳ (em được chuyển vào sau). Không dùng cho học kỳ hiện tại.
    */
   includeFormer?: boolean;
 }
@@ -115,6 +117,8 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
       .where(and(
         inArray(students.classId, classIds),
         studentId ? eq(students.id, studentId) : eq(students.active, true),
+        // Học kỳ đã qua: cùng quy tắc với `termRoster` (em được chuyển vào sau, đã có dòng ở lớp khác, không thuộc lớp).
+        includeFormer ? notMarkedElsewhereIn(termId) : undefined,
       ))
       .orderBy(asc(students.fullName)),
     formerQuery,

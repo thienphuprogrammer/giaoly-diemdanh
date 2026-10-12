@@ -1,8 +1,7 @@
-import { z } from "zod";
 import { getClassById, listClassesForUser } from "@/db/queries/classes";
 import { getGrade } from "@/db/queries/grades";
 import { massGrid, type MassGridStudent } from "@/db/queries/mass-stats";
-import { isPastTerm, listTerms, resolveTerm } from "@/db/queries/stats";
+import { isPastTerm, resolveTerm, termById } from "@/db/queries/stats";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { isMassWarning, tallyMass, type MassCell, type MassWeek } from "@/lib/attendance/mass-tally";
@@ -36,8 +35,7 @@ export interface MassStats {
 
 async function pickTerm(db: Db, termId: string | undefined, today: string) {
   if (termId === undefined) return resolveTerm(db, undefined, today);
-  if (!z.uuid().safeParse(termId).success) return null;
-  return (await listTerms(db)).find((t) => t.id === termId) ?? null;
+  return termById(db, termId);
 }
 
 function statRow(weeks: readonly MassWeek[], s: MassGridStudent, threshold: number): MassStatRow {
@@ -95,8 +93,7 @@ export interface MassAttentionItem {
 
 /** Các em chạm ngưỡng vắng lễ của khối, trên mọi lớp người dùng đọc được (nhóm "Đi lễ" của trang "Cần chú ý"). */
 export async function massAttentionList(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<MassAttentionItem[]> {
-  if (!z.uuid().safeParse(termId).success) return [];
-  const term = (await listTerms(db)).find((t) => t.id === termId);
+  const term = await termById(db, termId);
   const visible = await listClassesForUser(db, user);
   if (!term || visible.length === 0) return [];
   const names = new Map(visible.map((c) => [c.id, c.name]));

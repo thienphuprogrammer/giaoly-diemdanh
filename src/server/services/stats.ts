@@ -1,6 +1,5 @@
-import { z } from "zod";
 import { getClassById, listClassesForUser } from "@/db/queries/classes";
-import { classesInGrade, listTerms, sessionsHeld, termRecords, termRoster, type RosterEntry } from "@/db/queries/stats";
+import { classesInGrade, sessionsHeld, termById, termRecords, termRoster, type RosterEntry } from "@/db/queries/stats";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { summarize, type StudentSummary } from "@/lib/attendance/summary";
@@ -38,14 +37,9 @@ export function buildRows(roster: RosterEntry[], records: { classId: string; stu
   }));
 }
 
-async function termOf(db: Db, termId: string) {
-  if (!z.uuid().safeParse(termId).success) return null;
-  return (await listTerms(db)).find((t) => t.id === termId) ?? null;
-}
-
 export async function classStats(db: Db, user: AppUser, classId: string, termId: string, today: string = todayInVietnam()) {
   if (!(await guardClass(db, user, classId, "read"))) return null;
-  const term = await termOf(db, termId);
+  const term = await termById(db, termId);
   const cls = await getClassById(db, classId);
   if (!term || !cls) return null;
   const [roster, records] = await Promise.all([termRoster(db, [classId], term, today), termRecords(db, [classId], term.id)]);
@@ -64,7 +58,7 @@ export interface AttentionItem {
 }
 
 export async function attentionList(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<AttentionItem[]> {
-  const term = await termOf(db, termId);
+  const term = await termById(db, termId);
   if (!term) return [];
   const visible = await listClassesForUser(db, user);
   const ids = visible.map((c) => c.id);
@@ -96,7 +90,7 @@ export interface GradeRow {
 
 export async function gradeOverview(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<GradeRow[] | null> {
   if (!user.isGradeHead || !user.gradeId) return null;
-  const term = await termOf(db, termId);
+  const term = await termById(db, termId);
   const classList = await classesInGrade(db, user.gradeId);
   const ids = classList.map((c) => c.id);
   if (!term) return classList.map((c) => ({ classId: c.id, className: c.name, studentCount: 0, sessions: 0, presentRate: null, warningCount: 0 }));

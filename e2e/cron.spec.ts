@@ -39,12 +39,16 @@ function vnNow() {
   return { date: t.toISOString().slice(0, 10), weekday: t.getUTCDay(), minutes: t.getUTCHours() * 60 + t.getUTCMinutes() };
 }
 
+/** Em của spec này ở Lớp L (lớp không còn em đang học thì không được nhắc). */
+const REMINDER_KID = "Em Nhắc Việc E2E";
+
 /** Chỉ dọn dữ liệu của spec này: đăng ký giả (endpoint `e2e-…`) và nhật ký thông báo của hai người dùng nó dùng. */
 const OWN_USERS = ["head-c@e2e.vn", "glv-l@e2e.vn"];
 const cleanup = () => withDb(async (sql) => {
   await sql`delete from push_subscriptions where endpoint like 'https://fcm.googleapis.com/fcm/send/e2e-%'`;
   await sql`delete from notification_log where user_id in (select id from users where email in ${sql(OWN_USERS)})`;
   await sql`update classes set meets_on = null, meets_at = null where id = ${state().classL}`;
+  await sql`delete from students where class_id = ${state().classL} and full_name = ${REMINDER_KID}`;
 });
 
 test.beforeEach(cleanup);
@@ -88,7 +92,7 @@ test("trưởng khối có thiết bị: ghi nhật ký cho em chạm ngưỡng 
   expect(await logRows("head-c@e2e.vn", "mass_threshold")).toHaveLength(rows.length);
 });
 
-test("nhắc GLV khi lớp đã qua giờ học 30 phút mà chưa điểm danh", async ({ request }) => {
+test("nhắc GLV khi lớp (còn em đang học) đã qua giờ học 30 phút mà chưa điểm danh", async ({ request }) => {
   const now = vnNow();
   test.skip(now.minutes < 46, "cần giờ học hôm nay trước hiện tại 45 phút (chạy gần nửa đêm giờ Việt Nam)");
   const start = now.minutes - 45;
@@ -96,6 +100,11 @@ test("nhắc GLV khi lớp đã qua giờ học 30 phút mà chưa điểm danh"
   await withDb((sql) => sql`update classes set meets_on = ${now.weekday}, meets_at = ${meetsAt} where id = ${state().classL}`);
   await addDevice("glv-l@e2e.vn");
 
+  // Lớp chưa có em nào đang học: không nhắc.
+  expect((await request.get(ROUTE, { headers: bearer() })).status()).toBe(200);
+  expect(await logRows("glv-l@e2e.vn", "class_reminder")).toEqual([]);
+
+  await withDb((sql) => sql`insert into students (class_id, full_name) values (${state().classL}, ${REMINDER_KID})`);
   const res = await request.get(ROUTE, { headers: bearer() });
   expect(res.status()).toBe(200);
   expect((await res.json() as { sent: number }).sent).toBeGreaterThanOrEqual(1);

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getSession, loadBoardData } from "@/db/queries/attendance";
-import { findScanTarget, getScanEvent, updateMarkIfUnchanged, listClassTokens, listScanEvents, loadScanContext } from "@/db/queries/scan";
+import { findScanTarget, getScanEvent, updateMarkIfUnchanged, listClassTokens, loadScanContext } from "@/db/queries/scan";
 import { attendance, attendanceScans, students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
@@ -185,17 +185,4 @@ export async function getScanRoster(db: Db, user: AppUser, sessionId: string) {
     status: s.status, reason: s.reason, priorUnexcused: s.priorUnexcused,
   }));
   return { sessionId: session.id, classId: session.classId, heldOn: session.heldOn, cancelled: session.cancelled, students };
-}
-
-const resultsSchema = z.object({ sessionId: z.uuid(), eventIds: z.array(z.uuid()).max(50) });
-
-export async function getScanResults(db: Db, user: AppUser, raw: unknown) {
-  const parsed = resultsSchema.safeParse(raw);
-  if (!parsed.success) return reject("bad_request", "Yêu cầu không hợp lệ");
-  const session = await getSession(db, parsed.data.sessionId);
-  if (!session || !(await guardClass(db, user, session.classId, "write"))) return reject("forbidden", NOT_FOUND_SESSION);
-  const events = await listScanEvents(db, session.id, parsed.data.eventIds);
-  return success({
-    results: events.map((e) => ({ eventId: e.eventId, kind: e.kind, result: e.result, studentId: e.studentId, status: e.newStatus })),
-  });
 }

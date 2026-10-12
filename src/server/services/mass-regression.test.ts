@@ -11,7 +11,7 @@ import { seedBasics } from "@/test/fixtures";
 import { markAllPresent, markRemainingAbsent, openSession, readBoard, setStatus } from "./attendance";
 import { markClassAtMass, setMassStatus, undoClassAtMass } from "./mass";
 import { openMassSession } from "./mass-sessions";
-import { applyScan, getScanResults, getScanRoster } from "./scan";
+import { applyScan, getScanRoster } from "./scan";
 import { attentionList, classStats, gradeOverview } from "./stats";
 import { massAttentionList, massStats } from "./mass-stats";
 import { getStudentProfile } from "./student-profile";
@@ -200,8 +200,8 @@ describe("scanning against a mass session id", () => {
     // Bảng tra của buổi đi lễ: "vắng trước đó" là số tuần không đi lễ; vắng buổi học (An vắng KP 04/10) không tính.
     expect(roster?.students.find((s) => s.studentId === an.id)).toMatchObject({ status: null, priorUnexcused: 0 });
 
-    const results = await getScanResults(db, b.glv, { sessionId, eventIds: [eventId] });
-    expect(results).toEqual({ ok: true, data: { results: [{ eventId, kind: "scan", result: "applied", studentId: chi.id, status: "present" }] } });
+    const events = await db.select().from(attendanceScans).where(eq(attendanceScans.eventId, eventId));
+    expect(events).toMatchObject([{ sessionId, kind: "scan", result: "applied", studentId: chi.id, newStatus: "present" }]);
   });
 
   it("refuses 'late' on a mass session (mode or confirmation) and writes nothing; 'present' still works", async () => {

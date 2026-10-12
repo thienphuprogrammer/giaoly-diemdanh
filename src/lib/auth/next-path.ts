@@ -39,6 +39,8 @@ const FORBIDDEN_TARGETS: readonly RegExp[] = [
   /^\/api(\/|$)/,
   /^\/_next(\/|$)/,
   /^\/lop\/[^/]+\/thong-ke\/export(\/|$)/,
+  // Mọi route tải tệp dưới /khoi (vd. /khoi/bao-cao/export): bất kỳ đoạn đường dẫn nào là `export`.
+  /^\/khoi(\/[^/]+)*\/export(\/|$)/,
   /\/[^/]*\.[^/]*\/?$/,
 ];
 

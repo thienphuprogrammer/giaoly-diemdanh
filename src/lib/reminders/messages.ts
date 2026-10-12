@@ -6,6 +6,8 @@ import type { PushMessage } from "@/lib/push/payload";
  */
 export type ReminderKind = "class_reminder" | "absence_threshold" | "mass_threshold" | "housekeeping";
 export type ThresholdKind = Extract<ReminderKind, "absence_threshold" | "mass_threshold">;
+/** Hai loại thông báo ngưỡng (định nghĩa duy nhất; dùng cho gửi và dọn nhật ký). */
+export const THRESHOLD_KINDS: readonly ThresholdKind[] = ["absence_threshold", "mass_threshold"];
 
 /** `notification_log.target_key` của nhắc điểm danh: một lần cho mỗi (lớp, ngày) mỗi GLV. */
 export const classReminderKey = (classId: string, date: string): string => `${classId}:${date}`;

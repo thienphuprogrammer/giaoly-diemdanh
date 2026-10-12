@@ -36,12 +36,12 @@ describe("subscribePush", () => {
   it("upserts by endpoint: re-subscribing refreshes keys and resets failures instead of duplicating", async () => {
     const { db, b, rows } = await setup();
     await subscribePush(db, b.glv, subInput(1), { limiter: roomy() });
-    await db.update(pushSubscriptions).set({ failureCount: 3 });
+    await db.update(pushSubscriptions).set({ failureCount: 3, authFailureCount: PUSH_MAX_AUTH_FAILURES - 1 });
     const again = { endpoint: endpointOf(1), keys: keys() };
     await subscribePush(db, b.glv, again, { limiter: roomy() });
     const all = await rows();
     expect(all).toHaveLength(1);
-    expect(all[0]).toMatchObject({ p256dh: again.keys.p256dh, failureCount: 0 });
+    expect(all[0]).toMatchObject({ p256dh: again.keys.p256dh, failureCount: 0, authFailureCount: 0 });
   });
 
   it("moves an endpoint to the caller when the device switches accounts (the other user loses it)", async () => {

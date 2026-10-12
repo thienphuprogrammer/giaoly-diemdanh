@@ -14,6 +14,8 @@ describe("safeNextPath: accepts same-origin app paths", () => {
     ["/apitest", "/apitest"],
     ["/lop/abc/thong-ke", "/lop/abc/thong-ke"],
     ["/lop/abc/thong-ke?export=1", "/lop/abc/thong-ke?export=1"],
+    ["/khoi/bao-cao", "/khoi/bao-cao"],
+    ["/khoi/bao-cao/exporter", "/khoi/bao-cao/exporter"],
   ])("%s → %s", (input, expected) => {
     expect(safeNextPath(input)).toBe(expected);
   });
@@ -73,6 +75,10 @@ describe("safeNextPath: open-redirect and junk inputs fall back to /", () => {
     ["stats export via dot segment", "/lop/abc/x/../thong-ke/export"],
     ["stats export upper case", "/lop/abc/thong-ke/EXPORT"],
     ["stats export trailing slash", "/lop/abc/thong-ke/export/"],
+    ["grade report export", "/khoi/bao-cao/export?termId=t1"],
+    ["grade report export upper case", "/KHOI/bao-cao/Export/"],
+    ["grade report export via dot segment", "/khoi/x/../bao-cao/export"],
+    ["any export under /khoi", "/khoi/khac/export"],
     ["next internals", "/_next/static/chunks/app.js"],
     ["static file", "/favicon.ico"],
     ["manifest", "/manifest.webmanifest"],

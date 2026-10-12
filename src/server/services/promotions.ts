@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { classesOfGrades, findPromotionByToken, getPromotion, getPromotionClass, hasLaterPromotion, listGradePromotions, recentNextGradeEvents, type PromotionClass } from "@/db/queries/promotions";
+import { classesWithCountsOfGrades, findPromotionByToken, getPromotion, getPromotionClass, hasLaterPromotion, listGradePromotions, recentNextGradeEvents, type PromotionClass } from "@/db/queries/promotions";
 import { getGrade } from "@/db/queries/grades";
 import { promotions, seatAssignments, seatingPlans, students } from "@/db/schema";
 import type { Db } from "@/db/types";
@@ -60,7 +60,7 @@ export async function promotionTargets(db: Db, user: AppUser): Promise<Promotion
   const grade = await getGrade(db, user.gradeId);
   if (!grade) return null;
   const next = grade.nextGradeId ? await getGrade(db, grade.nextGradeId) : null;
-  const rows = await classesOfGrades(db, next ? [grade.id, next.id] : [grade.id]);
+  const rows = await classesWithCountsOfGrades(db, next ? [grade.id, next.id] : [grade.id]);
   const own = rows.filter((c) => c.gradeId === grade.id);
   return {
     sources: own.map((c) => ({ id: c.id, name: c.name, activeCount: Number(c.activeCount) })),
