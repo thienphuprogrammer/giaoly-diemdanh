@@ -8,9 +8,13 @@ export const attendanceStatus = pgEnum("attendance_status", [
   "present", "absent_excused", "absent_unexcused", "late",
 ]);
 
+export const sessionKind = pgEnum("session_kind", ["class", "mass"]);
+
 export const grades = pgTable("grades", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
+  /** Số tuần không đi lễ trong học kỳ bắt đầu cảnh báo (trưởng khối sửa). */
+  massThreshold: integer("mass_threshold").notNull().default(2),
 });
 
 export const users = pgTable("users", {
@@ -108,10 +112,12 @@ export const sessions = pgTable(
     classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
     termId: uuid("term_id").notNull().references(() => terms.id, { onDelete: "cascade" }),
     heldOn: date("held_on").notNull(),
+    /** `class` = buổi học giáo lý; `mass` = thánh lễ Chúa nhật của lớp. Truy vấn buổi học/thống kê phải lọc `class`. */
+    kind: sessionKind("kind").notNull().default("class"),
     cancelled: boolean("cancelled").notNull().default(false),
     note: text("note"),
   },
-  (t) => [uniqueIndex("sessions_class_date_uq").on(t.classId, t.heldOn)],
+  (t) => [uniqueIndex("sessions_class_date_kind_uq").on(t.classId, t.heldOn, t.kind)],
 );
 
 export const attendance = pgTable(

@@ -17,23 +17,24 @@ export async function rosterOf(db: Db, classIds: string[]) {
     .orderBy(asc(students.fullName));
 }
 
+/** Dòng điểm danh các buổi HỌC (không huỷ, không gồm đi lễ) của các lớp trong học kỳ. */
 export async function termRecords(db: Db, classIds: string[], termId: string) {
   if (classIds.length === 0) return [];
   return db
     .select({ studentId: attendance.studentId, status: attendance.status })
     .from(attendance)
     .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
-    .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, termId), eq(sessions.cancelled, false)));
+    .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, termId), eq(sessions.kind, "class"), eq(sessions.cancelled, false)));
 }
 
-/** Chỉ đếm buổi không huỷ và đã có ít nhất một dòng điểm danh (buổi trống do mở ngày không tính). */
+/** Chỉ đếm buổi học (không gồm đi lễ), không huỷ và đã có ít nhất một dòng điểm danh (buổi trống do mở ngày không tính). */
 export async function sessionsHeld(db: Db, classIds: string[], termId: string): Promise<Map<string, number>> {
   if (classIds.length === 0) return new Map();
   const rows = await db
     .select({ classId: sessions.classId, n: sql<number>`count(distinct ${sessions.id})::int` })
     .from(sessions)
     .innerJoin(attendance, eq(attendance.sessionId, sessions.id))
-    .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, termId), eq(sessions.cancelled, false)))
+    .where(and(inArray(sessions.classId, classIds), eq(sessions.termId, termId), eq(sessions.kind, "class"), eq(sessions.cancelled, false)))
     .groupBy(sessions.classId);
   return new Map(rows.map((r) => [r.classId, r.n]));
 }

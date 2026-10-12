@@ -43,7 +43,7 @@ async function main() {
     if (!term) throw new BenchStop(SEED_MISSING);
 
     // Chỉ dùng/xóa phiên do chính script này tạo (ghi dấu bằng note).
-    const [existing] = await sql`select id, note from sessions where class_id = ${cls.id} and held_on = ${HELD_ON}`;
+    const [existing] = await sql`select id, note from sessions where class_id = ${cls.id} and held_on = ${HELD_ON} and kind = 'class'`;
     if (existing && existing.note !== OWNER_NOTE) {
       throw new BenchStop(`Đã có phiên ${HELD_ON} của lớp này không do bench tạo (note khác '${OWNER_NOTE}'); dừng để không xóa dữ liệu thật`);
     }

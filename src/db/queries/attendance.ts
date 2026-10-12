@@ -14,8 +14,10 @@ export async function findTermFor(db: Db, date: string) {
   return row ?? null;
 }
 
-export async function findSession(db: Db, classId: string, heldOn: string) {
-  const [row] = await db.select().from(sessions).where(and(eq(sessions.classId, classId), eq(sessions.heldOn, heldOn)));
+/** Buổi của lớp trong ngày theo loại; mặc định buổi học (`class`), không bao giờ lẫn buổi đi lễ cùng ngày. */
+export async function findSession(db: Db, classId: string, heldOn: string, kind: (typeof sessions.$inferSelect)["kind"] = "class") {
+  const [row] = await db.select().from(sessions)
+    .where(and(eq(sessions.classId, classId), eq(sessions.heldOn, heldOn), eq(sessions.kind, kind)));
   return row ?? null;
 }
 
@@ -24,7 +26,7 @@ export async function getSession(db: Db, id: string) {
   return row ?? null;
 }
 
-/** Số buổi vắng không phép của một em trong học kỳ, bỏ qua buổi nghỉ lễ. */
+/** Số buổi HỌC vắng không phép của một em trong học kỳ, bỏ qua buổi nghỉ lễ và buổi đi lễ. */
 export async function unexcusedCount(db: Db, studentId: string, termId: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
@@ -33,12 +35,14 @@ export async function unexcusedCount(db: Db, studentId: string, termId: string):
     .where(and(
       eq(attendance.studentId, studentId),
       eq(sessions.termId, termId),
+      eq(sessions.kind, "class"),
       eq(sessions.cancelled, false),
       eq(attendance.status, "absent_unexcused"),
     ));
   return row?.n ?? 0;
 }
 
+/** Các buổi học (không gồm buổi đi lễ) của lớp, mới nhất trước. */
 export function listSessions(db: Db, classId: string, limit = 30) {
   return db
     .select({
@@ -50,7 +54,7 @@ export function listSessions(db: Db, classId: string, limit = 30) {
     })
     .from(sessions)
     .leftJoin(attendance, eq(attendance.sessionId, sessions.id))
-    .where(eq(sessions.classId, classId))
+    .where(and(eq(sessions.classId, classId), eq(sessions.kind, "class")))
     .groupBy(sessions.id)
     .orderBy(desc(sessions.heldOn))
     .limit(limit);
@@ -77,6 +81,7 @@ export async function loadBoardData(db: Db, session: typeof sessions.$inferSelec
     .where(and(
       eq(sessions.classId, session.classId),
       eq(sessions.termId, session.termId),
+      eq(sessions.kind, "class"), // số vắng KP trước đó luôn là của buổi học, kể cả khi bảng là buổi đi lễ
       eq(sessions.cancelled, false),
       ne(sessions.id, session.id),
       eq(attendance.status, "absent_unexcused"),

@@ -26,16 +26,27 @@ export interface Board {
   plan: { layout: Layout; assignments: Assignment[] } | null;
 }
 
-export async function openSession(db: Db, user: AppUser, input: unknown, now: Date = new Date()): Promise<ActionResult<{ id: string }>> {
+type SessionKind = (typeof sessions.$inferSelect)["kind"];
+
+/** Mở (hoặc lấy lại) buổi `kind` của lớp trong ngày: idempotent nhờ khoá duy nhất (class_id, held_on, kind). Chỉ người có quyền ghi. */
+export async function openSessionOfKind(
+  db: Db, user: AppUser, input: unknown, kind: SessionKind, now: Date = new Date(),
+): Promise<ActionResult<{ id: string }>> {
   const p = z.object({ classId: z.string(), heldOn: z.iso.date("Ngày không hợp lệ") }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));
   if (!(await guardClass(db, user, p.data.classId, "write"))) return fail(NOT_FOUND);
   if (p.data.heldOn > todayInVietnam(now)) return fail("Không thể điểm danh cho ngày chưa tới"); // YYYY-MM-DD so sánh được theo chuỗi
   const term = await findTermFor(db, p.data.heldOn);
   if (!term) return fail("Ngày này không thuộc học kỳ nào");
-  await db.insert(sessions).values({ classId: p.data.classId, termId: term.id, heldOn: p.data.heldOn }).onConflictDoNothing();
-  const session = await findSession(db, p.data.classId, p.data.heldOn);
+  await db.insert(sessions).values({ classId: p.data.classId, termId: term.id, heldOn: p.data.heldOn, kind })
+    .onConflictDoNothing({ target: [sessions.classId, sessions.heldOn, sessions.kind] });
+  const session = await findSession(db, p.data.classId, p.data.heldOn, kind);
   return session ? ok({ id: session.id }) : fail(NOT_FOUND_SESSION);
+}
+
+/** Buổi học giáo lý (kind = 'class'). */
+export function openSession(db: Db, user: AppUser, input: unknown, now: Date = new Date()): Promise<ActionResult<{ id: string }>> {
+  return openSessionOfKind(db, user, input, "class", now);
 }
 
 async function loadWritableSession(db: Db, user: AppUser, sessionId: string) {
@@ -131,7 +142,8 @@ export async function markRemainingAbsent(db: Db, user: AppUser, input: unknown)
   const p = z.object({ sessionId: z.string() }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));
   const session = await loadWritableSession(db, user, p.data.sessionId);
-  if (!session) return fail(NOT_FOUND_SESSION);
+  // Buổi đi lễ: "chưa hỏi" = không có dòng, không bao giờ tự điền vắng.
+  if (!session || session.kind !== "class") return fail(NOT_FOUND_SESSION);
   if (session.cancelled) return fail(CANCELLED);
   const studentIds = await fillUnmarked(db, user, session, "absent_unexcused", null);
   return ok({ marked: studentIds.length, studentIds });
@@ -149,7 +161,7 @@ export async function setCancelled(db: Db, user: AppUser, input: unknown): Promi
 export async function readBoard(db: Db, user: AppUser, sessionId: string): Promise<Board | null> {
   if (!z.uuid().safeParse(sessionId).success) return null;
   const session = await getSession(db, sessionId);
-  if (!session) return null;
+  if (!session || session.kind !== "class") return null; // bảng điểm danh buổi học; buổi đi lễ có màn riêng
   const perms = await classPermissions(db, user, session.classId);
   if (!perms.canRead) return null;
   const data = await loadBoardData(db, session);

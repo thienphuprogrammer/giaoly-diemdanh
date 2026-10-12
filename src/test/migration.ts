@@ -8,6 +8,8 @@ interface Journal { entries: { tag: string }[] }
 
 /** Migration thêm thẻ QR (backfill mã cho em đã có). Ghim theo tên để thêm migration mới không đổi test backfill. */
 export const QR_MIGRATION = "0002_qr_cards_and_scans";
+/** Migration thêm `sessions.kind` (buổi đi lễ) và `grades.mass_threshold`. */
+export const MASS_MIGRATION = "0003_mass_sessions";
 
 const sqlOf = (tag: string) =>
   readFileSync(`./drizzle/${tag}.sql`, "utf8").split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);

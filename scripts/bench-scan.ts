@@ -38,7 +38,7 @@ async function main() {
     if (!user || !cls || !term) throw new BenchStop(SEED_MISSING);
 
     // Chỉ dùng/xóa phiên do chính script này tạo (ghi dấu bằng note).
-    const [existing] = await sql`select id, note from sessions where class_id = ${cls.id} and held_on = ${HELD_ON}`;
+    const [existing] = await sql`select id, note from sessions where class_id = ${cls.id} and held_on = ${HELD_ON} and kind = 'class'`;
     if (existing && existing.note !== OWNER_NOTE) throw new BenchStop(`Đã có buổi ${HELD_ON} không do script tạo; dừng để không xóa nhầm`);
     sessionId = existing?.id ?? (await sql`insert into sessions (class_id, term_id, held_on, note) values (${cls.id}, ${term.id}, ${HELD_ON}, ${OWNER_NOTE}) returning id`)[0].id;
 
