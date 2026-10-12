@@ -12,4 +12,8 @@ describe("exportFilename", () => {
     expect(name).not.toMatch(/[/\\"\r\n]/);
     expect(name.endsWith(".xlsx")).toBe(true);
   });
+  it("accepts a custom prefix and keeps the default otherwise", () => {
+    expect(exportFilename("Khối 1", "Học kỳ 1", "tong-hop-khoi")).toBe("tong-hop-khoi-Khối-1-Học-kỳ-1.xlsx");
+    expect(exportFilename("A", "B")).toBe("diem-danh-A-B.xlsx");
+  });
 });

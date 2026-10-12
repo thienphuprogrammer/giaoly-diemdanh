@@ -1,5 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
-import { ArrowUpRight, CalendarRange, ChevronRight, KeyRound, Link2, Plus, Unlink, UserPlus, UsersRound } from "lucide-react";
+import { ArrowUpRight, CalendarRange, ChevronRight, FileText, KeyRound, Link2, Plus, Unlink, UserPlus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
@@ -93,6 +93,14 @@ export default async function GradePage() {
           <span className="min-w-0 flex-1">
             <span className="block font-medium">Năm học mới và lên lớp</span>
             <span className="block text-sm text-ink-soft">Tạo năm học, chuyển em sang lớp mới (hoàn tác được trong 24 giờ)</span>
+          </span>
+          <ChevronRight aria-hidden size={20} className="shrink-0 text-ink-muted" />
+        </Link>
+        <Link href={term ? `/khoi/bao-cao?termId=${term.id}` : "/khoi/bao-cao"} prefetch={false} className="card flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-surface-muted">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-action-tint text-action"><FileText aria-hidden size={20} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Báo cáo học kỳ của khối</span>
+            <span className="block text-sm text-ink-soft">Tổng hợp từng lớp, danh sách em cảnh báo; in A4 hoặc xuất Excel</span>
           </span>
           <ChevronRight aria-hidden size={20} className="shrink-0 text-ink-muted" />
         </Link>

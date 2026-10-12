@@ -293,3 +293,28 @@
   .qr-card { width: 90mm; height: 55mm; border: 0.3mm dashed #94a3b8; border-radius: 0; padding: 4mm; }
   .qr-img { width: 34mm; height: 34mm; }
 }
+
+/*
+ * Báo cáo học kỳ in được (A4 dọc). Trang có tên "report" để lề 12mm chỉ áp dụng cho báo cáo (thẻ QR giữ lề 10mm).
+ * Trên màn hình, bảng cuộn ngang trong khung `.report-scroll` (điện thoại không bị tràn trang).
+ */
+@page report { size: A4; margin: 12mm; }
+.report-sheet { page: report; display: flex; flex-direction: column; gap: 12px; }
+.report-scroll { overflow-x: auto; }
+.report-table { width: 100%; min-width: 44rem; border-collapse: collapse; font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.report-table th, .report-table td { border: 1px solid var(--border-strong); padding: 4px 6px; text-align: left; vertical-align: top; }
+.report-table th { background: var(--surface-muted); font-weight: 600; }
+.report-table .num { text-align: center; white-space: nowrap; }
+.report-table thead { display: table-header-group; }
+.report-table tfoot { display: table-row-group; font-weight: 600; }
+.report-table tr { break-inside: avoid; page-break-inside: avoid; }
+.report-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 2px 16px; font-size: 0.875rem; }
+
+@media print {
+  main:has(.report-sheet) { padding: 0 !important; }
+  .report-sheet { gap: 6mm; color: #000; }
+  .report-scroll { overflow: visible; }
+  .report-table { min-width: 0; font-size: 9pt; }
+  .report-table th, .report-table td { padding: 1.2mm 1.5mm; }
+  .report-table th { background: #eee; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

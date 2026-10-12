@@ -105,6 +105,30 @@ export default async function globalSetup() {
     { sessionId: massWeeks[2].id, studentId: kidMassOne.id, status: "absent_excused" as const },
   ]);
 
+  // Khối E / Lớp R (báo cáo học kỳ in A4): 60 em để báo cáo dài hơn một trang; trưởng khối E, GLV R riêng (khối riêng nên không đổi số đếm của các khối khác).
+  // Em thứ i (1..60): buổi 2 vắng KP nếu i%5==0; buổi 3 vắng KP nếu i%10==0 (=> i%10==0 cảnh báo vắng KP), muộn nếu i%7==0.
+  // Đi lễ 2 tuần: tuần 1 vắng KP nếu i%6==0; tuần 2 vắng KP nếu i%4==0 (=> i%12==0 cảnh báo vắng lễ). Mọi em có SĐT (báo cáo không được lộ).
+  const [gradeE] = await db.insert(s.grades).values({ name: "Khối E2E E" }).returning();
+  await db.insert(s.users).values({ email: "head-e@e2e.vn", name: "Trưởng khối E", passwordHash: hash, gradeId: gradeE.id, isGradeHead: true });
+  const [glvR] = await db.insert(s.users).values({ email: "glv-r@e2e.vn", name: "GLV R", passwordHash: hash, gradeId: gradeE.id }).returning();
+  const [classR] = await db.insert(s.classes).values({ gradeId: gradeE.id, name: "Lớp R" }).returning();
+  await db.insert(s.classCatechists).values({ classId: classR.id, userId: glvR.id });
+  const kidsR = await db.insert(s.students).values(Array.from({ length: 60 }, (_, i) => ({
+    classId: classR.id, fullName: `Em R${String(i + 1).padStart(2, "0")}`, saintName: i % 2 === 0 ? "Giuse" : "Maria", parentPhone: `09123450${String(i + 1).padStart(2, "0")}`,
+  }))).returning();
+  const sessionsR = await db.insert(s.sessions).values([-21, -14, -7].map((d) => ({ classId: classR.id, termId: term.id, heldOn: dayOffset(d) }))).returning();
+  const massR = await db.insert(s.sessions).values([-14, -7].map((d) => ({ classId: classR.id, termId: term.id, heldOn: massSundayFor(dayOffset(d)), kind: "mass" as const }))).returning();
+  await db.insert(s.attendance).values(kidsR.flatMap((k, idx) => {
+    const i = idx + 1;
+    return [
+      { sessionId: sessionsR[0].id, studentId: k.id, status: "present" as const },
+      { sessionId: sessionsR[1].id, studentId: k.id, status: i % 5 === 0 ? "absent_unexcused" as const : "present" as const },
+      { sessionId: sessionsR[2].id, studentId: k.id, status: i % 10 === 0 ? "absent_unexcused" as const : i % 7 === 0 ? "late" as const : "present" as const },
+      { sessionId: massR[0].id, studentId: k.id, status: i % 6 === 0 ? "absent_unexcused" as const : "present" as const },
+      { sessionId: massR[1].id, studentId: k.id, status: i % 4 === 0 ? "absent_unexcused" as const : "present" as const },
+    ];
+  }));
+
   // Lớp N (nhật ký): lớp riêng, GLV riêng; test tự gieo dòng nhật ký/lượt quét bằng SQL rồi dọn lại. Trưởng khối A đọc được (chỉ xem).
   const [classN] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp N" }).returning();
   const [glvN] = await db.insert(s.users).values({ email: "glv-n@e2e.vn", name: "GLV N", passwordHash: hash, gradeId: gradeA.id }).returning();
@@ -140,6 +164,7 @@ export default async function globalSetup() {
 
   writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, classN: classN.id, glvN: glvN.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id,
     gradeC: gradeC.id, classM: classM.id, kidMassWarn: kidMassWarn.id, kidMassOne: kidMassOne.id,
+    gradeE: gradeE.id, classR: classR.id,
     gradeD: gradeD.id, classD1: classD1.id, classD2: classD2.id, planD: planD.id }));
   await sql.end();
 }

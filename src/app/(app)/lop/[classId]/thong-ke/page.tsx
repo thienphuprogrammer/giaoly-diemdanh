@@ -1,4 +1,4 @@
-import { CalendarRange, Download } from "lucide-react";
+import { CalendarRange, Download, Printer } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -69,9 +69,14 @@ export default async function StatsPage({
             <span className="tabular-nums">{stats.rows.length}</span> em{warnings > 0 ? <> · <span className="font-medium text-warn-alert">{warnings} cảnh báo</span></> : ""}
           </p>
         </div>
-        <a href={`/lop/${classId}/thong-ke/export?termId=${term.id}`} className="btn btn-secondary">
-          <Download aria-hidden size={20} />Xuất Excel
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/lop/${classId}/thong-ke/bao-cao?termId=${term.id}`} className="btn btn-secondary" prefetch={false}>
+            <Printer aria-hidden size={20} />Báo cáo in được
+          </Link>
+          <a href={`/lop/${classId}/thong-ke/export?termId=${term.id}`} className="btn btn-secondary">
+            <Download aria-hidden size={20} />Xuất Excel
+          </a>
+        </div>
       </div>
       {terms.length > 1 && (
         <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" aria-label="Học kỳ">
