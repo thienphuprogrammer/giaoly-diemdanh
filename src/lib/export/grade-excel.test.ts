@@ -24,9 +24,10 @@ describe("buildGradeWorkbook", () => {
     const wb = await load();
     expect(wb.worksheets.map((w) => w.name)).toEqual(["Tổng hợp khối", "Cảnh báo"]);
     const ws = wb.getWorksheet("Tổng hợp khối")!;
-    expect(ws.getRow(2).values).toEqual([undefined, "Lớp A", 3, 4, "86%", 1, 2, 5]);
+    expect(ws.getRow(2).values).toEqual([undefined, "Lớp A", 3, 4, 0.857, 1, 2, 5]);
     expect(ws.getRow(3).getCell(1).value).toBe("'=Lớp B");
     expect(ws.getRow(3).getCell(4).value).toBe("—");
+    expect(ws.getRow(2).getCell(4).numFmt).toBe("0%");
     expect(String(ws.getCell("I1").value)).toContain("Học kỳ 1");
   });
 

@@ -60,7 +60,7 @@ const massLabel = (counted: number, attended: number): string => (counted === 0 
 /** Chữ cảnh báo (không chỉ màu): vắng KP chạm ngưỡng và/hoặc vắng lễ chạm ngưỡng của khối. */
 function warningText(r: ReportInput): string {
   const parts = [
-    r.summary.warning.level === "warning" ? `Chú ý (≥${DEFAULT_RULES.unexcusedThreshold} vắng KP)` : "",
+    r.summary.warning.level === "warning" ? `Cảnh báo: ≥${DEFAULT_RULES.unexcusedThreshold} vắng KP` : "",
     r.mass?.warning ? "Vắng lễ ≥ ngưỡng" : "",
   ];
   return parts.filter(Boolean).join("; ");

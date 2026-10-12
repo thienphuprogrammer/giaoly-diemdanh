@@ -1,6 +1,7 @@
 import { CalendarRange, Download, Printer } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TermTabs } from "@/components/nav/TermTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WarningPill } from "@/components/ui/Pill";
 import { STATUS_META } from "@/components/ui/status";
@@ -78,16 +79,7 @@ export default async function StatsPage({
           </a>
         </div>
       </div>
-      {terms.length > 1 && (
-        <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" aria-label="Học kỳ">
-          {terms.map((t) => (
-            <Link key={t.id} href={`?termId=${t.id}`} aria-current={t.id === term.id ? "page" : undefined}
-              className={`flex h-11 shrink-0 items-center rounded-full border px-4 font-display text-sm font-medium transition-colors ${t.id === term.id ? "border-action bg-action text-on-action" : "border-border-strong bg-surface text-ink hover:bg-surface-muted"}`}>
-              {t.name}
-            </Link>
-          ))}
-        </nav>
-      )}
+      <TermTabs terms={terms} currentId={term.id} />
       <div role="table" aria-label={`Thống kê ${stats.className} ${stats.term.name}`} className="card overflow-hidden">
         <div role="rowgroup" className="sr-only sm:not-sr-only">
           <div role="row" className={`${ROW} border-b border-border bg-surface-muted font-display text-xs font-medium text-ink-soft`}>

@@ -35,14 +35,14 @@ export async function classTermReport(db: Db, user: AppUser, classId: string, te
   const cls = await guardClass(db, user, classId, "read");
   if (!cls) return null;
   const [stats, term, grade] = await Promise.all([classStats(db, user, classId, termId, today), findTerm(db, termId), getGrade(db, cls.gradeId)]);
-  if (!stats || !term) return null;
+  if (!stats || !term || !grade) return null;
   const mass = await massStats(db, user, { classId, termId: term.id, today });
   const massBy = new Map((mass?.rows ?? []).map((m) => [m.studentId, m]));
   return {
     className: stats.className,
-    gradeName: grade?.name ?? "",
+    gradeName: grade.name,
     term,
-    massThreshold: mass?.threshold ?? grade?.massThreshold ?? 2,
+    massThreshold: grade.massThreshold,
     massWeeks: mass?.totals.recordedWeeks ?? 0,
     rows: stats.rows.map((r) => {
       const m = massBy.get(r.studentId);
@@ -92,17 +92,22 @@ export async function gradeReport(db: Db, user: AppUser, termId: string, today: 
     massAttentionList(db, user, term.id, today),
     Promise.all(overview.map((c) => massStats(db, user, { classId: c.classId, termId: term.id, today }))),
   ]);
-  const unexcused = attention.filter((a) => a.level === "warning");
+  // Người dùng có thể được gán vào lớp của khối khác: danh sách chỉ gồm lớp của khối này.
+  const inGrade = new Set(overview.map((c) => c.classId));
+  const unexcused = attention.filter((a) => a.level === "warning" && inGrade.has(a.classId));
+  const massWarned = massAttention.filter((m) => inGrade.has(m.classId));
+  // Cột theo lớp dùng cùng nguồn với /khoi và thống kê đi lễ (tính cả em đã lên lớp/đã nghỉ ở học kỳ đã qua);
+  // danh sách em chỉ gồm em đang học ở lớp (hành động được).
   const classes = overview.map((c, i) => ({
     classId: c.classId, className: c.className, studentCount: c.studentCount, sessions: c.sessions, presentRate: c.presentRate,
-    unexcusedWarnings: unexcused.filter((a) => a.classId === c.classId).length,
-    massWarnings: massAttention.filter((m) => m.classId === c.classId).length,
+    unexcusedWarnings: c.warningCount,
+    massWarnings: massByClass[i]?.totals.warnings ?? 0,
     massWeeks: massByClass[i]?.totals.recordedWeeks ?? 0,
   }));
-  const ids = new Set([...unexcused.map((a) => a.studentId), ...massAttention.map((m) => m.studentId)]);
+  const ids = new Set([...unexcused.map((a) => a.studentId), ...massWarned.map((m) => m.studentId)]);
   const warnings = [...ids].map((studentId) => {
     const a = unexcused.find((x) => x.studentId === studentId);
-    const m = massAttention.find((x) => x.studentId === studentId);
+    const m = massWarned.find((x) => x.studentId === studentId);
     return {
       studentId, fullName: (a ?? m)!.fullName, className: (a ?? m)!.className,
       unexcused: a ? a.unexcused : null, missedMass: m ? m.missed : null,

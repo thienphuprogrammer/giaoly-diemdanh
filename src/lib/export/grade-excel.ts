@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { safeCell } from "@/lib/export/excel";
-import { formatPercent, termRangeLabel } from "@/lib/report/term-report";
+import { termRangeLabel } from "@/lib/report/term-report";
 import type { GradeReport } from "@/server/services/term-report";
 
 const SUMMARY = "Tổng hợp khối";
@@ -13,7 +13,8 @@ export async function buildGradeWorkbook(report: GradeReport): Promise<Buffer> {
   ws.addRow(["Lớp", "Sĩ số", "Số buổi học đã tổ chức", "% có mặt", "Em cảnh báo vắng KP", "Em cảnh báo vắng lễ", "Số tuần lễ đã ghi"]);
   ws.getRow(1).font = { bold: true };
   for (const c of report.classes) {
-    ws.addRow([safeCell(c.className), c.studentCount, c.sessions, formatPercent(c.presentRate), c.unexcusedWarnings, c.massWarnings, c.massWeeks]);
+    const row = ws.addRow([safeCell(c.className), c.studentCount, c.sessions, c.presentRate ?? "—", c.unexcusedWarnings, c.massWarnings, c.massWeeks]);
+    if (c.presentRate !== null) row.getCell(4).numFmt = "0%";
   }
   ws.getCell("I1").value = safeCell(`${report.gradeName} — ${report.term.name} (${termRangeLabel(report.term.startsOn, report.term.endsOn)})`);
   [22, 8, 22, 10, 20, 20, 16].forEach((width, i) => { ws.getColumn(i + 1).width = width; });

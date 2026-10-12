@@ -70,7 +70,7 @@ test("sửa điểm danh rồi thấy dòng nhật ký đúng người, đúng g
 test("lọc theo loại và theo ngày; bộ lọc nằm trên URL", async ({ page }) => {
   await withSql(async (sql) => {
     const { classN, glvN } = state();
-    const sessionId = (await sql`insert into sessions (class_id, term_id, held_on) values (${classN}, (select id from terms limit 1), ${todayInVietnam()}) returning id`)[0].id as string;
+    const sessionId = (await sql`insert into sessions (class_id, term_id, held_on) values (${classN}, (select id from terms order by starts_on, id limit 1), ${todayInVietnam()}) returning id`)[0].id as string;
     const kid = (await sql`select id from students where class_id = ${classN} and full_name = 'Nhật Ký Một'`)[0].id as string;
     await sql`insert into audit_events (at, actor_id, class_id, entity, action, summary) values
       (now() - interval '5 minutes', ${glvN}, ${classN}, 'student', 'student.create', ${sql.json({ studentName: "Em Lọc Thiếu Nhi" })}),
@@ -103,9 +103,12 @@ test("lọc theo loại và theo ngày; bộ lọc nằm trên URL", async ({ pa
 
   // Lọc ngày: chỉ hôm nay, giữ loại "Thiếu nhi" khi đổi ngày.
   await page.getByRole("link", { name: "Thiếu nhi", exact: true }).click();
+  await expect(page).toHaveURL(/loai=thieu-nhi/);
   await page.getByLabel("Từ ngày").fill(todayInVietnam());
   await page.getByLabel("Đến ngày").fill(todayInVietnam());
   await page.getByRole("button", { name: "Lọc" }).click();
+  await expect(page).toHaveURL(/tu=\d{4}-\d{2}-\d{2}/);
+  await expect(page).toHaveURL(/den=\d{4}-\d{2}-\d{2}/);
   const q = new URL(page.url()).searchParams;
   expect([q.get("tu"), q.get("den"), q.get("loai")]).toEqual([todayInVietnam(), todayInVietnam(), "thieu-nhi"]);
   await expect(rows).toHaveCount(1);

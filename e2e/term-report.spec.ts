@@ -16,7 +16,16 @@ async function login(page: Page, email: string) {
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 /** Số trang của PDF Chromium: đếm đối tượng /Type /Page (không phải /Pages). */
-const pdfPages = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+function pdfPages(pdf: Buffer): number {
+  const text = pdf.toString("latin1");
+  const byType = (text.match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length;
+  // Phương án hai: /Count của nút /Pages gốc (số lớn nhất).
+  const counts = [...text.matchAll(/\/Count\s+(\d+)/g)].map((m) => Number(m[1]));
+  const byCount = counts.length ? Math.max(...counts) : 0;
+  const pages = Math.max(byType, byCount);
+  if (pages === 0) throw new Error("Không đếm được số trang của PDF");
+  return pages;
+}
 
 test("báo cáo lớp: tiêu đề, học kỳ, cột, nút In, không tràn ngang, không lộ SĐT/mã QR", async ({ page }) => {
   await login(page, "glv-r@e2e.vn");
@@ -33,7 +42,7 @@ test("báo cáo lớp: tiêu đề, học kỳ, cột, nút In, không tràn nga
   }
   await expect(sheet.locator("tbody tr")).toHaveCount(60);
   const row10 = sheet.locator("tbody tr", { hasText: "Em R10" });
-  await expect(row10).toContainText("Chú ý (≥2 vắng KP)");
+  await expect(row10).toContainText("Cảnh báo: ≥2 vắng KP");
   await expect(sheet.locator("tbody tr", { hasText: "Em R12" })).toContainText("Vắng lễ ≥ ngưỡng");
   await expect(sheet.locator("tfoot")).toContainText("Tổng cộng (60 em)");
   await expect(sheet.locator("tfoot")).toContainText("90%");
@@ -64,12 +73,17 @@ test("báo cáo lớp: PDF A4 có nhiều trang với 60 em, nút In và thanh c
   const pdf = await page.pdf({ format: "A4", margin: { top: "12mm", bottom: "12mm", left: "12mm", right: "12mm" } });
   expect(pdf.length).toBeGreaterThan(1000);
   expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
-  expect(pdfPages(pdf)).toBeGreaterThan(1);
+  expect(pdfPages(pdf)).toBeGreaterThanOrEqual(2); // 60 dòng ở cỡ chữ in không thể vừa một trang A4
+  const cssSized = await page.pdf({ preferCSSPageSize: true });
+  expect(pdfPages(cssSized)).toBeGreaterThanOrEqual(2);
   // Ở chế độ in, thanh công cụ và thanh điều hướng bị ẩn, tiêu đề bảng lặp lại.
   await page.emulateMedia({ media: "print" });
   await expect(page.getByRole("button", { name: "In / Lưu PDF" })).toBeHidden();
-  expect(await page.locator("thead").first().evaluate((el) => getComputedStyle(el).display)).toBe("table-header-group");
-  expect(await page.locator("tfoot").first().evaluate((el) => getComputedStyle(el).display)).toBe("table-row-group");
+  await expect(page.getByRole("navigation", { name: "Điều hướng chính" })).toBeHidden();
+  const display = (sel: string) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).display);
+  expect(await display("thead")).toBe("table-header-group"); // lặp tiêu đề mỗi trang
+  expect(await display("tfoot")).toBe("table-row-group"); // mặc định là table-footer-group (lặp mỗi trang); báo cáo chỉ cần tổng ở cuối
+  expect(await page.locator("tbody tr").first().evaluate((el) => getComputedStyle(el).breakInside)).toBe("avoid");
 });
 
 test("báo cáo lớp: người ngoài quyền đọc lớp nhận 404; trưởng khối đọc được", async ({ page }) => {
@@ -92,7 +106,7 @@ test("báo cáo khối: trưởng khối thấy tổng hợp lớp, danh sách c
   await expect(sheet.getByRole("heading", { level: 1, name: /Báo cáo tổng hợp · Khối E2E E/ })).toBeVisible();
   const row = sheet.locator("tbody tr").first();
   await expect(row.locator("td")).toHaveText(["Lớp R", "60", "3", "90%", "6", "5", "2"]);
-  await expect(sheet.getByRole("heading", { name: "Em đang cảnh báo (10)" })).toBeVisible();
+  await expect(sheet.getByRole("heading", { name: "Em đang cảnh báo (đang học ở lớp) (10)" })).toBeVisible();
   await expect(sheet.getByRole("row", { name: /Em R60.*Vắng KP 2 buổi; Vắng lễ 2 tuần/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "In / Lưu PDF" })).toBeVisible();
   expect(await noOverflow(page)).toBe(true);
@@ -112,7 +126,7 @@ test("báo cáo khối: trưởng khối thấy tổng hợp lớp, danh sách c
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load((await res.body()) as unknown as ArrayBuffer);
   expect(wb.worksheets.map((w) => w.name)).toEqual(["Tổng hợp khối", "Cảnh báo"]);
-  expect(wb.getWorksheet("Tổng hợp khối")!.getRow(2).values).toEqual([undefined, "Lớp R", 60, 3, "90%", 6, 5, 2]);
+  expect(wb.getWorksheet("Tổng hợp khối")!.getRow(2).values).toEqual([undefined, "Lớp R", 60, 3, 0.9, 6, 5, 2]);
   const warn = wb.getWorksheet("Cảnh báo")!;
   expect(warn.rowCount).toBe(11);
   const cells = JSON.stringify(wb.worksheets.map((w) => w.getSheetValues()));

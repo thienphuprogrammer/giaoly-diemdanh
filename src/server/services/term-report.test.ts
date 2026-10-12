@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { classes, attendance, sessions, students, users } from "@/db/schema";
+import { attendance, classCatechists, classes, sessions, students, users } from "@/db/schema";
 import { buildReportRows } from "@/lib/report/term-report";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
+import { massStats } from "./mass-stats";
+import { gradeOverview } from "./stats";
 import { classTermReport, gradeReport } from "./term-report";
 
 type Status = "present" | "absent_excused" | "absent_unexcused" | "late";
@@ -41,7 +43,7 @@ describe("classTermReport", () => {
     const rows = buildReportRows(r!.rows);
     const byId = Object.fromEntries(r!.rows.map((x, i) => [x.studentId, rows[i]]));
     expect(byId[an.id]).toMatchObject({ present: 1, late: 1, percent: "100%", mass: "2/2", warning: "" });
-    expect(byId[binh.id]).toMatchObject({ unexcused: 2, percent: "0%", mass: "0/2", warning: "Chú ý (≥2 vắng KP); Vắng lễ ≥ ngưỡng" });
+    expect(byId[binh.id]).toMatchObject({ unexcused: 2, percent: "0%", mass: "0/2", warning: "Cảnh báo: ≥2 vắng KP; Vắng lễ ≥ ngưỡng" });
   });
 
   it("is readable by the class catechist and the grade head, null for another grade's head/catechist and bad input", async () => {
@@ -114,6 +116,34 @@ describe("gradeReport", () => {
     expect(r!.warnings).toEqual([{ studentId: binh.id, fullName: "Bình", className: "Lớp A", unexcused: 2, missedMass: 2 }]);
     expect(JSON.stringify(r)).not.toContain(PHONE);
     expect(JSON.stringify(r).toLowerCase()).not.toContain("phone");
+  });
+
+  it("past term: class columns match gradeOverview/massStats even after a warned student is promoted, while the list excludes them", async () => {
+    const { db, b, binh } = await setup();
+    const [next] = await db.insert(classes).values({ gradeId: b.gradeId, name: "Lớp Z" }).returning();
+    await db.update(students).set({ classId: next.id }).where(eq(students.id, binh.id));
+    const today = "2027-02-01";
+    const r = await gradeReport(db, b.head, b.termId, today);
+    const overview = (await gradeOverview(db, b.head, b.termId, today))!;
+    const a = r!.classes.find((c) => c.classId === b.classId)!;
+    expect(a.unexcusedWarnings).toBe(overview.find((c) => c.classId === b.classId)!.warningCount);
+    expect(a.unexcusedWarnings).toBe(1);
+    expect(a.massWarnings).toBe((await massStats(db, b.head, { classId: b.classId, termId: b.termId, today }))!.totals.warnings);
+    expect(a.massWarnings).toBe(1);
+    expect(r!.warnings).toEqual([]);
+  });
+
+  it("never lists students of another grade's class the head is also assigned to", async () => {
+    const { db, b, mark, session } = await setup();
+    const foreign = (await db.insert(students).values({ classId: b.otherClassId, fullName: "Ngoại Khối" }).returning())[0];
+    await db.insert(classCatechists).values({ classId: b.otherClassId, userId: b.head.id });
+    const fs = (await db.insert(sessions).values({ classId: b.otherClassId, termId: b.termId, heldOn: "2026-10-04" }).returning())[0];
+    const fs2 = (await db.insert(sessions).values({ classId: b.otherClassId, termId: b.termId, heldOn: "2026-10-11" }).returning())[0];
+    await mark(fs.id, foreign.id, "absent_unexcused"); await mark(fs2.id, foreign.id, "absent_unexcused");
+    void session;
+    const r = await gradeReport(db, b.head, b.termId);
+    expect(r!.warnings.map((w) => w.fullName)).not.toContain("Ngoại Khối");
+    expect(r!.classes.map((c) => c.className)).toEqual(["Lớp A"]);
   });
 
   it("does not list promoted students as warned", async () => {

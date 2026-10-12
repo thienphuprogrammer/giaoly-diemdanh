@@ -58,7 +58,7 @@ describe("buildReportRows", () => {
       row({ studentId: "e", summary: summary({ unexcused: 2, marked: 2, warning: { level: "warning", unexcused: 2, remaining: 0 } }), mass: mass({ recordedWeeksCounted: 2, missedWeeks: 2, warning: true }) }),
     ]);
     expect(rows.map((r) => r.warning)).toEqual([
-      "Chú ý (≥2 vắng KP)", "", "Vắng lễ ≥ ngưỡng", "", "Chú ý (≥2 vắng KP); Vắng lễ ≥ ngưỡng",
+      "Cảnh báo: ≥2 vắng KP", "", "Vắng lễ ≥ ngưỡng", "", "Cảnh báo: ≥2 vắng KP; Vắng lễ ≥ ngưỡng",
     ]);
     expect(rows[2].mass).toBe("1/3");
     expect(rows[3].mass).toBe("2/3");

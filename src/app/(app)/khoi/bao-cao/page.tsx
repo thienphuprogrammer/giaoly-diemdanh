@@ -1,6 +1,6 @@
 import { CalendarRange, Download } from "lucide-react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TermTabs } from "@/components/nav/TermTabs";
 import { ReportToolbar } from "@/components/report/ReportToolbar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { db } from "@/db/client";
@@ -28,16 +28,7 @@ export default async function GradeReportPage({ searchParams }: { searchParams: 
     <div className="flex flex-col gap-4">
       <ReportToolbar backHref="/khoi" backLabel="Khối" hint="Chọn “Lưu dưới dạng PDF” trong hộp thoại in để lưu file. Khổ giấy A4 dọc." />
       <div className="flex flex-wrap items-center gap-3 print:hidden">
-        {terms.length > 1 && (
-          <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" aria-label="Học kỳ">
-            {terms.map((t) => (
-              <Link key={t.id} href={`?termId=${t.id}`} aria-current={t.id === term.id ? "page" : undefined}
-                className={`flex h-11 shrink-0 items-center rounded-full border px-4 font-display text-sm font-medium transition-colors ${t.id === term.id ? "border-action bg-action text-on-action" : "border-border-strong bg-surface text-ink hover:bg-surface-muted"}`}>
-                {t.name}
-              </Link>
-            ))}
-          </nav>
-        )}
+        <TermTabs terms={terms} currentId={term.id} />
         <a href={`/khoi/bao-cao/export?termId=${term.id}`} className="btn btn-secondary">
           <Download aria-hidden size={20} />Xuất Excel
         </a>
@@ -86,7 +77,7 @@ export default async function GradeReportPage({ searchParams }: { searchParams: 
           </div>
         )}
         <section aria-labelledby="grade-warned" className="flex flex-col gap-2">
-          <h2 id="grade-warned" className="text-base font-semibold">Em đang cảnh báo ({report.warnings.length})</h2>
+          <h2 id="grade-warned" className="text-base font-semibold">Em đang cảnh báo (đang học ở lớp) ({report.warnings.length})</h2>
           {report.warnings.length === 0 ? (
             <p className="text-sm text-ink-soft">Không có em nào chạm ngưỡng cảnh báo trong học kỳ này.</p>
           ) : (
@@ -114,7 +105,7 @@ export default async function GradeReportPage({ searchParams }: { searchParams: 
             </div>
           )}
         </section>
-        <p className="text-xs text-ink-soft">Chỉ tính em đang học ở lớp. % có mặt = (có mặt + đi muộn) / số lượt đã ghi. Buổi đi lễ tính riêng, không lẫn vào buổi học.</p>
+        <p className="text-xs text-ink-soft">Sĩ số, % có mặt và số em cảnh báo theo lớp tính mọi em có trong học kỳ (kể cả em đã lên lớp khác hoặc đã nghỉ); danh sách bên dưới chỉ gồm em đang học ở lớp. % có mặt = (có mặt + đi muộn) / số lượt đã ghi. Buổi đi lễ tính riêng, không lẫn vào buổi học.</p>
       </article>
     </div>
   );
