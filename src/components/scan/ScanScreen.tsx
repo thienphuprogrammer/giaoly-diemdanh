@@ -1,6 +1,6 @@
 "use client";
 import { Check, CircleAlert, Clock, LogIn, RefreshCw, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { RemainingAbsentButton, RemainingAbsentSheet } from "@/components/attendance/RemainingAbsent";
 import { useLeaveGuard } from "@/components/nav/useLeaveGuard";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -9,20 +9,30 @@ import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { remainingAbsentBlock } from "@/lib/attendance/remaining-absent";
+import { SESSION_CANCELLED, type ScanMode } from "@/lib/attendance/scan-rules";
 import { loginHref } from "@/lib/auth/next-path";
 import { dateLabel } from "@/lib/date-label";
+import { nextRadioIndex } from "@/lib/radio-keys";
+import { scannerExit } from "@/lib/scan-return";
 import { QrCamera, type CameraState } from "./QrCamera";
 import { useScanFeedbackSetting } from "./feedback";
 import { useScanSession } from "./useScanSession";
 import { useWakeLock } from "./useWakeLock";
 
-interface ScanScreenProps { sessionId: string; userId: string; classId: string; className: string; heldOn: string }
+interface ScanScreenProps {
+  sessionId: string; userId: string; classId: string; className: string; heldOn: string;
+  /** Mở từ nút "Quét QR" của bảng điểm danh (`?from=board`): về bảng bằng cách lùi lịch sử. */
+  fromBoard: boolean;
+}
+
+const MODES: readonly ScanMode[] = ["present", "late"];
 
 /**
  * Màn quét toàn màn hình (không có thanh điều hướng/tab lớp). "Xong" và công tắc Có mặt/Đi muộn ở đáy cho ngón cái.
- * Rời màn (Xong, Back, link) khi còn lượt chưa lưu thì hỏi lại; rời bằng `router.replace` để Back không quay lại máy quét.
+ * Rời màn (Xong, Back, link) khi còn lượt chưa lưu thì hỏi lại. Về bảng: mở từ bảng thì lùi lịch sử (không tạo mục bảng
+ * thứ hai), mở từ nơi khác thì `router.replace` để Back không quay lại máy quét.
  */
-export function ScanScreen({ sessionId, userId, classId, className, heldOn }: ScanScreenProps) {
+export function ScanScreen({ sessionId, userId, classId, className, heldOn, fromBoard }: ScanScreenProps) {
   const s = useScanSession({ sessionId, userId });
   const [storedFeedback, saveFeedback] = useScanFeedbackSetting();
   const [camera, setCamera] = useState<CameraState>("starting");
@@ -59,8 +69,21 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
   const boardHref = `/lop/${classId}/diem-danh/${heldOn}`;
   const late = s.mode === "late";
   // Còn lượt quét đang gửi/lỗi/cần chọn thì không đánh vắng (tránh chạy đua với hàng đợi); nói rõ lý do.
-  const absentBlock = remainingAbsentBlock({ unsaved: s.pending, busy: absentSaving, notReady: s.roster === null });
-  const goBoard = () => { setReview(false); guard.go(boardHref); };
+  const absentBlock = s.cancelled ? SESSION_CANCELLED : remainingAbsentBlock({ unsaved: s.pending, busy: absentSaving, notReady: s.roster === null });
+  const toBoard = () => {
+    if (scannerExit({ fromBoard, historyLength: window.history.length }) === "back") guard.back();
+    else guard.go(boardHref);
+  };
+  const goBoard = () => { setReview(false); toBoard(); };
+  const modeRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Radiogroup theo WAI-ARIA: chỉ mục đang chọn nhận Tab; mũi tên/Home/End đổi chế độ và chuyển focus.
+  const onModeKey = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const next = nextRadioIndex(MODES.indexOf(s.mode), MODES.length, e.key);
+    if (next === null) return;
+    e.preventDefault();
+    s.setMode(MODES[next]);
+    modeRefs.current[next]?.focus();
+  };
   // Đăng nhập xong quay lại đúng màn quét; hàng chờ đã lưu bền (theo buổi + người dùng) sẽ tự gửi tiếp.
   const relogin = () => guard.hardNavigate(loginHref(`${boardHref}/quet`));
 
@@ -93,7 +116,9 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
           <Notice tone="warning" role="status">Máy không lưu được hàng chờ: đừng đóng trang cho tới khi gửi xong.</Notice>
         )}
 
-        {camera === "denied" || camera === "unavailable" ? (
+        {s.cancelled ? (
+          <Notice tone="warning" role="status">{SESSION_CANCELLED}. Tắt “Buổi nghỉ lễ” trên bảng điểm danh nếu buổi này vẫn học.</Notice>
+        ) : camera === "denied" || camera === "unavailable" ? (
           <EmptyState icon={VideoOff} title={camera === "denied" ? "Chưa cho phép dùng camera" : "Không mở được camera"}
             action={(
               <div className="flex flex-wrap justify-center gap-2">
@@ -108,8 +133,8 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
         ) : (
           <QrCamera key={cameraKey} onCode={s.handleCode} onState={setCamera} paused={paused} />
         )}
-        {camera === "starting" && <p className="text-sm text-ink-soft" role="status">Đang mở camera…</p>}
-        {camera === "restarting" && <p className="text-sm text-ink-soft" role="status">Đang mở lại camera…</p>}
+        {!s.cancelled && camera === "starting" && <p className="text-sm text-ink-soft" role="status">Đang mở camera…</p>}
+        {!s.cancelled && camera === "restarting" && <p className="text-sm text-ink-soft" role="status">Đang mở lại camera…</p>}
         {s.rosterError && (
           <Notice tone="error" role="alert">
             Chưa tải được danh sách lớp. <button type="button" onClick={() => void s.loadRoster()} className="underline">Thử lại</button>
@@ -177,15 +202,16 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
           {late && <p role="status" className="text-center text-sm font-medium text-st-late">Đang quét chế độ <b>Đi muộn</b>: thẻ quét sau sẽ ghi Đi muộn.</p>}
           <div className="flex items-stretch gap-2">
             <div role="radiogroup" aria-label="Chế độ quét" className="grid flex-1 grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
-              {(["present", "late"] as const).map((m) => (
-                <button key={m} type="button" role="radio" aria-checked={s.mode === m} onClick={() => s.setMode(m)}
+              {MODES.map((m, i) => (
+                <button key={m} ref={(el) => { modeRefs.current[i] = el; }} type="button" role="radio" aria-checked={s.mode === m}
+                  tabIndex={s.mode === m ? 0 : -1} onClick={() => s.setMode(m)} onKeyDown={onModeKey}
                   className={`flex h-12 items-center justify-center gap-1.5 rounded-control font-display text-base transition-colors ${s.mode === m ? `${m === "late" ? "bg-st-late" : "bg-st-present"} font-semibold text-white shadow-sm` : "font-medium text-ink-soft hover:bg-surface"}`}>
                   {m === "late" ? <Clock aria-hidden size={18} className="hidden min-[360px]:block" /> : <UserCheck aria-hidden size={18} className="hidden min-[360px]:block" />}
                   {m === "late" ? "Đi muộn" : "Có mặt"}
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => guard.go(boardHref)} className="btn btn-primary h-auto min-h-14 shrink-0 px-4">
+            <button type="button" onClick={toBoard} className="btn btn-primary h-auto min-h-14 shrink-0 px-4">
               <Check aria-hidden size={18} /> Xong
             </button>
           </div>

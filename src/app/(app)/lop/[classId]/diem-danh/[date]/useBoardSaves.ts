@@ -116,6 +116,7 @@ export function useBoardSaves(board: Board, renderId: string) {
     setUndo(null);
     return bulk(() => undoMarkAllPresentAction({ sessionId, batchId }), (d) => {
       dispatch({ type: "bulkSet", studentIds: d.studentIds, mark: null });
+      refresh(); // như markAll: thiết bị khác có thể đã ghi trong lúc đó
     });
   };
   const closeUndo = useCallback(() => setUndo(null), []);

@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       barcode-detector:
-        specifier: ^3.2.2
+        specifier: 3.2.2
         version: 3.2.2(@types/emscripten@1.41.6)
       bcryptjs:
         specifier: ^3.0.3

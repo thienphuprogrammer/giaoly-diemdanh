@@ -6,7 +6,7 @@ import { findScanTarget, getScanEvent, updateMarkIfUnchanged, listClassTokens, l
 import { attendance, attendanceScans, students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
-import { decideScan, type CurrentMark, type ScanDecision } from "@/lib/attendance/scan-rules";
+import { INVALID_CARD, decideScan, type CurrentMark, type ScanDecision } from "@/lib/attendance/scan-rules";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { guardClass } from "../guard";
 import { CANCELLED, NOT_FOUND_SESSION } from "./attendance";
@@ -28,7 +28,6 @@ export interface ScanOutcome {
 }
 export interface UndoOutcome { eventId: string; targetEventId: string; studentId: string; status: AttendanceStatus | null }
 
-export const INVALID_CARD = "Thẻ không dùng được cho lớp này";
 const reject = (code: ScanErrorCode, error: string) => ({ ok: false as const, code, error });
 const success = <T,>(data: T): ScanResponse<T> => ({ ok: true, data });
 

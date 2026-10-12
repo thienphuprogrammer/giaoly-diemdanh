@@ -112,7 +112,7 @@ export function QrCamera({ onCode, onState, paused }: {
       <video ref={videoRef} muted playsInline aria-label="Hình từ camera" className="h-full w-full object-cover" />
       <div aria-hidden className="pointer-events-none absolute inset-[18%] rounded-2xl border-4 border-white/80" />
       {torch.supported && (
-        <button type="button" onClick={toggleTorch} aria-pressed={torch.on} aria-label="Bật đèn"
+        <button type="button" onClick={toggleTorch} aria-label={torch.on ? "Tắt đèn" : "Bật đèn"}
           className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink">
           {torch.on ? <FlashlightOff aria-hidden size={20} /> : <Flashlight aria-hidden size={20} />}
         </button>

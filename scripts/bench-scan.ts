@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import postgres from "postgres";
+import { errorSummary } from "../src/lib/error-summary";
 import { encryptSession } from "../src/lib/auth/session";
 
 /**
@@ -9,8 +10,13 @@ import { encryptSession } from "../src/lib/auth/session";
 const base = process.env.BENCH_BASE_URL ?? "http://localhost:3100";
 const dbUrl = process.env.E2E_DATABASE_URL;
 const secret = process.env.AUTH_SECRET;
-if (!dbUrl || !secret) throw new Error("Cần E2E_DATABASE_URL và AUTH_SECRET (đúng giá trị của server đang chạy)");
-if (!/e2e/i.test(new URL(dbUrl).pathname)) throw new Error("Tên database phải chứa 'e2e'");
+/** Lỗi do chính script đặt ra: thông điệp an toàn để in nguyên văn (không chứa cấu hình). */
+class BenchStop extends Error {}
+/** Dừng ngay với thông điệp an toàn (không in URL/chuỗi kết nối, kể cả khi URL sai định dạng). */
+const stop = (message: string): never => { console.error(message); process.exit(1); };
+const isE2eDb = (raw: string) => { try { return /e2e/i.test(new URL(raw).pathname); } catch { return false; } };
+if (!dbUrl || !secret) stop("Cần E2E_DATABASE_URL và AUTH_SECRET (đúng giá trị của server đang chạy)");
+if (!isE2eDb(dbUrl!)) stop("E2E_DATABASE_URL không hợp lệ hoặc tên database không chứa 'e2e'");
 
 const HELD_ON = "2000-01-02"; // không thể trùng dữ liệu thật
 const OWNER_NOTE = "bench-scan";
@@ -29,15 +35,15 @@ async function main() {
     const [user] = await sql`select id from users where email = 'glv-a@e2e.vn'`;
     const [cls] = await sql`select id from classes where name = 'Lớp Q'`;
     const [term] = await sql`select id from terms limit 1`;
-    if (!user || !cls || !term) throw new Error(SEED_MISSING);
+    if (!user || !cls || !term) throw new BenchStop(SEED_MISSING);
 
     // Chỉ dùng/xóa phiên do chính script này tạo (ghi dấu bằng note).
     const [existing] = await sql`select id, note from sessions where class_id = ${cls.id} and held_on = ${HELD_ON}`;
-    if (existing && existing.note !== OWNER_NOTE) throw new Error(`Đã có buổi ${HELD_ON} không do script tạo; dừng để không xóa nhầm`);
+    if (existing && existing.note !== OWNER_NOTE) throw new BenchStop(`Đã có buổi ${HELD_ON} không do script tạo; dừng để không xóa nhầm`);
     sessionId = existing?.id ?? (await sql`insert into sessions (class_id, term_id, held_on, note) values (${cls.id}, ${term.id}, ${HELD_ON}, ${OWNER_NOTE}) returning id`)[0].id;
 
     const tokens = (await sql`select qr_token from students where class_id = ${cls.id} and active order by full_name`).map((r) => r.qr_token as string);
-    if (tokens.length === 0) throw new Error(SEED_MISSING);
+    if (tokens.length === 0) throw new BenchStop(SEED_MISSING);
     const cookie = `session=${await encryptSession({ userId: user.id }, secret!)}`;
     const headers = { "Content-Type": "application/json", Origin: base, Cookie: cookie };
     const post = async (token: string) => {
@@ -45,7 +51,7 @@ async function main() {
       const res = await fetch(`${base}/api/diem-danh/quet`, { method: "POST", headers, body: JSON.stringify({ eventId: crypto.randomUUID(), sessionId, kind: "scan", token, mode: "present" }) });
       const body = (await res.json()) as { ok?: boolean; data?: { result?: string } };
       const ms = performance.now() - t;
-      if (res.status !== 200 || !body.ok || body.data?.result !== "applied") throw new Error(`Lượt quét không được ghi: HTTP ${res.status} ${JSON.stringify(body)}`);
+      if (res.status !== 200 || !body.ok || body.data?.result !== "applied") throw new BenchStop(`Lượt quét không được ghi: HTTP ${res.status} ${JSON.stringify(body)}`);
       return ms;
     };
     const reset = () => sql`delete from attendance where session_id = ${sessionId}`;
@@ -73,4 +79,4 @@ async function main() {
     await sql.end();
   }
 }
-main().catch((e: unknown) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });
+main().catch((e: unknown) => { console.error(e instanceof BenchStop ? e.message : errorSummary(e)); process.exit(1); });

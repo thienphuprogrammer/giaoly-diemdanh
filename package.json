@@ -22,7 +22,7 @@
     "bench:scan": "node --import tsx scripts/bench-scan.ts"
   },
   "dependencies": {
-    "barcode-detector": "^3.2.2",
+    "barcode-detector": "3.2.2",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",

@@ -165,7 +165,7 @@ test("bảng lấy dữ liệu mới khi tab hiện lại và khi quay lại b�
 
     // Sang màn quét, thiết bị khác ghi thêm, bấm Back => bảng không hiện bản cũ đã cache.
     await page.getByRole("link", { name: "Quét QR" }).click();
-    await expect(page).toHaveURL(/\/quet$/);
+    await expect(page).toHaveURL(/\/quet\?from=board$/);
     const [chi] = await sql`select id from students where class_id = ${state().classA} and full_name = 'Nguyễn Chi'`;
     await sql`insert into attendance (session_id, student_id, status) values (${row.session_id}, ${chi.id}, 'absent_excused')`;
     await page.goBack();

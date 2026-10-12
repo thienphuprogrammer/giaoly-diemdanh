@@ -12,6 +12,9 @@ const scanner = () => (test.info().project.name === "tablet-768" ? "glv-a2@e2e.v
 /** GLV thứ hai mỗi project cho các test mở màn quét nhiều lần (tải lại, đăng nhập lại), để không chạm giới hạn bảng tra. */
 const reopener = () => (test.info().project.name === "tablet-768" ? "glv-a4@e2e.vn" : "glv-a3@e2e.vn");
 
+/** GLV chỉ có lớp A (mỗi project một người): các test đi từ trang chủ/bảng sang máy quét. */
+const boardUser = () => (test.info().project.name === "tablet-768" ? "glv-a6@e2e.vn" : "glv-a5@e2e.vn");
+
 async function login(page: Page, email = scanner()) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
@@ -127,7 +130,16 @@ test("màn quét toàn màn hình; chế độ quét được nhớ trong buổi
   const xong = await page.getByRole("button", { name: "Xong" }).boundingBox();
   expect((xong?.y ?? 0) + (xong?.height ?? 0)).toBeGreaterThan((page.viewportSize()?.height ?? 0) - 120); // ở đáy, vùng ngón cái
   expect(xong?.height ?? 0).toBeGreaterThanOrEqual(44);
-  await page.getByRole("radio", { name: "Đi muộn" }).click();
+  // Radiogroup: chỉ mục đang chọn nhận Tab; mũi tên đổi chế độ và chuyển focus (roving tabindex).
+  const present = page.getByRole("radio", { name: "Có mặt" });
+  const late = page.getByRole("radio", { name: "Đi muộn" });
+  await expect(present).toHaveAttribute("tabindex", "0");
+  await expect(late).toHaveAttribute("tabindex", "-1");
+  await present.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(late).toHaveAttribute("aria-checked", "true");
+  await expect(late).toBeFocused();
+  await expect(late).toHaveAttribute("tabindex", "0");
   await page.reload();
   await waitScannerReady(page);
   await expect(page.getByRole("radio", { name: "Đi muộn" })).toHaveAttribute("aria-checked", "true");
@@ -192,6 +204,79 @@ test("Back khi còn lượt chưa lưu thì hỏi lại; Xong về bảng bằng
   await page.goBack();
   await expect(page).not.toHaveURL(/\/quet$/); // Back không quay lại máy quét
   await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+});
+
+test("mở máy quét từ bảng: Xong lùi về bảng (không tạo mục trùng) có dữ liệu mới; Back tiếp về trang trước bảng", async ({ page }) => {
+  await login(page, boardUser());
+  await page.getByRole("link", { name: "Điểm danh hôm nay" }).click();
+  await expect(page).toHaveURL(new RegExp(`/diem-danh/${today()}$`));
+  const roster = page.waitForResponse((r) => r.url().includes("/api/diem-danh/bang-tra"));
+  await page.getByRole("link", { name: "Quét QR" }).click();
+  await expect(page).toHaveURL(/\/quet\?from=board$/);
+  expect((await roster).status()).toBe(200);
+  await waitScannerReady(page);
+  await feed(page, await tokenOf("Nguyễn Bình"));
+  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đã lưu 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Xong" }).click();
+  await expect(page).toHaveURL(new RegExp(`/diem-danh/${today()}$`));
+  await expect(page.getByRole("button", { name: /Nguyễn Bình: Có mặt/ })).toBeVisible(); // bảng lấy dữ liệu mới
+  // Một lần Back về thẳng trang trước bảng: Xong đã lùi lại chứ không thay máy quét bằng một mục bảng thứ hai.
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+});
+
+test("bảng: máy này còn lượt quét chưa gửi thì khóa Đánh vắng và nhắc mở màn quét", async ({ page }) => {
+  await login(page, boardUser());
+  await page.goto(`/lop/${state().classA}/diem-danh/${today()}`);
+  const roster = page.waitForResponse((r) => r.url().includes("/api/diem-danh/bang-tra"));
+  await page.getByRole("link", { name: "Quét QR" }).click();
+  expect((await roster).status()).toBe(200);
+  await waitScannerReady(page);
+  await page.route(QUET_API, (route) => route.abort("internetdisconnected"));
+  await feed(page, await tokenOf("Nguyễn Bình"));
+  await expect.poll(() => storedQueueSizes(page)).toEqual([1]);
+
+  await page.getByRole("button", { name: "Xong" }).click();
+  await page.getByRole("dialog", { name: "Còn lượt chưa lưu" }).getByRole("button", { name: "Vẫn thoát" }).click();
+  await expect(page).toHaveURL(new RegExp(`/diem-danh/${today()}$`));
+  await expect(page.getByText("1 lượt quét chưa gửi — mở màn quét để gửi")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Mở màn quét" })).toHaveAttribute("href", /\/quet\?from=board$/);
+  // Bình chưa tới máy chủ nên vẫn "chưa điểm danh": không được đánh vắng nhầm em đã quét.
+  await expect(page.getByRole("button", { name: "Đánh vắng 4 em còn lại" })).toBeDisabled();
+  await expect(page.getByText(/Máy này còn 1 lượt quét chưa gửi/)).toBeVisible();
+  const db = sql();
+  try { expect(await todayMarks(db)).toHaveLength(0); } finally { await db.end(); }
+});
+
+test("buổi nghỉ lễ: máy quét báo nghỉ lễ, không mở camera, quét hay chọn tên đều bị từ chối", async ({ page }) => {
+  const db = sql();
+  try {
+    await db`insert into sessions (class_id, term_id, held_on, cancelled) select ${state().classA}, id, ${today()}, true from terms limit 1`;
+  } finally { await db.end(); }
+  await login(page, boardUser());
+  const sent: string[] = [];
+  page.on("request", (r) => { if (r.url().includes("/api/diem-danh/quet")) sent.push(r.url()); });
+  await openScanner(page, state().classA);
+  await expect(page.getByRole("status").filter({ hasText: "Buổi này nghỉ lễ — không điểm danh" })).toBeVisible();
+  await expect(page.getByLabel("Hình từ camera")).toHaveCount(0);
+
+  await feed(page, await tokenOf("Nguyễn An"));
+  await expect(page.getByText("Nguyễn An").first()).toBeVisible(); // băng thông báo lỗi kèm tên
+  await page.getByRole("button", { name: "Tìm bằng tên" }).click();
+  await page.getByLabel("Tìm tên").fill("nguyen chi");
+  await page.getByRole("button", { name: /Nguyễn Chi/ }).click();
+  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đang gửi 0")).toBeVisible();
+  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đã lưu 0")).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Chưa quét thẻ nào." })).toBeVisible();
+  expect(sent).toEqual([]);
+  const db2 = sql();
+  try { expect(await todayMarks(db2)).toHaveLength(0); } finally { await db2.end(); }
+});
+
+test("header Permissions-Policy: chỉ trang này dùng camera, không micro/vị trí", async ({ request }) => {
+  const res = await request.get("/login");
+  expect(res.headers()["permissions-policy"]).toBe("camera=(self), microphone=(), geolocation=()");
 });
 
 test("kết thúc buổi: Đánh vắng các em còn lại từ sheet cuối buổi; quét lại em vừa đến vẫn đổi được", async ({ page }) => {

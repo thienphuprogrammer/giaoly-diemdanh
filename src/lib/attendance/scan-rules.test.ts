@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideScan } from "./scan-rules";
+import { INVALID_CARD, SESSION_CANCELLED, decideScan, scanRefusal } from "./scan-rules";
 
 const mark = (status: "present" | "late" | "absent_excused" | "absent_unexcused") => ({ status, reason: null });
 
@@ -27,5 +27,22 @@ describe("decideScan", () => {
   it("a confirmation never overrides a non-absent mark", () => {
     expect(decideScan(mark("present"), "present", "late")).toEqual({ kind: "noop", reason: "already_present" });
     expect(decideScan(null, "present", "late")).toEqual({ kind: "apply", status: "present" });
+  });
+});
+
+describe("shared scan messages", () => {
+  it("has one invalid-card message for server and scanner", () => {
+    expect(INVALID_CARD).toBe("Thẻ không dùng được cho lớp này");
+  });
+});
+
+describe("scanRefusal (whole-session gate on the scanner)", () => {
+  it("refuses every scan of a cancelled (holiday) session", () => {
+    expect(scanRefusal({ cancelled: true })).toBe(SESSION_CANCELLED);
+    expect(SESSION_CANCELLED).toBe("Buổi này nghỉ lễ — không điểm danh");
+  });
+  it("allows scans of a normal session and while the roster is still loading", () => {
+    expect(scanRefusal({ cancelled: false })).toBeNull();
+    expect(scanRefusal(null)).toBeNull();
   });
 });

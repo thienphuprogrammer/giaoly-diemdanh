@@ -2,15 +2,7 @@
 import { LogOut } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
-import { clearUserQueues, countUnsentForUser, type StorageLike } from "@/lib/attendance/persist-queue";
-
-function localStore(): StorageLike | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
+import { clearUserQueues, countUnsentForUser, localStore } from "@/lib/attendance/persist-queue";
 
 /**
  * Đăng xuất: nếu máy còn lượt quét chưa gửi của người này thì hỏi trước (đăng xuất sẽ xóa chúng).

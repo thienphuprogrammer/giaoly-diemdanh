@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_PERSISTED, PERSIST_TTL_MS, QUEUE_SCHEMA_VERSION, clearUserQueues, countUnsentForUser, loadQueue, mergeForWrite, parseQueue,
+  MAX_PERSISTED, PERSIST_TTL_MS, QUEUE_SCHEMA_VERSION, clearUserQueues, countUnsentForUser, countUnsentInQueue, loadQueue, localStore, mergeForWrite, parseQueue,
   persistOverflow, persistState, queueStorageKey, saveQueue, serializeQueue, sweepStaleQueues, toPersisted, type PersistedEvent, type StorageLike,
 } from "./persist-queue";
 import { initialQueue, queueReducer, type QueuedEvent, type ScanQueueState } from "./scan-queue";
@@ -275,6 +275,33 @@ describe("logout helpers", () => {
     expect(clearUserQueues(store, "u1")).toBe(2);
     expect([...store.data.keys()].sort()).toEqual([queueStorageKey("u2", "ss1"), "other"].sort());
     expect(clearUserQueues(memoryStorage({}, { broken: true }), "u1")).toBe(0);
+  });
+});
+
+describe("countUnsentInQueue (board: this device's queue for one session)", () => {
+  const key = queueStorageKey("u1", "ss1");
+
+  it("counts sending and failed entries of that user+session, ignoring needs_confirm", () => {
+    const store = memoryStorage({
+      [key]: serializeQueue(toPersisted(state(queued("a"), queued("b", { state: "failed" }), queued("n", { state: "needs_confirm", serverStatus: "absent_excused" }))), NOW),
+      [queueStorageKey("u1", "ss2")]: serializeQueue(toPersisted(state(queued("c"))), NOW),
+      [queueStorageKey("u2", "ss1")]: serializeQueue(toPersisted(state(queued("d"))), NOW),
+    });
+    expect(countUnsentInQueue(store, key, NOW)).toBe(2);
+  });
+
+  it("is 0 for a missing, expired, corrupt or unreadable queue", () => {
+    expect(countUnsentInQueue(null, key, NOW)).toBe(0);
+    expect(countUnsentInQueue(memoryStorage(), key, NOW)).toBe(0);
+    expect(countUnsentInQueue(memoryStorage({ [key]: "{oops" }), key, NOW)).toBe(0);
+    expect(countUnsentInQueue(memoryStorage({ [key]: serializeQueue(toPersisted(state(queued("a"))), NOW - PERSIST_TTL_MS - 1) }), key, NOW)).toBe(0);
+    expect(countUnsentInQueue(memoryStorage({}, { broken: true }), key, NOW)).toBe(0);
+  });
+});
+
+describe("localStore", () => {
+  it("returns null instead of throwing when there is no window (server / blocked storage)", () => {
+    expect(localStore()).toBeNull();
   });
 });
 

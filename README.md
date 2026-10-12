@@ -67,7 +67,9 @@ Mở buổi điểm danh → **Quét QR** (màn hình toàn trang, tối ưu tha
 - Mỗi lượt quét có nút **Hoàn tác** riêng (hoàn tác đúng lượt đó, không ảnh hưởng thao tác thủ công khác).
 - Thẻ hỏng hoặc quên: **tìm theo tên** ngay trong màn quét; vẫn dùng được khi camera bị từ chối.
 - Đèn pin, âm thanh/rung có nút bật tắt. App giữ màn hình sáng (**Wake Lock**) khi camera đang chạy, và tự mở lại camera khi mở khóa máy hoặc quay lại tab.
-- Cuối buổi, bấm **Xong** để xem lại: nếu còn em chưa được đánh dấu, nút **Đánh vắng N em còn lại** ghi "vắng không phép" cho những em chưa có dòng nào (không đụng tới em đã có trạng thái). Nút bị khóa khi còn lượt quét chưa gửi xong. Sai thì sửa từng em (ví dụ đổi sang "có phép"). Nút này cũng có trên bảng điểm danh.
+- Cuối buổi, bấm **Kiểm tra cuối buổi** để xem lại: danh sách em chưa điểm danh và các lượt cần xử lý. Nếu còn em chưa được đánh dấu, nút **Đánh vắng N em còn lại** ghi "vắng không phép" cho những em chưa có dòng nào (không đụng tới em đã có trạng thái). Nút bị khóa khi còn lượt quét chưa gửi xong. Sai thì sửa từng em (ví dụ đổi sang "có phép"). Nút này cũng có trên bảng điểm danh; ở đó nó cũng bị khóa khi **máy này** còn lượt quét chưa gửi của buổi (bảng hiện "N lượt quét chưa gửi — mở màn quét để gửi").
+- **Xong** về bảng điểm danh (hỏi lại nếu còn lượt chưa lưu). Mở máy quét từ nút "Quét QR" của bảng thì Xong **lùi lại** đúng mục bảng cũ (Back tiếp theo về trang trước bảng); mở từ trang chủ hoặc gõ URL thì Xong thay mục máy quét bằng bảng (Back không quay lại máy quét).
+- **Buổi nghỉ lễ**: máy quét báo "Buổi này nghỉ lễ — không điểm danh", không mở camera, và từ chối mọi lượt quét/chọn tên (máy chủ cũng từ chối). Tắt "Buổi nghỉ lễ" trên bảng nếu buổi đó vẫn học.
 
 ### Hàng chờ gửi bền vững (chịu mất mạng ngắn)
 
@@ -110,7 +112,8 @@ Proxy (`src/proxy.ts`) **không còn chặn request không phải GET khi thiế
 
 - **Mã thẻ QR là bí mật nhẹ**: chỉ có tác dụng khi người quét đã đăng nhập và có quyền ghi đúng lớp. Không chia sẻ ảnh chụp thẻ. Mã chỉ được đọc ở `db/queries/qr-cards.ts` và `db/queries/scan.ts` (cùng `services/qr-cards.ts`, `services/scan.ts` để so khớp/cấp lại); các truy vấn thiếu nhi khác cố ý không chọn cột này.
 - **`X-Forwarded-Host` chỉ đáng tin sau reverse proxy ghi đè header đó** (Vercel làm vậy). Kiểm tra Origin của API quét dựa vào header này: nếu tự host mà đặt app trực tiếp ra internet, hãy có proxy chuẩn hóa/ghi đè `X-Forwarded-Host`.
-- **`NEXT_PUBLIC_E2E_SCAN_BRIDGE` chỉ dùng cho E2E** (cầu nối `window.__scanFeed` đưa mã giả lập vào mà không cần camera; chỉ `playwright.config.ts` đặt biến này). **Tuyệt đối không đặt trên production.** Lưu ý: mã cầu nối vẫn nằm trong bundle client của bản build thường, nhưng nó vô hiệu (inert) trừ khi biến được đặt **lúc build**; vì là biến `NEXT_PUBLIC_*`, giá trị bị đóng cứng vào bundle khi build.
+- **`NEXT_PUBLIC_E2E_SCAN_BRIDGE` chỉ dùng cho E2E** (cầu nối `window.__scanFeed` đưa mã giả lập vào mà không cần camera; chỉ `playwright.config.ts` đặt biến này, E2E chạy bằng `next dev`). Cầu nối chỉ bật khi biến bằng `1` **và** `NODE_ENV` không phải `production`; điều kiện này bị loại lúc biên dịch nên **bản `next build` không còn chứa mã cầu nối** (kể cả khi lỡ đặt biến; kiểm bằng `grep -r __scanFeed .next/static` sau khi build: không có kết quả). Dù vậy, đừng đặt biến này trên production.
+- **Header bảo mật** (`next.config.ts`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy: camera=(self), microphone=(), geolocation=()` (chỉ trang của app được xin camera), và HSTS ở production. Chưa có CSP.
 
 ## Kiểm thử
 

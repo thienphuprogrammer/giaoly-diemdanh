@@ -189,6 +189,20 @@ function queueKeys(storage: StorageLike, userId?: string): string[] {
 }
 
 /** Số lượt chưa gửi (không tính lượt "cần chọn") của một người dùng trên máy này, mọi buổi. Dùng để cảnh báo khi đăng xuất. */
+/** Số lượt chưa gửi (không tính lượt "cần chọn") của MỘT người dùng + buổi trên máy này (bảng điểm danh dùng). */
+export function countUnsentInQueue(storage: StorageLike | null, key: string, now: number): number {
+  return loadQueue(storage, key, now).filter((e) => !e.needsConfirm).length;
+}
+
+/** `window.localStorage`, hoặc null khi không có (máy chủ) hay bị chặn (chế độ riêng tư, chính sách trình duyệt). */
+export function localStore(): StorageLike | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function countUnsentForUser(storage: StorageLike | null, userId: string, now: number): number {
   if (!storage) return 0;
   try {

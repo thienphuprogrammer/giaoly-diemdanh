@@ -1,5 +1,15 @@
 import type { AttendanceStatus } from "./warning";
 
+/** Thông điệp chung của máy chủ và máy quét khi thẻ không thuộc lớp/buổi này. */
+export const INVALID_CARD = "Thẻ không dùng được cho lớp này";
+/** Buổi nghỉ lễ: máy quét từ chối mọi lượt (máy chủ cũng từ chối). */
+export const SESSION_CANCELLED = "Buổi này nghỉ lễ — không điểm danh";
+
+/** Lý do máy quét từ chối mọi lượt của buổi (null = được quét; chưa tải bảng tra thì chưa biết, để máy chủ quyết định). */
+export function scanRefusal(session: { cancelled: boolean } | null): string | null {
+  return session?.cancelled ? SESSION_CANCELLED : null;
+}
+
 export type ScanMode = "present" | "late";
 export interface CurrentMark { status: AttendanceStatus; reason: string | null }
 

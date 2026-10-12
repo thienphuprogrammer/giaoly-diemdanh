@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { runBulk } from "@/lib/attendance/board-save";
-import { loadQueue, persistState, queueStorageKey, sweepStaleQueues, type StorageLike } from "@/lib/attendance/persist-queue";
+import { loadQueue, localStore, persistState, queueStorageKey, sweepStaleQueues } from "@/lib/attendance/persist-queue";
 import { filterRoster } from "@/lib/attendance/roster-search";
 import { MAX_SEND_ATTEMPTS, backoffMs, canEnqueue, initialQueue, nextWakeAt, pendingCount, queueReducer, recentEvents, sendable, summarizeQueue, unsavedSummary, type QueuedEvent, type ScanAction } from "@/lib/attendance/scan-queue";
-import { decideScan, type CurrentMark, type ScanMode } from "@/lib/attendance/scan-rules";
+import { INVALID_CARD, decideScan, scanRefusal, type CurrentMark, type ScanMode } from "@/lib/attendance/scan-rules";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { parseQrPayload } from "@/lib/qr/payload";
 import { markRemainingAbsentAction } from "@/server/actions/attendance";
@@ -15,7 +15,6 @@ import { useRememberedScanMode } from "./scanMode";
 
 export type AbsentState = { phase: "idle" } | { phase: "saving" } | { phase: "done"; marked: number } | { phase: "error"; message: string };
 
-export const INVALID_CARD = "Thẻ không dùng được cho lớp này";
 const ABSENT_TIMEOUT_MS = 10_000;
 const ROSTER_COOLDOWN_MS = 10_000;
 /** Trễ thêm khi đánh thức hàng gửi, để mốc chờ chắc chắn đã qua. */
@@ -37,17 +36,12 @@ const isAbsence = (s: AttendanceStatus | null | undefined): s is "absent_excused
 type Marks = ReadonlyMap<string, CurrentMark | null>;
 const toMark = (status: AttendanceStatus | null, reason: string | null = null): CurrentMark | null => (status ? { status, reason } : null);
 
-function localStore(): StorageLike | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
 export function useScanSession({ sessionId, userId }: { sessionId: string; userId: string }) {
   const [roster, setRoster] = useState<ScanRosterEntry[] | null>(null);
   const [rosterError, setRosterError] = useState(false);
+  /** Buổi nghỉ lễ (theo bảng tra mới nhất): từ chối mọi lượt quét/chọn tên, không ghi lạc quan. */
+  const [cancelled, setCancelled] = useState(false);
+  const cancelledRef = useRef(false);
   const [mode, setStoredMode] = useRememberedScanMode(sessionId);
   /** Bản hiển thị của hàng; nguồn thật là `queueRef` (cập nhật đồng bộ trong `dispatch`). */
   const [queue, setQueue] = useState(initialQueue);
@@ -103,6 +97,8 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
     if (!data) { setRosterError(true); return false; }
     setRosterError(false);
     rosterLoaded.current = true;
+    cancelledRef.current = data.cancelled;
+    setCancelled(data.cancelled);
     byToken.current = new Map(data.students.filter((s) => s.token).map((s) => [s.token, s]));
     byId.current = new Map(data.students.map((s) => [s.studentId, s]));
     // Em còn lượt đang gửi (kể cả lượt nạp lại sau khi mở lại trang): giữ trạng thái lạc quan; còn lại theo máy chủ.
@@ -160,20 +156,31 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
     return true;
   }, [setMark, dispatch]);
 
+  /** Buổi nghỉ lễ: báo lỗi (kèm phản hồi lỗi), không xếp lượt nào. Trả về true nếu đã từ chối. */
+  const refuseIfCancelled = useCallback((entry?: ScanRosterEntry): boolean => {
+    const refusal = scanRefusal(rosterLoaded.current ? { cancelled: cancelledRef.current } : null);
+    if (!refusal) return false;
+    playScanFeedback("error");
+    setBanner({ tone: "error", fullName: entry?.fullName, saintName: entry?.saintName, text: refusal });
+    return true;
+  }, []);
+
   const handleEntry = useCallback((entry: ScanRosterEntry, kind: "scan" | "manual") => {
+    if (refuseIfCancelled(entry)) return;
     const decision = decideScan(marks.current.get(entry.studentId) ?? null, modeRef.current);
     if (decision.kind === "apply") { enqueueApply(entry, kind, decision.status); return; }
     if (decision.kind === "noop") {
       return setBanner({ tone: "noop", fullName: entry.fullName, saintName: entry.saintName, status: marks.current.get(entry.studentId)?.status ?? null, text: decision.reason === "already_late" ? "Đã ghi đi muộn" : "Đã điểm danh" });
     }
     setConfirm({ entry, current: decision.current, defaultStatus: decision.defaultStatus, kind });
-  }, [enqueueApply]);
+  }, [enqueueApply, refuseIfCancelled]);
 
   const handleCode = useCallback(async (text: string) => {
     const token = parseQrPayload(text);
     if (token && byToken.current.size === 0 && !rosterLoaded.current) {
       return setBanner({ tone: "info", text: "Đang tải danh sách lớp, quét lại sau giây lát." });
     }
+    if (token && refuseIfCancelled(byToken.current.get(token))) return;
     let entry = token ? byToken.current.get(token) : undefined;
     if (token && !entry && Date.now() - lastReload.current > ROSTER_COOLDOWN_MS) {
       await loadRoster(); // vừa thêm em hoặc cấp lại thẻ: tải lại bảng tra một lần
@@ -184,7 +191,7 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
       return setBanner({ tone: "error", text: INVALID_CARD });
     }
     handleEntry(entry, "scan");
-  }, [handleEntry, loadRoster]);
+  }, [handleEntry, loadRoster, refuseIfCancelled]);
 
   const chooseStudent = useCallback((studentId: string) => {
     const entry = byId.current.get(studentId);
@@ -193,10 +200,11 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
 
   const confirmChoice = useCallback((status: "present" | "late") => {
     if (!confirm) return;
+    if (refuseIfCancelled(confirm.entry)) { setConfirm(null); return; }
     if (!enqueueApply(confirm.entry, confirm.kind, status, status)) return; // hàng đầy: giữ bảng chọn và lượt "cần chọn"
     if (confirm.eventId) dispatch({ type: "dismiss", eventId: confirm.eventId });
     setConfirm(null);
-  }, [confirm, enqueueApply, dispatch]);
+  }, [confirm, enqueueApply, dispatch, refuseIfCancelled]);
 
   /** "Giữ nguyên": không đổi gì, lượt "cần chọn" (nếu có) không còn cần xử lý. */
   const keepAsIs = useCallback(() => {
@@ -327,7 +335,7 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
    * Xong thì cập nhật dấu ngay và tải lại bảng tra để danh sách "chưa điểm danh" khớp máy chủ.
    */
   const markRemainingAbsent = useCallback(async () => {
-    if (pendingCount(queueRef.current) > 0 || absentInFlightRef.current > 0) return;
+    if (pendingCount(queueRef.current) > 0 || absentInFlightRef.current > 0 || cancelledRef.current) return;
     // Quá hạn chờ thì báo lỗi (có thể thử lại); nếu kết quả thật đến muộn và thành công thì vẫn áp dụng.
     await runBulk(() => markRemainingAbsentAction({ sessionId }), ABSENT_TIMEOUT_MS, {
       start: () => { absentInFlightRef.current += 1; setAbsentInFlight(absentInFlightRef.current); setAbsent({ phase: "saving" }); },
@@ -343,16 +351,18 @@ export function useScanSession({ sessionId, userId }: { sessionId: string; userI
   /** Xoá kết quả đã hiện (xong/lỗi); đang lưu thì giữ nguyên. */
   const clearAbsent = useCallback(() => setAbsent((a) => (a.phase === "saving" ? a : { phase: "idle" })), []);
 
-  // Cầu nối chỉ bật khi build E2E (NEXT_PUBLIC_E2E_SCAN_BRIDGE=1): cho kiểm thử đưa mã đã giải vào mà không cần camera.
+  // Cầu nối cho kiểm thử E2E (đưa mã đã giải vào mà không cần camera): chỉ khi NEXT_PUBLIC_E2E_SCAN_BRIDGE=1 VÀ không phải
+  // bản production. Điều kiện viết thẳng trong `if` để `next build` (NODE_ENV="production") loại bỏ hẳn nhánh này khỏi bundle.
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_E2E_SCAN_BRIDGE !== "1") return;
-    const w = window as unknown as { __scanFeed?: (t: string) => Promise<void> };
-    w.__scanFeed = handleCode;
-    return () => { if (w.__scanFeed === handleCode) delete w.__scanFeed; };
+    if (process.env.NEXT_PUBLIC_E2E_SCAN_BRIDGE === "1" && process.env.NODE_ENV !== "production") {
+      const w = window as unknown as { __scanFeed?: (t: string) => Promise<void> };
+      w.__scanFeed = handleCode;
+      return () => { if (w.__scanFeed === handleCode) delete w.__scanFeed; };
+    }
   }, [handleCode]);
 
   const unmarked = useMemo(() => (roster ?? []).filter((s) => !marksView.get(s.studentId)), [roster, marksView]);
   const search = useCallback((q: string) => filterRoster(roster ?? [], q), [roster]);
 
-  return { roster, rosterError, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, absent, absentInFlight, markRemainingAbsent, clearAbsent, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
+  return { roster, rosterError, cancelled, loadRoster, mode, setMode, queue, summary: summarizeQueue(queue), pending, unsaved: unsavedSummary(queue), retryAllFailed, resume, absent, absentInFlight, markRemainingAbsent, clearAbsent, authRequired, persistFailed, recent: recentEvents(queue, 8), banner, setBanner, confirm, setConfirm, keepAsIs, reopenConfirm, dismiss, handleCode, chooseStudent, confirmChoice, undo, retry, unmarked, search };
 }

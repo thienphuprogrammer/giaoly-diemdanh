@@ -19,6 +19,7 @@ const pushSentinel = () => window.history.pushState({ ...window.history.state, [
  *
  * `navigate: "replace"` để trang này không còn trong lịch sử sau khi rời đi (màn quét: Back không quay lại máy quét).
  * `go(href)` cho nút điều hướng tự vẽ (không phải <a>): đi ngay nếu không còn gì chờ, ngược lại thì hỏi.
+ * `back()` tương tự nhưng lùi lịch sử (trang trước là đích).
  */
 export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "replace" } = {}) {
   const router = useRouter();
@@ -141,6 +142,15 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
     else proceed({ kind: "href", href });
   }, [proceed]);
 
+  /**
+   * Lùi về mục lịch sử trước (qua lính gác nếu có), như nút Back: đi ngay khi không còn gì chờ, ngược lại mở bảng hỏi.
+   * Dùng khi trang trước chính là đích (vd. máy quét mở từ bảng điểm danh) để không tạo mục trùng.
+   */
+  const back = useCallback(() => {
+    if (blockingRef.current > 0) setTarget({ kind: "back" });
+    else proceed({ kind: "back" });
+  }, [proceed]);
+
   /** Tải hẳn trang khác (vd. đăng nhập lại) không hỏi; bỏ lính gác trước. Dữ liệu cần giữ phải đã được lưu bền. */
   const hardNavigate = useCallback((href: string) => {
     bypass.current = true;
@@ -154,5 +164,5 @@ export function useLeaveGuard(blocking: number, opts: { navigate?: "push" | "rep
     run(guardLeave(hist.current, target));
   }, [target, blocking, run]);
 
-  return { target, leave, stay, go, hardNavigate };
+  return { target, leave, stay, go, back, hardNavigate };
 }

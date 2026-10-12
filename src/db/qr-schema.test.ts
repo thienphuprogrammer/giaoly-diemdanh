@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { attendance, attendanceScans, sessions, students } from "@/db/schema";
 import { createTestDb } from "@/test/db";
-import { createTestDbBeforeLastMigration } from "@/test/migration";
+import { QR_MIGRATION, createTestDbBeforeMigration } from "@/test/migration";
 import { seedBasics } from "@/test/fixtures";
 
 const HEX32 = /^[0-9a-f]{32}$/;
@@ -19,12 +19,12 @@ describe("QR schema", () => {
   });
 
   it("backfills a distinct token for students that existed before the migration", async () => {
-    const { client, applyLast } = await createTestDbBeforeLastMigration();
+    const { client, apply } = await createTestDbBeforeMigration(QR_MIGRATION);
     await client.exec("insert into grades (name) values ('K')");
     await client.exec("insert into classes (grade_id, name) select id, 'L' from grades");
     await client.exec("insert into students (class_id, full_name) select id, 'A' from classes");
     await client.exec("insert into students (class_id, full_name) select id, 'B' from classes");
-    await applyLast();
+    await apply();
     const { rows } = await client.query<{ qr_token: string }>("select qr_token from students");
     expect(rows).toHaveLength(2);
     expect(rows[0].qr_token).toMatch(HEX32);

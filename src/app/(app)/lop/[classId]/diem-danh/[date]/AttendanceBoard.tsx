@@ -7,6 +7,7 @@ import { SaveStatus, SaveToasts } from "@/components/attendance/SaveStatus";
 import { RemainingAbsentButton, RemainingAbsentSheet } from "@/components/attendance/RemainingAbsent";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
 import { SEAT_TILE, StudentButton } from "@/components/attendance/StudentButton";
+import { useDeviceUnsent } from "@/components/attendance/useDeviceUnsent";
 import { useLeaveGuard } from "@/components/nav/useLeaveGuard";
 import { Notice } from "@/components/ui/Notice";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
@@ -14,9 +15,10 @@ import { StatusPill, WarningPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { STATUS_META, STATUS_ORDER, type StatusKey } from "@/components/ui/status";
 import { countMarked } from "@/lib/attendance/marks";
-import { remainingAbsentBlock, unmarkedStudents } from "@/lib/attendance/remaining-absent";
+import { deviceUnsentNotice, remainingAbsentBlock, unmarkedStudents } from "@/lib/attendance/remaining-absent";
 import { toggleStatus } from "@/lib/attendance/toggle";
 import { evaluateWarningFromCount } from "@/lib/attendance/warning";
+import { scannerHrefFromBoard } from "@/lib/scan-return";
 import { seatKey } from "@/lib/seating/assignments";
 import type { Board } from "@/server/services/attendance";
 import { useBoardSaves } from "./useBoardSaves";
@@ -29,8 +31,11 @@ function leaveMessage(pending: number, failed: number): string {
   return `Còn ${pending} lượt đang lưu — trang sẽ tự chuyển khi lưu xong. Rời trang ngay có thể mất các thay đổi chưa lưu.`;
 }
 
-export function AttendanceBoard({ board, renderId }: { board: Board; renderId: string }) {
+export function AttendanceBoard({ board, userId, renderId }: { board: Board; userId: string; renderId: string }) {
   const saves = useBoardSaves(board, renderId);
+  // Lượt quét của buổi còn nằm trên máy này (chưa tới máy chủ): chặn "Đánh vắng" để không đánh vắng nhầm em đã quét.
+  const deviceUnsent = useDeviceUnsent(userId, board.sessionId);
+  const scannerHref = scannerHrefFromBoard(`/lop/${board.classId}/diem-danh/${board.heldOn}`);
   const { marks, cancelled, save } = saves;
   const [mode, setMode] = useState<"map" | "list">(board.plan ? "map" : "list");
   const [sheetFor, setSheetFor] = useState<string | null>(null);
@@ -66,7 +71,8 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
   const total = board.students.length;
   const marked = countMarked(marks);
   const remaining = unmarkedStudents(board.students, marks);
-  const absentBlock = remainingAbsentBlock({ unsaved: saves.pending + saves.failures.length, busy: saves.busy, notReady: saves.stale });
+  const absentBlock = remainingAbsentBlock({ unsaved: saves.pending + saves.failures.length, busy: saves.busy, notReady: saves.stale, deviceUnsent });
+  const unsentNotice = board.canWrite && !cancelled ? deviceUnsentNotice(deviceUnsent) : null;
   const tally = (key: StatusKey) => board.students.filter((st) => (marks[st.id]?.status ?? "none") === key).length;
   const choice = (pressed: boolean, key: "present" | "absent_unexcused", failed: boolean) =>
     `btn btn-sm w-full border-2 ${pressed ? STATUS_META[key].solid : "btn-secondary"} ${failed ? "ring-[3px] ring-warn-alert ring-offset-2" : ""}`;
@@ -88,7 +94,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
         </div>
         {board.canWrite && !cancelled && (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Link prefetch={false} href={`/lop/${board.classId}/diem-danh/${board.heldOn}/quet`} className="btn btn-secondary btn-lg w-full">
+            <Link prefetch={false} href={scannerHref} className="btn btn-secondary btn-lg w-full">
               <ScanLine aria-hidden size={20} />
               Quét QR
             </Link>
@@ -113,6 +119,14 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
       </div>
       {board.canWrite && <OfflineBanner>Mất mạng — chưa lưu được. Các lần chạm sẽ báo lỗi để thử lại khi có mạng.</OfflineBanner>}
       {cancelled && <Notice tone="info" role="status">Buổi nghỉ lễ — không tính vào thống kê.</Notice>}
+      {unsentNotice && (
+        <Notice tone="warning" role="status">
+          <p>
+            {unsentNotice}{" "}
+            <Link prefetch={false} href={scannerHref} className="font-semibold underline">Mở màn quét</Link>
+          </p>
+        </Notice>
+      )}
       {saves.error && (
         <Notice tone="error" role="alert">
           <p>{saves.error}</p>
