@@ -15,8 +15,8 @@ describe("remainingAbsentBlock", () => {
   it("is null when nothing is unsaved", () => {
     expect(remainingAbsentBlock({ unsaved: 0, busy: false })).toBeNull();
   });
-  it("explains why while saves or scans are unfinished", () => {
-    expect(remainingAbsentBlock({ unsaved: 3, busy: false })).toMatch(/3 lượt/);
+  it("blocks silently (empty reason) while saves or scans are unfinished", () => {
+    expect(remainingAbsentBlock({ unsaved: 3, busy: false })).toBe("");
   });
   it("explains why while another bulk action runs", () => {
     expect(remainingAbsentBlock({ unsaved: 0, busy: true })).toMatch(/đang lưu/i);

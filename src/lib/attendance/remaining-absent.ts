@@ -15,7 +15,8 @@ export function remainingAbsentBlock(args: { unsaved: number; busy: boolean; not
   // Lượt quét còn nằm trong hàng chờ của máy này (chưa tới máy chủ): các em đó trông như "chưa điểm danh" nhưng đã được quét.
   const device = args.deviceUnsent ?? 0;
   if (device > 0) return `Máy này còn ${device} lượt quét chưa gửi. Mở màn quét để gửi xong rồi mới đánh vắng, để không đánh vắng nhầm em đã quét.`;
-  if (args.unsaved > 0) return `Còn ${args.unsaved} lượt chưa lưu xong. Đợi lưu xong (hoặc xử lý các lượt lỗi) rồi mới đánh vắng, để không ghi chồng lên lượt đang gửi.`;
+  // Còn lượt đang lưu/lỗi: vẫn khoá nút nhưng không hiện lời nhắc (chuỗi rỗng = chặn im lặng; chip "Đang lưu" đã báo rồi).
+  if (args.unsaved > 0) return "";
   return null;
 }
 

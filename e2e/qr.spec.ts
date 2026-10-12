@@ -327,7 +327,7 @@ test("kết thúc buổi: Đánh vắng các em còn lại từ sheet cuối bu�
   }
 });
 
-test("kết thúc buổi: chưa cho đánh vắng khi còn lượt quét chưa lưu, nói rõ lý do", async ({ page, context }) => {
+test("kết thúc buổi: chưa cho đánh vắng (nút khoá) khi còn lượt quét chưa lưu", async ({ page, context }) => {
   await login(page, reopener());
   await openScanner(page, state().classA);
   await page.route(QUET_API, (route) => route.abort("internetdisconnected"));
@@ -336,7 +336,7 @@ test("kết thúc buổi: chưa cho đánh vắng khi còn lượt quét chưa l
   const review = page.getByRole("dialog", { name: "Kiểm tra cuối buổi" });
   const button = review.getByRole("button", { name: /Đánh vắng \d+ em còn lại/ });
   await expect(button).toBeDisabled();
-  await expect(review.getByText(/Còn 1 lượt chưa lưu xong/)).toBeVisible();
+  await expect(review.getByText(/Còn 1 lượt chưa lưu xong/)).toBeHidden();
   const db = sql();
   try {
     expect(await todayMarks(db)).toHaveLength(0);
@@ -348,7 +348,6 @@ test("kết thúc buổi: chưa cho đánh vắng khi còn lượt quét chưa l
   await context.setOffline(true);
   await context.setOffline(false);
   await expect(button).toBeEnabled({ timeout: 10_000 });
-  await expect(review.getByText(/Còn 1 lượt chưa lưu xong/)).toBeHidden();
 });
 
 test("phiên hết hạn khi đang quét: giữ lượt, Đăng nhập lại về đúng màn quét, mỗi lượt chỉ ghi một lần", async ({ page, context }) => {
