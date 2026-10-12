@@ -171,7 +171,7 @@ describe("seating templates", () => {
     if (!blank.ok) throw new Error("blank");
     expect((await getPlan(db, blank.data.id))!.plan.layout).toHaveLength(3);
     const bad = await createPlan(db, b.glv, { classId: b.classId, name: "Sai", templateId: "khong-co" });
-    expect(bad).toEqual({ ok: false, error: "Không tìm thấy mẫu sơ đồ" });
+    expect(bad).toEqual({ ok: false, error: "Mẫu không hợp lệ" });
     expect((await createPlan(db, b.glv, { classId: b.classId, name: "Sai", templateId: { layout: [] } })).ok).toBe(false);
   });
 

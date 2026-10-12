@@ -77,13 +77,12 @@ export interface CapacityStatus {
   fits: boolean;
   /** Số chỗ dư (khi đủ) hoặc thiếu (khi không đủ); luôn >= 0. */
   delta: number;
-  label: string;
   badge: string;
 }
 
 export function capacityStatus(capacity: number, studentCount: number): CapacityStatus {
   const diff = capacity - studentCount;
-  if (diff >= 0) return { fits: true, delta: diff, label: `đủ chỗ, dư ${diff}`, badge: diff === 0 ? "Vừa đủ chỗ" : `Dư ${diff} chỗ` };
+  if (diff >= 0) return { fits: true, delta: diff, badge: diff === 0 ? "Vừa đủ chỗ" : `Dư ${diff} chỗ` };
   const short = -diff;
-  return { fits: false, delta: short, label: `thiếu ${short} chỗ`, badge: `Thiếu ${short} chỗ` };
+  return { fits: false, delta: short, badge: `Thiếu ${short} chỗ` };
 }

@@ -14,7 +14,7 @@ import { fail, ok, type ActionResult } from "../result";
 
 const CANNOT_SEAT = "Không thể xếp em này";
 const NOT_FOUND_PLAN = "Không tìm thấy sơ đồ";
-const NOT_FOUND_TEMPLATE = "Không tìm thấy mẫu sơ đồ";
+const NOT_FOUND_TEMPLATE = "Mẫu không hợp lệ";
 const newId = () => crypto.randomUUID();
 
 /** Mẫu được dựng ở server từ id; trống/vắng = bố cục mặc định. Luôn kiểm bằng parseLayout. */

@@ -36,13 +36,16 @@ describe("TEMPLATES", () => {
     expect(seatsOf(layout!)).toHaveLength(EXPECTED[id].capacity);
   });
 
-  it("shapes the layouts as specified", () => {
+  it("shapes every template exactly as specified", () => {
     const shape = (id: string) =>
       buildTemplateLayout(id, counter())!.map((r) => r.items.map((i) => (i.type === "gap" ? "g" : i.seats)));
-    expect(shape("vua-3-day")[0]).toEqual([3, "g", 3, "g", 3]);
-    expect(shape("hang-dau-nho")).toEqual([[2, 2, 2, 2], [3, 3, 3, 3], [3, 3, 3, 3], [3, 3, 3, 3]]);
-    expect(shape("chu-u")).toEqual([[2, "g", "g", 2], [2, "g", "g", 2], [2, "g", "g", 2], [3, 3, 3, 3]]);
-    expect(shape("truyen-thong-3-day")[4]).toEqual([3, "g", 4, "g", 3]);
+    const rep = <T,>(n: number, row: T) => Array.from({ length: n }, () => row);
+    expect(shape("lop-nho-2-day")).toEqual(rep(4, [3, "g", 3]));
+    expect(shape("vua-3-day")).toEqual(rep(4, [3, "g", 3, "g", 3]));
+    expect(shape("hang-dau-nho")).toEqual([[2, 2, 2, 2], ...rep(3, [3, 3, 3, 3])]);
+    expect(shape("chu-u")).toEqual([...rep(3, [2, "g", "g", 2]), [3, 3, 3, 3]]);
+    expect(shape("nhom-bang-dai")).toEqual(rep(2, [4, "g", 4, "g", 4]));
+    expect(shape("truyen-thong-3-day")).toEqual(rep(5, [3, "g", 4, "g", 3]));
   });
 
   it("generates unique ids across rows, benches and gaps", () => {
@@ -74,13 +77,13 @@ describe("TEMPLATES", () => {
 
 describe("capacityStatus", () => {
   it("reports surplus when seats exceed students", () => {
-    expect(capacityStatus(36, 30)).toMatchObject({ fits: true, delta: 6, label: "đủ chỗ, dư 6", badge: "Dư 6 chỗ" });
+    expect(capacityStatus(36, 30)).toMatchObject({ fits: true, delta: 6, badge: "Dư 6 chỗ" });
   });
   it("is exactly enough at the boundary", () => {
-    expect(capacityStatus(24, 24)).toMatchObject({ fits: true, delta: 0, label: "đủ chỗ, dư 0", badge: "Vừa đủ chỗ" });
+    expect(capacityStatus(24, 24)).toMatchObject({ fits: true, delta: 0, badge: "Vừa đủ chỗ" });
   });
   it("reports shortage by one seat", () => {
-    expect(capacityStatus(24, 25)).toMatchObject({ fits: false, delta: 1, label: "thiếu 1 chỗ", badge: "Thiếu 1 chỗ" });
+    expect(capacityStatus(24, 25)).toMatchObject({ fits: false, delta: 1, badge: "Thiếu 1 chỗ" });
   });
   it("handles an empty class", () => {
     expect(capacityStatus(24, 0)).toMatchObject({ fits: true, delta: 24 });

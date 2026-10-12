@@ -66,3 +66,13 @@ test("sơ đồ trống rồi áp mẫu Nhóm băng dài khi chưa xếp em nào
   await expect(page.getByRole("group", { name: /^Hàng \d+$/ })).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Ghế trống" })).toHaveCount(24);
 });
+
+test("Enter trong ô tên tạo sơ đồ trống mặc định, không phải mẫu đầu tiên", async ({ page }) => {
+  await openSeating(page);
+  await page.getByLabel("Tên sơ đồ").fill("Nhấn Enter");
+  await page.getByLabel("Tên sơ đồ").press("Enter");
+  await expect(page).toHaveURL(/\/so-do\?plan=/);
+  // Mặc định 3 hàng x 6 ghế = 18 (mẫu "Lớp nhỏ 2 dãy" sẽ có 4 hàng, 24 ghế).
+  await expect(page.getByRole("group", { name: /^Hàng \d+$/ })).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Ghế trống" })).toHaveCount(18);
+});

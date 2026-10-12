@@ -16,7 +16,9 @@ interface Props {
 export function NewPlanForm({ action, studentCount }: Props) {
   const [state, run, pending] = useActionState(action, undefined);
   return (
-    <form action={run} className="card grid gap-4 p-4">
+    <form action={run} className="card grid gap-4 p-4" aria-busy={pending}>
+      {/* Gửi ngầm (Enter trong ô tên) dùng nút gửi đầu tiên: để nó tạo sơ đồ trống như trước, không phải mẫu đầu tiên. */}
+      <button type="submit" name="templateId" value="" tabIndex={-1} aria-hidden disabled={pending} className="sr-only" />
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-action-tint text-action">
           <Plus aria-hidden size={20} />
@@ -38,6 +40,7 @@ export function NewPlanForm({ action, studentCount }: Props) {
         ))}
         <BlankCard type="submit" name="templateId" value="" disabled={pending} />
       </div>
+      {pending && <p role="status" className="text-sm font-medium text-ink-soft">Đang tạo sơ đồ…</p>}
       {state?.error && <Notice tone="error" role="alert">{state.error}</Notice>}
     </form>
   );

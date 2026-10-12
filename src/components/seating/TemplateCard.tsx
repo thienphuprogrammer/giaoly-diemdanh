@@ -14,7 +14,7 @@ export function TemplateCard({ template, studentCount, ...button }: { template: 
   const capacity = templateCapacity(template);
   const status = capacityStatus(capacity, studentCount);
   return (
-    <button type="button" {...button} className={CARD}>
+    <button type="button" aria-busy={button.disabled || undefined} {...button} className={CARD}>
       <span className="flex h-24 items-center justify-center rounded-control border border-border bg-surface-muted p-1">
         <TemplateThumb layout={layout} className="h-full w-full" />
       </span>
@@ -37,7 +37,7 @@ export function TemplateCard({ template, studentCount, ...button }: { template: 
 /** Thẻ "Sơ đồ trống": bố cục mặc định, tự thêm bớt trong trình chỉnh. */
 export function BlankCard(button: ButtonProps) {
   return (
-    <button type="button" {...button} className={CARD}>
+    <button type="button" aria-busy={button.disabled || undefined} {...button} className={CARD}>
       <span className="font-display text-base font-semibold text-ink">Sơ đồ trống</span>
       <span className="text-sm text-ink-soft">Bắt đầu từ 3 hàng mặc định, tự thêm bớt hàng và băng ghế.</span>
     </button>
