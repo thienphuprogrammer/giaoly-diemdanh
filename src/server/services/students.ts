@@ -43,6 +43,16 @@ export async function updateStudent(db: Db, user: AppUser, input: unknown): Prom
   return ok(undefined);
 }
 
+/** Chỉ sửa ghi chú và SĐT phụ huynh (trang hồ sơ); quyền ghi như `updateStudent`. */
+export async function updateStudentContact(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {
+  const p = studentFields.pick({ parentPhone: true, note: true }).extend({ studentId: z.string() }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const { studentId, parentPhone, note } = p.data;
+  if (!(await loadWritable(db, user, studentId))) return fail(NOT_FOUND_STUDENT);
+  await db.update(students).set({ parentPhone: parentPhone ?? null, note: note ?? null }).where(eq(students.id, studentId));
+  return ok(undefined);
+}
+
 export async function setStudentActive(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {
   const p = z.object({ studentId: z.string(), active: z.boolean() }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));

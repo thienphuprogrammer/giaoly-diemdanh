@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db/client";
 import { requireUser } from "@/lib/auth/dal";
 import { toFormState, type FormState } from "@/server/form-state";
-import { addStudent, importStudents, setStudentActive, updateStudent } from "@/server/services/students";
+import { addStudent, importStudents, setStudentActive, updateStudent, updateStudentContact } from "@/server/services/students";
 
 export async function addStudentAction(classId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
@@ -16,6 +16,16 @@ export async function updateStudentAction(classId: string, studentId: string, _p
   const user = await requireUser();
   const result = await updateStudent(db, user, { ...Object.fromEntries(formData), studentId });
   if (result.ok) revalidatePath(`/lop/${classId}/thieu-nhi`);
+  return toFormState(result);
+}
+
+export async function updateStudentContactAction(classId: string, studentId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const result = await updateStudentContact(db, user, { ...Object.fromEntries(formData), studentId });
+  if (result.ok) {
+    revalidatePath(`/lop/${classId}/thieu-nhi/${studentId}`);
+    revalidatePath(`/lop/${classId}/thieu-nhi`);
+  }
   return toFormState(result);
 }
 

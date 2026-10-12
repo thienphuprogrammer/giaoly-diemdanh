@@ -17,11 +17,11 @@ export interface StatRow {
 
 type Roster = Awaited<ReturnType<typeof rosterOf>>;
 
-function buildRows(roster: Roster, records: { studentId: string; status: AttendanceStatus }[]): StatRow[] {
+function buildRows(roster: Roster, records: { studentId: string; status: AttendanceStatus }[]): (StatRow & { parentPhone: string | null })[] {
   const byStudent = new Map<string, { status: AttendanceStatus }[]>();
   for (const r of records) byStudent.set(r.studentId, [...(byStudent.get(r.studentId) ?? []), { status: r.status }]);
   return roster.map((s) => ({
-    studentId: s.id, classId: s.classId, fullName: s.fullName, saintName: s.saintName,
+    studentId: s.id, classId: s.classId, fullName: s.fullName, saintName: s.saintName, parentPhone: s.parentPhone,
     summary: summarize(byStudent.get(s.id) ?? []),
   }));
 }
@@ -47,6 +47,8 @@ export interface AttentionItem {
   fullName: string;
   level: "watch" | "warning";
   unexcused: number;
+  /** Chỉ để dựng liên kết gọi trên trang "Cần chú ý" (server render); không đưa xuống props client. */
+  parentPhone: string | null;
 }
 
 export async function attentionList(db: Db, user: AppUser, termId: string): Promise<AttentionItem[]> {
@@ -60,7 +62,7 @@ export async function attentionList(db: Db, user: AppUser, termId: string): Prom
     .filter((r) => r.summary.warning.level !== "none")
     .map((r) => ({
       classId: r.classId, className: names.get(r.classId) ?? "", studentId: r.studentId, fullName: r.fullName,
-      level: r.summary.warning.level as "watch" | "warning", unexcused: r.summary.unexcused,
+      level: r.summary.warning.level as "watch" | "warning", unexcused: r.summary.unexcused, parentPhone: r.parentPhone,
     }))
     .sort((a, b) =>
       Number(b.level === "warning") - Number(a.level === "warning") ||

@@ -59,6 +59,22 @@ export default async function globalSetup() {
   await db.insert(s.classCatechists).values({ classId: classT.id, userId: glvT.id });
   await db.insert(s.students).values(Array.from({ length: 30 }, (_, i) => ({ classId: classT.id, fullName: `Em T${String(i + 1).padStart(2, "0")}` })));
 
+  // Lớp P (hồ sơ em): một em có SĐT + ghi chú, một em chưa có SĐT; cả hai vắng không phép để hiện ở "Cần chú ý". GLV riêng để lọc đúng.
+  const [classP] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp P" }).returning();
+  const [glvP] = await db.insert(s.users).values({ email: "glv-p@e2e.vn", name: "GLV P", passwordHash: hash, gradeId: gradeA.id }).returning();
+  await db.insert(s.classCatechists).values({ classId: classP.id, userId: glvP.id });
+  const [kidWithPhone, kidNoPhone] = await db.insert(s.students).values([
+    { classId: classP.id, fullName: "Lê Hồ Sơ", saintName: "Giuse", birthDate: "2015-03-04", parentPhone: "0901234567", note: "Hay quên sách" },
+    { classId: classP.id, fullName: "Phạm Chưa Số" },
+  ]).returning();
+  const profileSessions = await db.insert(s.sessions).values([dayOffset(-14), dayOffset(-7)].map((heldOn) => ({ classId: classP.id, termId: term.id, heldOn }))).returning();
+  await db.insert(s.attendance).values([
+    { sessionId: profileSessions[0].id, studentId: kidWithPhone.id, status: "present" },
+    { sessionId: profileSessions[1].id, studentId: kidWithPhone.id, status: "absent_unexcused", reason: "Về quê" },
+    { sessionId: profileSessions[0].id, studentId: kidNoPhone.id, status: "absent_unexcused" },
+    { sessionId: profileSessions[1].id, studentId: kidNoPhone.id, status: "absent_unexcused" },
+  ]);
+
   const kids = await db.insert(s.students).values(["An", "Bình", "Chi", "Dũng"].map((n) => ({ classId: classA.id, fullName: `Nguyễn ${n}` }))).returning();
   const [plan] = await db.insert(s.seatingPlans).values({
     classId: classA.id, name: "Sơ đồ E2E", isActive: true,
@@ -73,6 +89,6 @@ export default async function globalSetup() {
   const [past] = await db.insert(s.sessions).values({ classId: classA.id, termId: term.id, heldOn: dayOffset(-7) }).returning();
   await db.insert(s.attendance).values({ sessionId: past.id, studentId: kids[0].id, status: "absent_unexcused" });
 
-  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id }));
+  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id }));
   await sql.end();
 }

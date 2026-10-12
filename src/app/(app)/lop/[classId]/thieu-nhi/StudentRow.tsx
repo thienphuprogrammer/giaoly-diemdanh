@@ -1,5 +1,6 @@
 "use client";
 import { Cake, Eye, EyeOff, Pencil, Phone } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Notice } from "@/components/ui/Notice";
@@ -40,8 +41,10 @@ export function StudentRow({ classId, student, canWrite }: { classId: string; st
       <div className="flex items-center gap-3">
         <Avatar name={student.fullName} muted={!student.active} />
         <span className="min-w-0 flex-1">
-          {student.saintName && <span className="block text-sm leading-tight text-ink-soft">{student.saintName}</span>}
-          <span className={`block break-words font-medium leading-snug ${student.active ? "text-ink" : "text-ink-soft"}`}>{student.fullName}</span>
+          <Link href={`/lop/${classId}/thieu-nhi/${student.id}`} className="-my-1 block min-h-11 rounded-control py-1 hover:underline">
+            {student.saintName && <span className="block text-sm leading-tight text-ink-soft">{student.saintName}</span>}
+            <span className={`block break-words font-medium leading-snug ${student.active ? "text-ink" : "text-ink-soft"}`}>{student.fullName}</span>
+          </Link>
           {(meta || !student.active) && (
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm tabular-nums text-ink-soft">
               {student.birthDate && (

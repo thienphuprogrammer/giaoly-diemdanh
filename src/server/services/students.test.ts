@@ -131,3 +131,13 @@ describe("importStudents", () => {
     expect(await db.select().from(students)).toHaveLength(2);
   });
 });
+
+describe("phone normalisation on save", () => {
+  it("stores the domestic form for spaced and +84 inputs", async () => {
+    const { db, b } = await setup();
+    await addStudent(db, b.glv, { classId: b.classId, fullName: "An", parentPhone: "+84 901 234 567" });
+    await addStudent(db, b.glv, { classId: b.classId, fullName: "Bình", parentPhone: "0902.345.678" });
+    const rows = await db.select().from(students);
+    expect(rows.map((r) => r.parentPhone).sort()).toEqual(["0901234567", "0902345678"]);
+  });
+});
