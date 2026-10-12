@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SESSION_MAX_AGE_S, SESSION_REFRESH_BELOW_S, sessionRefreshDecision } from "./session-policy";
+import { SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S, SESSION_REFRESH_BELOW_S, sessionAuthTime, sessionRefreshDecision } from "./session-policy";
 
 const NOW = 1_800_000_000; // giây
 const DAY = 24 * 60 * 60;
@@ -8,6 +8,7 @@ describe("session policy constants", () => {
   it("30-day session, refreshed when under 3 days remain", () => {
     expect(SESSION_MAX_AGE_S).toBe(30 * DAY);
     expect(SESSION_REFRESH_BELOW_S).toBe(3 * DAY);
+    expect(SESSION_ABSOLUTE_MAX_S).toBe(90 * DAY);
   });
 });
 
@@ -37,5 +38,44 @@ describe("sessionRefreshDecision", () => {
 
   it("tolerates a little clock skew above the maximum lifetime", () => {
     expect(sessionRefreshDecision(NOW + SESSION_MAX_AGE_S + 60, NOW)).toBe("keep");
+  });
+});
+
+describe("absolute 90-day cap (sat = session-auth time)", () => {
+  const nearExpiry = NOW + DAY; // would normally be refreshed
+
+  it.each([
+    ["logged in today", NOW, "refresh"],
+    ["logged in 89 days ago", NOW - 89 * DAY, "refresh"],
+    ["exactly 90 days ago still refreshes", NOW - 90 * DAY, "refresh"],
+    ["90 days + 1s ago: no refresh, ends at natural exp", NOW - 90 * DAY - 1, "keep"],
+    ["90 days + 4 min ago (inside skew): keep", NOW - 90 * DAY - 4 * 60, "keep"],
+    ["90 days + 1 hour ago: refused", NOW - 90 * DAY - 3600, "invalid"],
+    ["120 days ago: refused", NOW - 120 * DAY, "invalid"],
+    ["sat in the future beyond skew: refused", NOW + DAY, "invalid"],
+  ] as const)("%s → %s", (_label, sat, expected) => {
+    expect(sessionRefreshDecision(nearExpiry, NOW, sat)).toBe(expected);
+  });
+
+  it("a fresh token past the cap is refused too", () => {
+    expect(sessionRefreshDecision(NOW + 20 * DAY, NOW, NOW - 100 * DAY)).toBe("invalid");
+    expect(sessionRefreshDecision(NOW + 20 * DAY, NOW, NOW - 60 * DAY)).toBe("keep");
+  });
+
+  it.each([["NaN", Number.NaN], ["Infinity", Number.POSITIVE_INFINITY]])("non-finite sat (%s) is refused", (_l, sat) => {
+    expect(sessionRefreshDecision(NOW + 20 * DAY, NOW, sat)).toBe("invalid");
+  });
+});
+
+describe("sessionAuthTime (migration for tokens without sat)", () => {
+  it("uses sat when present", () => {
+    expect(sessionAuthTime({ exp: NOW + 30 * DAY, sat: NOW - 5 })).toBe(NOW - 5);
+  });
+  it("treats a missing sat as exp - 30 days", () => {
+    expect(sessionAuthTime({ exp: NOW + 7 * DAY })).toBe(NOW + 7 * DAY - SESSION_MAX_AGE_S);
+  });
+  it("a legacy token without sat near expiry is still refreshed", () => {
+    const exp = NOW + DAY;
+    expect(sessionRefreshDecision(exp, NOW, sessionAuthTime({ exp }))).toBe("refresh");
   });
 });

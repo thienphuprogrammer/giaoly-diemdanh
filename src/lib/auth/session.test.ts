@@ -1,6 +1,7 @@
+import { SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import { decryptSession, encryptSession, readSession } from "./session";
-import { SESSION_MAX_AGE_S } from "./session-policy";
+import { SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S } from "./session-policy";
 
 const SECRET = "s".repeat(32);
 
@@ -43,10 +44,54 @@ describe("session", () => {
   it("readSession exposes exp only for a valid token", async () => {
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const token = await encryptSession({ userId: "u1" }, SECRET, exp);
-    expect(await readSession(token, SECRET)).toEqual({ userId: "u1", exp });
+    expect(await readSession(token, SECRET)).toMatchObject({ userId: "u1", exp });
     expect(await readSession(token, "t".repeat(32))).toBeNull();
     expect(await readSession(undefined, SECRET)).toBeNull();
     const expired = await encryptSession({ userId: "u1" }, SECRET, Math.floor(Date.now() / 1000) - 1);
     expect(await readSession(expired, SECRET)).toBeNull();
+  });
+
+  const now = () => Math.floor(Date.now() / 1000);
+  const DAY = 24 * 60 * 60;
+
+  it("sets sat (session-auth time) to now at login and returns it", async () => {
+    const before = now();
+    const read = await readSession(await encryptSession({ userId: "u1" }, SECRET), SECRET);
+    expect(read!.sat).toBeGreaterThanOrEqual(before);
+    expect(read!.sat).toBeLessThanOrEqual(now());
+  });
+
+  it("keeps a given sat unchanged (refresh)", async () => {
+    const sat = now() - 40 * DAY;
+    const read = await readSession(await encryptSession({ userId: "u1", sat }, SECRET), SECRET);
+    expect(read?.sat).toBe(sat);
+  });
+
+  it("migrates a token without sat to sat = exp - 30 days", async () => {
+    const exp = now() + 7 * DAY;
+    const legacy = await new SignJWT({ userId: "u1" }).setProtectedHeader({ alg: "HS256" }).setExpirationTime(exp).sign(new TextEncoder().encode(SECRET));
+    expect(await readSession(legacy, SECRET)).toEqual({ userId: "u1", exp, sat: exp - SESSION_MAX_AGE_S });
+  });
+
+  it("refuses a token whose login is older than 90 days, in readSession and decryptSession (DAL)", async () => {
+    const token = await encryptSession({ userId: "u1", sat: now() - SESSION_ABSOLUTE_MAX_S - 3600 }, SECRET, now() + DAY);
+    expect(await readSession(token, SECRET)).toBeNull();
+    expect(await decryptSession(token, SECRET)).toBeNull();
+  });
+
+  it("accepts a token logged in 89 days ago", async () => {
+    const token = await encryptSession({ userId: "u1", sat: now() - 89 * DAY }, SECRET, now() + DAY);
+    expect(await decryptSession(token, SECRET)).toEqual({ userId: "u1" });
+  });
+
+  it("refuses a validly signed token whose exp exceeds the 30-day maximum (same check as the proxy)", async () => {
+    const token = await encryptSession({ userId: "u1" }, SECRET, now() + 60 * DAY);
+    expect(await readSession(token, SECRET)).toBeNull();
+    expect(await decryptSession(token, SECRET)).toBeNull();
+  });
+
+  it("refuses a non-numeric sat", async () => {
+    const token = await new SignJWT({ userId: "u1", sat: "x" }).setProtectedHeader({ alg: "HS256" }).setExpirationTime(now() + DAY).sign(new TextEncoder().encode(SECRET));
+    expect(await readSession(token, SECRET)).toBeNull();
   });
 });

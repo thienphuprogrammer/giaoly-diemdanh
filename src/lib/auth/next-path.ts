@@ -1,7 +1,7 @@
 /**
  * Kiểm `?next=` sau đăng nhập: chỉ nhận đường dẫn cùng origin bắt đầu bằng đúng một `/`.
  * Mọi thứ khác (URL tuyệt đối, `//host`, `/\host`, ký tự điều khiển, dạng mã hóa của chúng, quá dài,
- * chính trang /login hay /api/) đều quay về "/". Chống open redirect.
+ * chính trang /login, /api/, route tải tệp hay tệp tĩnh) đều quay về "/". Chống open redirect.
  */
 export const MAX_NEXT_LENGTH = 512;
 /** Header nội bộ: proxy chuyển đường dẫn trang hiện tại cho requireUser(). Proxy luôn ghi đè/xóa giá trị từ client. */
@@ -33,9 +33,18 @@ function hasDangerousShape(s: string): boolean {
   return s.includes("\\") || /[\x00-\x1f\x7f]/.test(s) || !s.startsWith("/") || s.startsWith("//");
 }
 
+/** Không phải trang: đăng nhập, API, tệp tải về (route handler xuất thống kê), nội bộ Next, tệp tĩnh (đoạn cuối có dấu chấm). */
+const FORBIDDEN_TARGETS: readonly RegExp[] = [
+  /^\/login(\/|$)/,
+  /^\/api(\/|$)/,
+  /^\/_next(\/|$)/,
+  /^\/lop\/[^/]+\/thong-ke\/export(\/|$)/,
+  /\/[^/]*\.[^/]*\/?$/,
+];
+
 function isForbiddenTarget(pathname: string): boolean {
   const p = pathname.toLowerCase();
-  return p === "/login" || p.startsWith("/login/") || p === "/api" || p.startsWith("/api/");
+  return FORBIDDEN_TARGETS.some((re) => re.test(p));
 }
 
 export function safeNextPath(raw: unknown): string {

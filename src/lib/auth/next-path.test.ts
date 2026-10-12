@@ -12,6 +12,8 @@ describe("safeNextPath: accepts same-origin app paths", () => {
     ["/lop/./abc", "/lop/abc"], // trả về dạng đã chuẩn hóa
     ["/loprac", "/loprac"],
     ["/apitest", "/apitest"],
+    ["/lop/abc/thong-ke", "/lop/abc/thong-ke"],
+    ["/lop/abc/thong-ke?export=1", "/lop/abc/thong-ke?export=1"],
   ])("%s → %s", (input, expected) => {
     expect(safeNextPath(input)).toBe(expected);
   });
@@ -67,6 +69,14 @@ describe("safeNextPath: open-redirect and junk inputs fall back to /", () => {
     ["api via dot segment", "/x/../api/diem-danh"],
     ["api upper case", "/API/diem-danh"],
     ["api percent-encoded", "/%61pi/diem-danh"],
+    ["stats export download", "/lop/abc/thong-ke/export?termId=t1"],
+    ["stats export via dot segment", "/lop/abc/x/../thong-ke/export"],
+    ["stats export upper case", "/lop/abc/thong-ke/EXPORT"],
+    ["stats export trailing slash", "/lop/abc/thong-ke/export/"],
+    ["next internals", "/_next/static/chunks/app.js"],
+    ["static file", "/favicon.ico"],
+    ["manifest", "/manifest.webmanifest"],
+    ["icon", "/icon-192.png"],
     ["too long", `/${"a".repeat(MAX_NEXT_LENGTH)}`],
   ])("%s", (_label, input) => {
     expect(safeNextPath(input)).toBe("/");

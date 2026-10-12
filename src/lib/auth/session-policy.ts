@@ -7,22 +7,35 @@ const DAY_S = 24 * 60 * 60;
 export const SESSION_COOKIE = "session";
 export const SESSION_MAX_AGE_S = 30 * DAY_S;
 export const SESSION_REFRESH_BELOW_S = 3 * DAY_S;
+/** Trần tuyệt đối tính từ lúc đăng nhập (`sat`): quá 90 ngày thì phải đăng nhập lại dù vẫn dùng đều. */
+export const SESSION_ABSOLUTE_MAX_S = 90 * DAY_S;
 /** Cho phép đồng hồ lệch nhẹ khi so `exp` với thời hạn tối đa. */
 const CLOCK_SKEW_S = 5 * 60;
 
 export type RefreshDecision = "keep" | "refresh" | "invalid";
 
+/** Thời điểm đăng nhập (giây). Token cũ chưa có `sat`: coi như `exp - 30 ngày` (chuyển đổi êm). */
+export function sessionAuthTime({ exp, sat }: { exp: number; sat?: number }): number {
+  return sat === undefined ? exp - SESSION_MAX_AGE_S : sat;
+}
+
 /**
- * Quyết định gia hạn dựa trên `exp` (giây) của một token ĐÃ kiểm chữ ký.
- * - `invalid`: hết hạn, thiếu/sai `exp`, hoặc `exp` xa hơn thời hạn tối đa (không bao giờ gia hạn).
- * - `refresh`: còn dưới 3 ngày.
- * - `keep`: còn từ 3 ngày trở lên.
+ * Quyết định cho một token ĐÃ kiểm chữ ký, theo `exp` và `sat` (giây). Proxy và DAL dùng chung (cùng một tiêu chí).
+ * - `invalid`: hết hạn, thiếu/sai `exp`, `exp` xa hơn thời hạn tối đa, `sat` sai/ở tương lai,
+ *   hoặc đã đăng nhập quá 90 ngày (+ lệch đồng hồ). Không bao giờ gia hạn.
+ * - `keep`: còn hạn; hoặc đã quá 90 ngày kể từ đăng nhập (không cấp lại, phiên hết ở `exp` tự nhiên).
+ * - `refresh`: còn dưới 3 ngày và chưa quá trần 90 ngày.
  */
-export function sessionRefreshDecision(exp: number | undefined, nowS: number): RefreshDecision {
+export function sessionRefreshDecision(exp: number | undefined, nowS: number, sat?: number): RefreshDecision {
   if (typeof exp !== "number" || !Number.isFinite(exp)) return "invalid";
   const remaining = exp - nowS;
   if (remaining <= 0) return "invalid";
   if (remaining > SESSION_MAX_AGE_S + CLOCK_SKEW_S) return "invalid";
+  const authTime = sessionAuthTime({ exp, sat });
+  if (!Number.isFinite(authTime) || authTime > nowS + CLOCK_SKEW_S) return "invalid";
+  const age = nowS - authTime;
+  if (age > SESSION_ABSOLUTE_MAX_S + CLOCK_SKEW_S) return "invalid";
+  if (age > SESSION_ABSOLUTE_MAX_S) return "keep";
   return remaining < SESSION_REFRESH_BELOW_S ? "refresh" : "keep";
 }
 

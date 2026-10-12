@@ -226,6 +226,20 @@ test("báo mất mạng trên bảng điểm danh", async ({ page, context }) =>
   await expect(page.getByText(/Mất mạng — chưa lưu được/)).toBeHidden();
 });
 
+test("phiên hết hạn khi chạm trên bảng: về /login có next, đăng nhập xong quay lại bảng", async ({ page, context }) => {
+  page.on("dialog", (d) => void d.accept());
+  await openBoard(page);
+  const boardPath = `/lop/${state().classA}/diem-danh/${todayInVietnam()}`;
+  await context.clearCookies(); // cookie hết hạn cùng lúc với JWT => trình duyệt không còn cookie
+  await page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ }).click();
+  await expect(page).toHaveURL((u) => u.pathname === "/login" && u.searchParams.get("next") === boardPath);
+  await page.getByLabel("Email").fill("glv-a@e2e.vn");
+  await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
+  await expect(page).toHaveURL((u) => u.pathname === boardPath);
+  await expect(page.getByText(/Đã điểm danh 0\/4/)).toBeVisible(); // lần chạm lúc hết phiên không được ghi
+});
+
 test("GLV lớp khác không xem được lớp này", async ({ page }) => {
   await login(page, "glv-b@e2e.vn");
   const response = await page.goto(`/lop/${state().classA}`);

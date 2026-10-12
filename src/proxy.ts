@@ -13,8 +13,10 @@ function currentPath(request: NextRequest): string {
 
 /**
  * Proxy (Next 16):
- * - Không có phiên hợp lệ → chuyển sang /login, mang `next` khi là request GET (trang). Request khác GET có cookie
- *   (dù hỏng) vẫn đi tiếp như trước: requireUser() trong server action quyết định (giao thức redirect của action).
+ * - GET không có phiên hợp lệ → chuyển sang /login?next=<trang hiện tại>.
+ * - Request khác GET (server action gửi tới URL trang) luôn đi tiếp, kể cả khi thiếu cookie: proxy trả 307 sẽ phá giao
+ *   thức redirect của action. requireUser() (mọi server action đều gọi) chặn và chuyển về /login?next= theo header do
+ *   proxy đặt. Proxy chỉ là lớp lạc quan; ranh giới quyền thật nằm ở DAL.
  * - Phiên hợp lệ còn < 3 ngày → cấp lại cookie 30 ngày trên response (Server Component không đặt được cookie).
  * Proxy chỉ kiểm chữ ký/hạn; user vẫn được đọc lại từ DB ở mỗi request (DAL), nên tài khoản bị xóa vẫn bị chặn.
  */
@@ -27,19 +29,21 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const secret = authSecret();
   const session = token ? await readSession(token, secret) : null;
-  const decision = session ? sessionRefreshDecision(session.exp, Math.floor(Date.now() / 1000)) : "invalid";
+  const decision = session ? sessionRefreshDecision(session.exp, Math.floor(Date.now() / 1000), session.sat) : "invalid";
+  // Đường dẫn trang hiện tại (với server action là URL của trang gửi action); /api không qua proxy, safeNextPath cũng loại.
+  const path = currentPath(request);
 
-  if (decision === "invalid" && (isGet || token === undefined)) {
-    const target = isGet ? loginHref(currentPath(request)) : "/login";
-    const res = NextResponse.redirect(new URL(target, request.url));
+  if (decision === "invalid" && isGet) {
+    const res = NextResponse.redirect(new URL(loginHref(path), request.url));
     if (token !== undefined) res.cookies.delete(SESSION_COOKIE);
     return res;
   }
 
-  if (isGet) headers.set(NEXT_PATH_HEADER, currentPath(request));
+  headers.set(NEXT_PATH_HEADER, path);
   const res = NextResponse.next({ request: { headers } });
   if (decision === "refresh" && session) {
-    res.cookies.set(SESSION_COOKIE, await encryptSession({ userId: session.userId }, secret), sessionCookieOptions());
+    // Giữ nguyên `sat` (lúc đăng nhập) để trần 90 ngày không bị đẩy lùi.
+    res.cookies.set(SESSION_COOKIE, await encryptSession({ userId: session.userId, sat: session.sat }, secret), sessionCookieOptions());
   }
   return res;
 }

@@ -38,9 +38,19 @@ describe("proxy: unauthenticated page requests", () => {
     expect(location(res)).toBe(`${ORIGIN}/login?next=%2Flop%2Fabc`);
   });
 
-  it("does not carry next for non-GET requests", async () => {
-    const res = await proxy(req("/lop/abc", { method: "POST" }));
-    expect(location(res)).toBe(`${ORIGIN}/login`);
+  it("lets a page POST (server action) without cookie through with the page path, so requireUser redirects to /login?next", async () => {
+    // Proxy trả 307 cho POST của server action sẽ phá giao thức redirect của action (lần chạm bị nuốt, không về /login).
+    const res = await proxy(req("/lop/abc/diem-danh/2026-10-12", { method: "POST" }));
+    expect(location(res)).toBeNull();
+    expect(forwardedNext(res)).toBe("/lop/abc/diem-danh/2026-10-12");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("refuses (redirects) a validly signed token whose login is older than 90 days, without refreshing it", async () => {
+    const old = await encryptSession({ userId: "u1", sat: nowS() - 91 * DAY }, SIGNING_KEY, nowS() + DAY);
+    const res = await proxy(req("/lop/abc", { token: old }));
+    expect(location(res)).toBe(`${ORIGIN}/login?next=%2Flop%2Fabc`);
+    expect(res.cookies.get("session")?.value).toBe("");
   });
 
   it("redirects an expired token like a missing one and clears the cookie", async () => {
@@ -73,8 +83,10 @@ describe("proxy: sliding session", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  it("re-issues a 30-day httpOnly lax cookie when under 3 days remain", async () => {
-    const res = await proxy(req("/lop/abc", { token: await tokenExpiringIn(2 * DAY) }));
+  it("re-issues a 30-day httpOnly lax cookie when under 3 days remain, keeping sat", async () => {
+    const token = await encryptSession({ userId: "u1", sat: nowS() - 50 * DAY }, SIGNING_KEY, nowS() + 2 * DAY);
+    const original = await readSession(token, SIGNING_KEY);
+    const res = await proxy(req("/lop/abc", { token }));
     expect(location(res)).toBeNull();
     const cookie = res.cookies.get("session");
     expect(cookie?.maxAge).toBe(SESSION_MAX_AGE_S);
@@ -83,7 +95,15 @@ describe("proxy: sliding session", () => {
     expect(cookie?.path).toBe("/");
     const renewed = await readSession(cookie?.value, SIGNING_KEY);
     expect(renewed?.userId).toBe("u1");
+    expect(renewed?.sat).toBe(original!.sat); // thời điểm đăng nhập giữ nguyên qua các lần gia hạn
     expect(renewed!.exp - nowS()).toBeGreaterThan(SESSION_MAX_AGE_S - 5);
+  });
+
+  it("does not refresh once the login is older than 90 days (session ends at its exp)", async () => {
+    const token = await encryptSession({ userId: "u1", sat: nowS() - 90 * DAY - 60 }, SIGNING_KEY, nowS() + DAY);
+    const res = await proxy(req("/lop/abc", { token }));
+    expect(location(res)).toBeNull();
+    expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("re-issues on a POST with a valid near-expiry token too", async () => {
@@ -98,8 +118,14 @@ describe("proxy: next-path request header for requireUser()", () => {
     expect(forwardedNext(res)).toBe("/lop/abc?ky=1");
   });
 
-  it("strips a client-supplied header on POST", async () => {
-    const res = await proxy(req("/lop/abc", { method: "POST", token: await tokenExpiringIn(20 * DAY), headers: { [NEXT_PATH_HEADER]: "//evil.example" } }));
+  it("forwards the page path for a server-action POST and overwrites a spoofed value", async () => {
+    const res = await proxy(req("/lop/abc/diem-danh/2026-10-12", { method: "POST", token: "garbage", headers: { [NEXT_PATH_HEADER]: "//evil.example" } }));
+    expect(location(res)).toBeNull();
+    expect(forwardedNext(res)).toBe("/lop/abc/diem-danh/2026-10-12");
+  });
+
+  it("strips a client-supplied header on /login", async () => {
+    const res = await proxy(req("/login", { headers: { [NEXT_PATH_HEADER]: "/lop/abc" } }));
     expect(forwardedNext(res)).toBeNull();
     // Danh sách header được giữ lại không chứa header này => Next xóa nó khỏi request.
     expect(res.headers.get("x-middleware-override-headers")?.split(",")).not.toContain(NEXT_PATH_HEADER);
