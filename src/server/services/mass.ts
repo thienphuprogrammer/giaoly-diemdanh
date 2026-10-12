@@ -102,7 +102,7 @@ export async function undoClassAtMass(
   if (!checked.ok) return checked;
   const session = await massOfWeek(db, p.data.classId, p.data.heldOn, false);
   if (!session.ok) return session;
-  return session.data ? undoPresentBatch(db, session.data, p.data.batchId) : ok({ studentIds: [] });
+  return session.data ? undoPresentBatch(db, user, session.data, p.data.batchId) : ok({ studentIds: [] });
 }
 
 /**

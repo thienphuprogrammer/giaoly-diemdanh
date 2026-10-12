@@ -5,6 +5,8 @@ import { getStudent } from "@/db/queries/students";
 import { students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
+import { redactText } from "@/lib/audit/events";
+import { writeWithAudit } from "../audit";
 import { guardClass } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
 
@@ -21,6 +23,11 @@ export async function rotateQrToken(db: Db, user: AppUser, input: unknown): Prom
   if (!p.success || !z.uuid().safeParse(p.data.studentId).success) return fail(NOT_FOUND_STUDENT);
   const student = await getStudent(db, p.data.studentId);
   if (!student || !(await guardClass(db, user, student.classId, "write"))) return fail(NOT_FOUND_STUDENT);
-  await db.update(students).set({ qrToken: sql`replace(gen_random_uuid()::text, '-', '')` }).where(eq(students.id, student.id));
+  // Nhật ký chỉ có tên em: không bao giờ mã cũ/mới (RETURNING chỉ lấy id).
+  await writeWithAudit(db, db.update(students).set({ qrToken: sql`replace(gen_random_uuid()::text, '-', '')` })
+    .where(eq(students.id, student.id)).returning({ id: students.id }), {
+    actorId: user.id, classId: student.classId, entity: "student", entityId: student.id, action: "student.qr_rotate",
+    summary: { studentName: redactText(student.fullName) },
+  });
   return ok(undefined);
 }

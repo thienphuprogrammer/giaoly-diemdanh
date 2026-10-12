@@ -22,6 +22,27 @@ export async function findSession(db: Db, classId: string, heldOn: string, kind:
   return row ?? null;
 }
 
+/** Dấu điểm danh hiện có của một em trong buổi (trước khi ghi đè), để nhật ký có "trước → sau". */
+export async function getMark(db: Db, sessionId: string, studentId: string) {
+  const [row] = await db.select({ status: attendance.status, reason: attendance.reason }).from(attendance)
+    .where(and(eq(attendance.sessionId, sessionId), eq(attendance.studentId, studentId)));
+  return row ?? null;
+}
+
+/**
+ * Em kèm dấu hiện có của em trong buổi, trong MỘT truy vấn (đường chạm tay trên bảng: đọc em vốn đã cần, nên lấy "trước"
+ * cho nhật ký không tốn thêm lượt khứ hồi). `mark` null = chưa có dòng.
+ */
+export async function getStudentWithMark(db: Db, studentId: string, sessionId: string) {
+  const [row] = await db.select({ ...studentColumns, markStatus: attendance.status, markReason: attendance.reason })
+    .from(students)
+    .leftJoin(attendance, and(eq(attendance.studentId, students.id), eq(attendance.sessionId, sessionId)))
+    .where(eq(students.id, studentId));
+  if (!row) return null;
+  const { markStatus, markReason, ...student } = row;
+  return { student, mark: markStatus === null ? null : { status: markStatus, reason: markReason } };
+}
+
 export async function getSession(db: Db, id: string) {
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id));
   return row ?? null;

@@ -12,6 +12,8 @@ export const QR_MIGRATION = "0002_qr_cards_and_scans";
 export const MASS_MIGRATION = "0003_mass_sessions";
 /** Migration thêm CHECK `grades.mass_threshold >= 1` (ngưỡng cảnh báo đi lễ trưởng khối sửa được). */
 export const MASS_THRESHOLD_MIGRATION = "0004_mass_threshold_check";
+/** Migration thêm bảng nhật ký thay đổi `audit_events`. */
+export const AUDIT_MIGRATION = "0005_audit_events";
 
 const sqlOf = (tag: string) =>
   readFileSync(`./drizzle/${tag}.sql`, "utf8").split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);

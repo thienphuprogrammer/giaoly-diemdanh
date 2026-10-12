@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getPlan, lockPlan, replaceAssignments } from "@/db/queries/seating";
@@ -5,10 +6,12 @@ import { getStudent } from "@/db/queries/students";
 import { seatingPlans } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
+import { redactText } from "@/lib/audit/events";
 import { assignStudent, pruneAssignments, unassignSeat } from "@/lib/seating/assignments";
 import { defaultLayout, parseLayout } from "@/lib/seating/layout";
 import { buildTemplateLayout } from "@/lib/seating/templates";
 import type { Assignment, Layout } from "@/lib/seating/types";
+import { recordAudit } from "../audit";
 import { NOT_FOUND, guardClass } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
 
@@ -47,10 +50,15 @@ export async function createPlan(db: Db, user: AppUser, input: unknown): Promise
   const row = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${classId}))`);
     const existing = await tx.select({ id: seatingPlans.id }).from(seatingPlans).where(eq(seatingPlans.classId, classId));
+    const isActive = existing.length === 0;
     const [created] = await tx
       .insert(seatingPlans)
-      .values({ classId, name, layout, isActive: existing.length === 0 })
+      .values({ classId, name, layout, isActive })
       .returning({ id: seatingPlans.id });
+    await recordAudit(tx, {
+      actorId: user.id, classId, entity: "seating_plan", entityId: created.id, action: "seating.create",
+      summary: { planName: redactText(name), templateId: p.data.templateId || null, active: isActive },
+    });
     return created;
   });
   return ok({ id: row.id });
@@ -73,6 +81,13 @@ export async function saveLayout(
     const kept = pruneAssignments(parsed.layout, locked.assignments);
     await tx.update(seatingPlans).set({ layout: parsed.layout }).where(eq(seatingPlans.id, locked.plan.id));
     await replaceAssignments(tx, locked.plan.id, kept);
+    // Lưu lại đúng bố cục cũ (không bỏ ghế nào) không phải thay đổi: không nhật ký.
+    if (!isDeepStrictEqual(locked.plan.layout, parsed.layout) || kept.length !== locked.assignments.length) {
+      await recordAudit(tx, {
+        actorId: user.id, classId: locked.plan.classId, entity: "seating_plan", entityId: locked.plan.id, action: "seating.save_layout",
+        summary: { planName: redactText(locked.plan.name), seatsKept: kept.length, seatsRemoved: locked.assignments.length - kept.length },
+      });
+    }
     return kept;
   });
   if (!saved) return fail(NOT_FOUND_PLAN);
@@ -129,6 +144,10 @@ export async function applyTemplate(db: Db, user: AppUser, input: unknown): Prom
     if (!locked) return fail(NOT_FOUND_PLAN);
     if (locked.assignments.length > 0) return fail("Sơ đồ đã có em ngồi, không thể áp dụng mẫu");
     await tx.update(seatingPlans).set({ layout }).where(eq(seatingPlans.id, locked.plan.id));
+    await recordAudit(tx, {
+      actorId: user.id, classId: locked.plan.classId, entity: "seating_plan", entityId: locked.plan.id, action: "seating.apply_template",
+      summary: { planName: redactText(locked.plan.name), templateId: p.data.templateId },
+    });
     return ok({ layout });
   });
   return result;
@@ -140,9 +159,15 @@ export async function activatePlan(db: Db, user: AppUser, input: unknown): Promi
   const data = await loadWritablePlan(db, user, p.data.planId);
   if (!data) return fail(NOT_FOUND_PLAN);
   const done = await db.transaction(async (tx) => {
-    if (!(await lockPlan(tx, data.plan.id))) return false;
-    await tx.update(seatingPlans).set({ isActive: false }).where(eq(seatingPlans.classId, data.plan.classId));
-    await tx.update(seatingPlans).set({ isActive: true }).where(eq(seatingPlans.id, data.plan.id));
+    const locked = await lockPlan(tx, data.plan.id);
+    if (!locked) return false;
+    if (locked.plan.isActive) return true; // đã đang dùng: không đổi gì, không nhật ký
+    await tx.update(seatingPlans).set({ isActive: false }).where(eq(seatingPlans.classId, locked.plan.classId));
+    await tx.update(seatingPlans).set({ isActive: true }).where(eq(seatingPlans.id, locked.plan.id));
+    await recordAudit(tx, {
+      actorId: user.id, classId: locked.plan.classId, entity: "seating_plan", entityId: locked.plan.id, action: "seating.activate",
+      summary: { planName: redactText(locked.plan.name) },
+    });
     return true;
   });
   return done ? ok(undefined) : fail(NOT_FOUND_PLAN);
@@ -158,6 +183,10 @@ export async function deletePlan(db: Db, user: AppUser, input: unknown): Promise
     if (!locked) return fail(NOT_FOUND_PLAN);
     if (locked.plan.isActive) return fail("Không thể xóa sơ đồ đang dùng");
     await tx.delete(seatingPlans).where(eq(seatingPlans.id, locked.plan.id));
+    await recordAudit(tx, {
+      actorId: user.id, classId: locked.plan.classId, entity: "seating_plan", entityId: locked.plan.id, action: "seating.delete",
+      summary: { planName: redactText(locked.plan.name) },
+    });
     return ok(undefined);
   });
   return result;

@@ -162,3 +162,32 @@ export const attendanceScans = pgTable(
   },
   (t) => [index("attendance_scans_session_idx").on(t.sessionId, t.receivedAt)],
 );
+
+export const auditEntity = pgEnum("audit_entity", ["attendance", "student", "seating_plan", "session", "grade_settings"]);
+
+/**
+ * Nhật ký thay đổi (spec §2): một dòng cho mỗi thao tác thủ công THẬT SỰ đổi dữ liệu, ghi trong cùng transaction với
+ * thay đổi; thao tác hàng loạt = một dòng tổng hợp. Lượt quét không ghi ở đây (đã có `attendance_scans`).
+ * `summary` đã qua `sanitizeSummary` (không token/payload thẻ, SĐT chỉ dạng đã che). Sự kiện cấp khối có `grade_id`, không `class_id`.
+ */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    classId: uuid("class_id").references(() => classes.id, { onDelete: "cascade" }),
+    gradeId: uuid("grade_id").references(() => grades.id, { onDelete: "cascade" }),
+    entity: auditEntity("entity").notNull(),
+    entityId: text("entity_id"),
+    action: text("action").notNull(),
+    summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  },
+  (t) => [
+    index("audit_events_class_at_idx").on(t.classId, t.at.desc()),
+    index("audit_events_grade_at_idx").on(t.gradeId, t.at.desc()),
+    index("audit_events_at_idx").on(t.at),
+    check("audit_events_scope", sql`${t.classId} is not null or ${t.gradeId} is not null`),
+    check("audit_events_summary_object", sql`jsonb_typeof(${t.summary}) = 'object'`),
+  ],
+);

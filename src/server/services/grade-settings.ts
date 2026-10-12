@@ -4,7 +4,9 @@ import { getGrade } from "@/db/queries/grades";
 import { grades } from "@/db/schema";
 import type { Db } from "@/db/types";
 import { canManageGrade, type AppUser } from "@/lib/access/can-access";
+import { redactText } from "@/lib/audit/events";
 import { MASS_THRESHOLD_MAX, MASS_THRESHOLD_MIN } from "@/lib/attendance/mass-tally";
+import { writeWithAudit } from "../audit";
 import { fail, ok, type ActionResult } from "../result";
 
 const FORBIDDEN = "Bạn không có quyền thực hiện thao tác này";
@@ -31,8 +33,8 @@ export async function getGradeSettings(db: Db, user: AppUser): Promise<GradeSett
 }
 
 /**
- * Trưởng khối sửa ngưỡng cảnh báo đi lễ của CHÍNH khối mình. Trả về giá trị trước/sau để nhật ký thay đổi (P2) ghi lại
- * mà không phải đọc lại; chưa có bảng nhật ký nên hiện chỉ trả về.
+ * Trưởng khối sửa ngưỡng cảnh báo đi lễ của CHÍNH khối mình. Đổi thật thì ghi nhật ký `grade.mass_threshold` (cấp khối:
+ * `grade_id`, không `class_id`) cùng câu lệnh; cùng giá trị thì không ghi gì. Trả về giá trị trước/sau.
  */
 export async function setMassThreshold(
   db: Db, user: AppUser, input: unknown,
@@ -43,6 +45,11 @@ export async function setMassThreshold(
   if (!z.uuid().safeParse(gradeId).success || !canManageGrade(user, gradeId)) return fail(FORBIDDEN);
   const grade = await getGrade(db, gradeId);
   if (!grade) return fail(FORBIDDEN);
-  await db.update(grades).set({ massThreshold: threshold }).where(eq(grades.id, gradeId));
+  if (grade.massThreshold !== threshold) {
+    await writeWithAudit(db, db.update(grades).set({ massThreshold: threshold }).where(eq(grades.id, gradeId)).returning({ id: grades.id }), {
+      actorId: user.id, gradeId, entity: "grade_settings", entityId: gradeId, action: "grade.mass_threshold",
+      summary: { gradeName: redactText(grade.name), before: grade.massThreshold, after: threshold },
+    });
+  }
   return ok({ gradeId, before: grade.massThreshold, after: threshold });
 }
