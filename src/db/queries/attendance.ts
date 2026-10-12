@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { visibleAssignments } from "@/lib/seating/assignments";
 import type { Assignment, Layout } from "@/lib/seating/types";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { attendance, seatAssignments, seatingPlans, sessions, students, terms, type SessionKind } from "../schema";
 import type { Db } from "../types";
+import { missedMassWeeks } from "./mass-stats";
 import { studentColumns } from "./students";
 
 export async function findTermFor(db: Db, date: string) {
@@ -69,35 +70,36 @@ export interface BoardStudent {
   priorUnexcused: number;
 }
 
-/**
- * "Vắng trước đó" của bảng/bảng tra, theo loại buổi (cùng một truy vấn, không thêm lượt DB):
- * - buổi học: số buổi HỌC vắng không phép trong học kỳ (quy tắc cảnh báo ≥2);
- * - buổi đi lễ: số tuần KHÔNG ĐI LỄ trong học kỳ = buổi đi lễ khác (không bị huỷ) mà em có dòng vắng (có/không phép);
- *   tuần chưa ghi nhận (không có dòng) không bị tính.
- */
-const PRIOR_ABSENCES = { class: ["absent_unexcused"], mass: ["absent_excused", "absent_unexcused"] } as const;
-
-export async function loadBoardData(db: Db, session: typeof sessions.$inferSelect) {
-  const roster = await db.select(studentColumns).from(students)
-    .where(and(eq(students.classId, session.classId), eq(students.active, true)))
-    .orderBy(asc(students.fullName));
-  const marks = await db.select().from(attendance).where(eq(attendance.sessionId, session.id));
-  const prior = await db
+/** Số buổi HỌC vắng không phép trước đó trong học kỳ (quy tắc cảnh báo ≥2), bỏ buổi nghỉ lễ và chính buổi này. */
+async function priorClassUnexcused(db: Db, session: typeof sessions.$inferSelect): Promise<Map<string, number>> {
+  const rows = await db
     .select({ studentId: attendance.studentId, n: sql<number>`count(*)::int` })
     .from(attendance)
     .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
     .where(and(
       eq(sessions.classId, session.classId),
       eq(sessions.termId, session.termId),
-      eq(sessions.kind, session.kind), // buổi học chỉ đếm buổi học; buổi đi lễ chỉ đếm tuần đi lễ
+      eq(sessions.kind, "class"),
       eq(sessions.cancelled, false),
       ne(sessions.id, session.id),
-      inArray(attendance.status, [...PRIOR_ABSENCES[session.kind]]),
+      eq(attendance.status, "absent_unexcused"),
     ))
     .groupBy(attendance.studentId);
+  return new Map(rows.map((r) => [r.studentId, r.n]));
+}
+
+export async function loadBoardData(db: Db, session: typeof sessions.$inferSelect) {
+  const roster = await db.select(studentColumns).from(students)
+    .where(and(eq(students.classId, session.classId), eq(students.active, true)))
+    .orderBy(asc(students.fullName));
+  const marks = await db.select().from(attendance).where(eq(attendance.sessionId, session.id));
+  // "Vắng trước đó" theo loại buổi, vẫn một truy vấn: buổi học = số buổi học vắng KP; buổi đi lễ = số tuần đi lễ đã
+  // ghi nhận mà em không đi (`missedMassWeeks`, định nghĩa spec §1b), không tính buổi đang mở.
+  const priorOf = session.kind === "mass"
+    ? await missedMassWeeks(db, { classId: session.classId, termId: session.termId, excludeSessionId: session.id })
+    : await priorClassUnexcused(db, session);
 
   const markOf = new Map(marks.map((m) => [m.studentId, m]));
-  const priorOf = new Map(prior.map((p) => [p.studentId, p.n]));
   const boardStudents: BoardStudent[] = roster.map((s) => ({
     id: s.id,
     fullName: s.fullName,

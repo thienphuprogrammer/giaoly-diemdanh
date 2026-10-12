@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { Notice } from "@/components/ui/Notice";
@@ -20,7 +21,16 @@ export default async function ScanPage({ params, searchParams }: {
   const perms = await classPermissions(db, user, classId);
   if (!perms.canWrite) notFound();
   const opened = await openSession(db, user, { classId, heldOn: date }); // idempotent
-  if (!opened.ok) return <div className="p-4"><Notice tone="error" role="alert">{opened.error}</Notice></div>;
+  if (!opened.ok) {
+    return (
+      <div className="p-4">
+        <Notice tone="error" role="alert">
+          <p>{opened.error}</p>
+          <Link href={`/lop/${classId}`} className="btn btn-secondary btn-sm mt-2">Về trang lớp</Link>
+        </Notice>
+      </div>
+    );
+  }
   const cls = await getClassById(db, classId);
   return <ScanScreen sessionId={opened.data.id} userId={user.id} classId={classId} className={cls?.name ?? ""} heldOn={date} fromBoard={isFromBoard(from)} />;
 }

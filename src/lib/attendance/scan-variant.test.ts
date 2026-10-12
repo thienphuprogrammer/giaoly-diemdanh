@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decideScan, MASS_CANCELLED_SCAN, SESSION_CANCELLED } from "./scan-rules";
-import { scanModeFor, scanVariant } from "./scan-variant";
+import { massScanHref, scanExit, scanModeFor, scanVariant } from "./scan-variant";
 
 describe("scanVariant('class') keeps the class scanner exactly as it was", () => {
   const v = scanVariant("class");
@@ -20,6 +20,7 @@ describe("scanVariant('class') keeps the class scanner exactly as it was", () =>
     expect(v.unmarkedHeading(3)).toBe("Em chưa điểm danh (3)");
     expect(v.cancelledText).toBe(SESSION_CANCELLED);
     expect(v.exitLabel).toBe("Mở bảng điểm danh");
+    expect(v.unmarkedNote).toBeNull();
     expect(v.confirmLabel("present")).toBe("Có mặt");
     expect(v.confirmLabel("late")).toBe("Đi muộn");
     expect(v.absentLabel("absent_excused")).toBe("Vắng có phép");
@@ -43,7 +44,8 @@ describe("scanVariant('mass') — scanning at church", () => {
     expect(v.presentLabel).toBe("Đi lễ");
     expect(v.appliedText("present")).toBe("Đã ghi Đi lễ");
     expect(v.noopText("already_present")).toBe("Đã ghi đi lễ");
-    expect(v.unmarkedHeading(2)).toBe("Em chưa ghi nhận đi lễ (2)");
+    expect(v.unmarkedHeading(2)).toBe("Em chưa quét (2)");
+    expect(v.unmarkedNote).toBe("Em chưa quét sẽ được tính là chưa đi lễ trong tuần đã ghi.");
     expect(v.cancelledText).toBe(MASS_CANCELLED_SCAN);
     expect(v.exitLabel).toBe("Về trang lớp");
     expect(v.confirmLabel("present")).toBe("Có đi lễ");
@@ -66,5 +68,24 @@ describe("scanModeFor", () => {
     expect(decideScan(null, scanModeFor("mass", "late"))).toEqual({ kind: "apply", status: "present" });
     expect(decideScan({ status: "absent_unexcused", reason: null }, scanModeFor("mass", "late")))
       .toEqual({ kind: "confirm", defaultStatus: "present", current: "absent_unexcused" });
+  });
+});
+
+describe("scanExit: the exit button and the leave-guard wording always name the same place", () => {
+  it("class scanner: always the attendance board", () => {
+    expect(scanExit("class", false)).toEqual({ label: "Mở bảng điểm danh", place: "bảng điểm danh" });
+    expect(scanExit("class", true)).toEqual({ label: "Mở bảng điểm danh", place: "bảng điểm danh" });
+  });
+  it("mass scanner: the class page, or back to the board when opened from it", () => {
+    expect(scanExit("mass", false)).toEqual({ label: "Về trang lớp", place: "trang lớp" });
+    expect(scanExit("mass", true)).toEqual({ label: "Về bảng điểm danh", place: "bảng điểm danh" });
+  });
+});
+
+describe("massScanHref", () => {
+  it("keeps manual and from=board so re-login returns to the same scanner", () => {
+    expect(massScanHref("c1", "2026-10-11", { manual: false, fromBoard: false })).toBe("/lop/c1/di-le/2026-10-11/quet");
+    expect(massScanHref("c1", "2026-10-11", { manual: false, fromBoard: true })).toBe("/lop/c1/di-le/2026-10-11/quet?from=board");
+    expect(massScanHref("c1", "2026-12-08", { manual: true, fromBoard: true })).toBe("/lop/c1/di-le/2026-12-08/quet?manual=1&from=board");
   });
 });

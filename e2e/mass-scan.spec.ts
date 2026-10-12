@@ -100,8 +100,8 @@ test("đi lễ tại nhà thờ: từ trang lớp quét 2 em, ghi vào buổi đ
 
   await page.getByRole("button", { name: "Kiểm tra cuối buổi" }).click();
   const sheet = page.getByRole("dialog", { name: "Kiểm tra cuối buổi" });
-  await expect(sheet.getByRole("heading", { name: "Em chưa ghi nhận đi lễ (2)" })).toBeVisible();
-  await expect(sheet.getByText("chưa ghi nhận", { exact: true })).toBeVisible();
+  await expect(sheet.getByRole("heading", { name: "Em chưa quét (2)" })).toBeVisible();
+  await expect(sheet.getByText(/Em chưa quét sẽ được tính là chưa đi lễ trong tuần đã ghi\./)).toBeVisible();
   await expect(sheet.getByRole("button", { name: /Đánh vắng/ })).toHaveCount(0);
   await sheet.getByRole("button", { name: "Về trang lớp" }).click();
   await expect(page).toHaveURL(new RegExp(`/lop/${state().classA}$`));
@@ -220,4 +220,15 @@ test("đi lễ: trên bảng điểm danh, 'Tuần này không có lễ' chỉ h
   } finally { await db.end(); }
   await section.getByRole("button", { name: "Mở lại tuần đi lễ" }).click();
   await expect(section.getByRole("button", { name: "Cả lớp đi lễ" })).toBeVisible();
+});
+
+test("đi lễ: ngày không phải Chúa nhật (không chọn thủ công) báo lỗi kèm lối về trang lớp, không tạo buổi", async ({ page }) => {
+  await login(page);
+  const saturday = new Date(Date.parse(`${sunday()}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  await page.goto(`/lop/${state().classA}/di-le/${saturday}/quet`);
+  await expect(page.getByRole("alert").filter({ hasText: "Buổi đi lễ phải vào Chúa nhật" })).toBeVisible();
+  await page.getByRole("link", { name: "Về trang lớp" }).click();
+  await expect(page).toHaveURL(new RegExp(`/lop/${state().classA}$`));
+  const db = sql();
+  try { expect(await db`select 1 from sessions where class_id = ${state().classA} and kind = 'mass'`).toHaveLength(0); } finally { await db.end(); }
 });

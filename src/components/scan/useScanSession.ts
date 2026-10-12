@@ -143,7 +143,10 @@ export function useScanSession({ sessionId, userId, kind = "class" }: { sessionI
     return () => { alive = false; };
   }, [sessionId, applyRoster]);
 
-  const enqueueApply = useCallback((entry: ScanRosterEntry, kind: "scan" | "manual", status: "present" | "late", confirmStatus?: "present" | "late"): boolean => {
+  const enqueueApply = useCallback((entry: ScanRosterEntry, eventKind: "scan" | "manual", wanted: "present" | "late", wantedConfirm?: "present" | "late"): boolean => {
+    // Buổi đi lễ: không bao giờ xếp "đi muộn" (kể cả từ bảng xác nhận), máy chủ cũng từ chối.
+    const status = scanModeFor(kind, wanted);
+    const confirmStatus = wantedConfirm && scanModeFor(kind, wantedConfirm);
     if (!canEnqueue(queueRef.current)) {
       setBanner({ tone: "error", text: "Đang gửi quá nhiều lượt, đợi một chút rồi quét tiếp." });
       playScanFeedback("error");
@@ -154,15 +157,15 @@ export function useScanSession({ sessionId, userId, kind = "class" }: { sessionI
     dispatch({
       type: "enqueue",
       event: {
-        eventId: crypto.randomUUID(), kind, studentId: entry.studentId, fullName: entry.fullName, saintName: entry.saintName,
-        mode: modeRef.current, token: kind === "scan" ? entry.token : undefined, confirmStatus, optimisticStatus: status,
+        eventId: crypto.randomUUID(), kind: eventKind, studentId: entry.studentId, fullName: entry.fullName, saintName: entry.saintName,
+        mode: scanModeFor(kind, modeRef.current), token: eventKind === "scan" ? entry.token : undefined, confirmStatus, optimisticStatus: status,
         prev, capturedAt: new Date().toISOString(), undoBusy: false,
       },
     });
     setBanner({ tone: "applied", fullName: entry.fullName, saintName: entry.saintName, status, text: variant.appliedText(status) });
     playScanFeedback("ok");
     return true;
-  }, [setMark, dispatch, variant]);
+  }, [setMark, dispatch, variant, kind]);
 
   /** Buổi nghỉ lễ: báo lỗi (kèm phản hồi lỗi), không xếp lượt nào. Trả về true nếu đã từ chối. */
   const refuseIfCancelled = useCallback((entry?: ScanRosterEntry): boolean => {

@@ -227,20 +227,24 @@ describe("scanning against a mass session id", () => {
     expect(roster?.students.find((s) => s.studentId === ctx.binh.id)?.priorUnexcused).toBe(0);
   });
 
-  it("the scan roster of a Mass session counts missed-Mass weeks (explicit absent_* Mass rows, this term), not class absences", async () => {
+  it("the scan roster of a Mass session counts missed recorded Mass weeks (no present row), not class absences", async () => {
     const ctx = await setup();
     const { db, b, binh, chi } = ctx;
+    const [dung] = await db.insert(students).values({ classId: b.classId, fullName: "Dũng" }).returning(); // không có dòng nào
     const { m2 } = await ctx.addMass(); // 11/10 và 18/10: An, Bình vắng KP cả hai; Chi vắng KP 11/10
     await db.update(attendance).set({ status: "absent_excused" }).where(and(eq(attendance.sessionId, m2), eq(attendance.studentId, binh.id)));
     await db.insert(attendance).values({ sessionId: m2, studentId: chi.id, status: "present" });
+    await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-11-01" }, LATE_NOW); // mở mà chưa ghi: không tính
     const m3 = await openMassSession(db, b.glv, { classId: b.classId, heldOn: "2026-10-25" }, LATE_NOW);
     if (!m3.ok) throw new Error(m3.error);
+    await db.insert(attendance).values({ sessionId: m3.data.id, studentId: chi.id, status: "present" }); // buổi đang quét: không tính
     const prior = async () => {
       const roster = await getScanRoster(db, b.glv, m3.data.id);
       return Object.fromEntries((roster?.students ?? []).map((s) => [s.fullName, s.priorUnexcused]));
     };
-    expect(await prior()).toEqual({ An: 2, "Bình": 2, Chi: 1 });
+    expect(dung).toBeDefined();
+    expect(await prior()).toEqual({ An: 2, "Bình": 2, Chi: 1, "Dũng": 2 });
     await db.update(sessions).set({ cancelled: true }).where(eq(sessions.id, m2)); // tuần không có lễ: không tính
-    expect(await prior()).toEqual({ An: 1, "Bình": 1, Chi: 1 });
+    expect(await prior()).toEqual({ An: 1, "Bình": 1, Chi: 1, "Dũng": 1 });
   });
 });

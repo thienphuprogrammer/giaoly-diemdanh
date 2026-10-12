@@ -1,6 +1,7 @@
 import { isSunday } from "./mass-week";
 import { MASS_CANCELLED_SCAN, SESSION_CANCELLED, type ScanKind, type ScanMode } from "./scan-rules";
 import type { AttendanceStatus } from "./warning";
+import { FROM_BOARD } from "../scan-return";
 
 type Absence = "absent_excused" | "absent_unexcused";
 
@@ -26,9 +27,10 @@ export interface ScanVariant {
   cancelledText: string;
   /** Hướng dẫn kèm thông báo buổi bị huỷ. */
   cancelledHint: string;
+  /** Nút thoát trong bảng cuối buổi khi KHÔNG mở từ bảng điểm danh (xem `scanExit`). */
   exitLabel: string;
-  /** Nơi "Xong" đưa về (dùng trong câu chữ của hộp hỏi khi rời màn). */
-  exitPlace: string;
+  /** Ghi chú về các em chưa quét trong bảng cuối buổi (null = dùng phần "Đánh vắng còn lại" của buổi học). */
+  unmarkedNote: string | null;
   /** Nút chọn trong bảng xác nhận khi em đang vắng. */
   confirmLabel: (status: "present" | "late") => string;
   /** Trạng thái vắng hiện có, đọc trong bảng xác nhận. */
@@ -56,7 +58,7 @@ const CLASS: ScanVariant = {
   cancelledText: SESSION_CANCELLED,
   cancelledHint: "Tắt “Buổi nghỉ lễ” trên bảng điểm danh nếu buổi này vẫn học.",
   exitLabel: "Mở bảng điểm danh",
-  exitPlace: "bảng điểm danh",
+  unmarkedNote: null,
   confirmLabel: (status) => (status === "late" ? "Đi muộn" : "Có mặt"),
   absentLabel: (current) => (current === "absent_excused" ? "Vắng có phép" : "Vắng không phép"),
   arrivedText: "Em vừa đến, đổi thành:",
@@ -73,13 +75,14 @@ const MASS: ScanVariant = {
   title: (heldOn) => `Điểm danh đi lễ — ${isSunday(heldOn) ? "Chúa nhật" : "Ngày lễ"} ${dayMonth(heldOn)}`,
   appliedText: () => "Đã ghi Đi lễ",
   noopText: () => "Đã ghi đi lễ",
-  unmarkedHeading: (n) => `Em chưa ghi nhận đi lễ (${n})`,
+  unmarkedHeading: (n) => `Em chưa quét (${n})`,
   allMarkedText: "Tất cả đã được ghi nhận đi lễ.",
   needsConfirmText: "cần xác nhận Có đi lễ",
   cancelledText: MASS_CANCELLED_SCAN,
   cancelledHint: "Bấm “Mở lại tuần đi lễ” nếu tuần này vẫn có lễ.",
   exitLabel: "Về trang lớp",
-  exitPlace: "trang trước",
+  // Định nghĩa spec §1b (`missedMassWeeks`): tuần đã ghi nhận mà em không có dòng "có đi lễ" là tuần không đi lễ.
+  unmarkedNote: "Em chưa quét sẽ được tính là chưa đi lễ trong tuần đã ghi.",
   confirmLabel: () => "Có đi lễ",
   absentLabel: (current) => (current === "absent_excused" ? "Không đi lễ có phép" : "Không đi lễ không phép"),
   arrivedText: "Em có mặt ở nhà thờ, đổi thành:",
@@ -90,3 +93,18 @@ export const scanVariant = (kind: ScanKind): ScanVariant => (kind === "mass" ? M
 
 /** Chế độ quét thật sự dùng: buổi đi lễ luôn "present" (không bao giờ gửi `late`), buổi học theo chế độ đã nhớ. */
 export const scanModeFor = (kind: ScanKind, remembered: ScanMode): ScanMode => (kind === "mass" ? "present" : remembered);
+
+/**
+ * Nút thoát của bảng cuối buổi và nơi được nhắc trong hộp hỏi khi rời màn: luôn cùng một chỗ với nơi "Xong" thật sự về.
+ * Máy quét buổi học luôn về bảng điểm danh; máy quét đi lễ về trang lớp, hoặc lùi về bảng nếu mở từ bảng.
+ */
+export function scanExit(kind: ScanKind, fromBoard: boolean): { label: string; place: string } {
+  if (kind === "mass" && !fromBoard) return { label: MASS.exitLabel, place: "trang lớp" };
+  return { label: kind === "mass" ? "Về bảng điểm danh" : CLASS.exitLabel, place: "bảng điểm danh" };
+}
+
+/** Địa chỉ máy quét đi lễ, giữ `manual` và `from=board` (đăng nhập lại xong quay về đúng màn, "Xong" vẫn lùi về bảng). */
+export function massScanHref(classId: string, day: string, { manual, fromBoard }: { manual: boolean; fromBoard: boolean }): string {
+  const query = [manual ? "manual=1" : null, fromBoard ? `from=${FROM_BOARD}` : null].filter(Boolean).join("&");
+  return `/lop/${classId}/di-le/${day}/quet${query ? `?${query}` : ""}`;
+}

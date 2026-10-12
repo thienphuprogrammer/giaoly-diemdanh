@@ -10,7 +10,8 @@ import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { remainingAbsentBlock } from "@/lib/attendance/remaining-absent";
 import type { ScanKind } from "@/lib/attendance/scan-rules";
-import { scanVariant } from "@/lib/attendance/scan-variant";
+import { isSunday } from "@/lib/attendance/mass-week";
+import { scanExit, scanVariant } from "@/lib/attendance/scan-variant";
 import { loginHref } from "@/lib/auth/next-path";
 import { dateLabel } from "@/lib/date-label";
 import { nextRadioIndex } from "@/lib/radio-keys";
@@ -40,6 +41,7 @@ interface ScanScreenProps {
  */
 export function ScanScreen({ sessionId, userId, classId, className, heldOn, fromBoard, kind = "class", exitHref, selfHref }: ScanScreenProps) {
   const v = scanVariant(kind);
+  const exit = scanExit(kind, fromBoard); // nút thoát và câu chữ hộp hỏi khi rời màn luôn nói cùng một nơi
   const MODES = v.modes;
   const s = useScanSession({ sessionId, userId, kind });
   const [storedFeedback, saveFeedback] = useScanFeedbackSetting();
@@ -314,9 +316,13 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
             <RemainingAbsentButton count={s.unmarked.length} blockedReason={absentBlock} onOpen={() => { s.clearAbsent(); setAbsentOpen(true); }} />
             </>
           ) : (
-            <p className="text-sm text-ink-soft">Em chưa quét là <b>chưa ghi nhận</b> đi lễ, không tính là vắng. Có thể ghi từng em trong phần “Đi lễ Chúa nhật” của bảng điểm danh.</p>
+            <p className="text-sm text-ink-soft">
+              {v.unmarkedNote}
+              {/* Phần "Đi lễ Chúa nhật" của bảng chỉ ghi thánh lễ Chúa nhật, không ghi ngày lễ chọn thủ công. */}
+              {isSunday(heldOn) && " Có thể ghi từng em (có phép/không phép) trong phần “Đi lễ Chúa nhật” của bảng điểm danh."}
+            </p>
           )}
-          <button type="button" onClick={goBoard} className="btn btn-primary btn-lg">{kind === "mass" && fromBoard ? "Về bảng điểm danh" : v.exitLabel}</button>
+          <button type="button" onClick={goBoard} className="btn btn-primary btn-lg">{exit.label}</button>
         </Sheet>
       )}
 
@@ -343,7 +349,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
               <p className="font-display text-lg font-semibold">Còn {s.unsaved.total + (absentSaving ? 1 : 0)} lượt chưa xong</p>
               <ul className="text-ink-soft" role="status">
                 {absentSaving && <li>Đang lưu việc đánh vắng các em còn lại: ở lại vài giây, xong sẽ tự về bảng điểm danh.</li>}
-                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về {v.exitPlace}.</li>}
+                {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về {exit.place}.</li>}
                 {s.unsaved.failed > 0 && <li>{s.unsaved.failed} lượt chưa gửi được: thử gửi lại, hoặc ghi tay trên bảng điểm danh.</li>}
                 {s.unsaved.needsConfirm > 0 && <li>{s.unsaved.needsConfirm} em đang vắng {v.needsConfirmText}: bấm “Cần chọn” trong danh sách.</li>}
               </ul>
@@ -359,7 +365,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
               </div>
             </>
           ) : (
-            <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét — đang về {v.exitPlace}…</p>
+            <p className="font-display text-lg font-semibold" role="status">Đã lưu hết các lượt quét — đang về {exit.place}…</p>
           )}
         </Sheet>
       )}
