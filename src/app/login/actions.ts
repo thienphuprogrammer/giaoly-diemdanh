@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { authenticate } from "@/lib/auth/authenticate";
 import { createSession } from "@/lib/auth/dal";
+import { safeNextPath } from "@/lib/auth/next-path";
 
 const schema = z.object({
   email: z.string().trim().pipe(z.email("Email không hợp lệ")),
@@ -23,5 +24,6 @@ export async function login(_prev: { error?: string } | undefined, formData: For
     };
   }
   await createSession(result.userId);
-  redirect("/");
+  // `next` từ form là dữ liệu client: chỉ nhận đường dẫn nội bộ an toàn, còn lại về trang chủ.
+  redirect(safeNextPath(formData.get("next")));
 }

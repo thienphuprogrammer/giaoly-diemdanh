@@ -9,6 +9,7 @@ import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { remainingAbsentBlock } from "@/lib/attendance/remaining-absent";
+import { loginHref } from "@/lib/auth/next-path";
 import { dateLabel } from "@/lib/date-label";
 import { QrCamera, type CameraState } from "./QrCamera";
 import { useScanFeedbackSetting } from "./feedback";
@@ -60,7 +61,8 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
   // Còn lượt quét đang gửi/lỗi/cần chọn thì không đánh vắng (tránh chạy đua với hàng đợi); nói rõ lý do.
   const absentBlock = remainingAbsentBlock({ unsaved: s.pending, busy: absentSaving, notReady: s.roster === null });
   const goBoard = () => { setReview(false); guard.go(boardHref); };
-  const relogin = () => guard.hardNavigate(`/login?next=${encodeURIComponent(`${boardHref}/quet`)}`);
+  // Đăng nhập xong quay lại đúng màn quét; hàng chờ đã lưu bền (theo buổi + người dùng) sẽ tự gửi tiếp.
+  const relogin = () => guard.hardNavigate(loginHref(`${boardHref}/quet`));
 
   return (
     <section aria-label="Quét thẻ QR" aria-busy={s.roster === null} className="flex min-h-dvh flex-col">

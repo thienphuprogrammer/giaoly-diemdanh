@@ -1,31 +1,19 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import type { AppUser } from "@/lib/access/can-access";
+import { NEXT_PATH_HEADER, loginHref } from "./next-path";
 import { decryptSession, encryptSession } from "./session";
+import { SESSION_COOKIE, authSecret as secret, sessionCookieOptions } from "./session-policy";
 
-export const SESSION_COOKIE = "session";
-const MAX_AGE = 7 * 24 * 60 * 60;
-
-function secret(): string {
-  const s = process.env.AUTH_SECRET;
-  if (!s || s.length < 32) throw new Error("AUTH_SECRET phải có ít nhất 32 ký tự");
-  return s;
-}
-
+/** JWT và cookie cùng thời hạn 30 ngày; proxy cấp lại khi còn < 3 ngày (phiên trượt). */
 export async function createSession(userId: string): Promise<void> {
   const token = await encryptSession({ userId }, secret());
-  (await cookies()).set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: MAX_AGE,
-  });
+  (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 export async function deleteSession(): Promise<void> {
@@ -43,6 +31,7 @@ export const getCurrentUser = cache(async (): Promise<AppUser | null> => {
 
 export async function requireUser(): Promise<AppUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  // Đường dẫn hiện tại do proxy chuyển qua header (chỉ với request GET); vẫn được kiểm lại bằng safeNextPath.
+  if (!user) redirect(loginHref((await headers()).get(NEXT_PATH_HEADER)));
   return user;
 }

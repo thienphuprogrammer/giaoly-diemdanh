@@ -27,8 +27,10 @@ async function login(page: Page, email: string, password = LOGIN_PW) {
 
 test("điểm danh bằng sơ đồ, thấy cảnh báo và danh sách Cần chú ý", async ({ page }) => {
   await login(page, "glv-a@e2e.vn");
-  await page.getByRole("link", { name: /Lớp A/ }).click();
-  await page.getByRole("link", { name: "Điểm danh hôm nay" }).click();
+  // Một chạm từ thẻ lớp ở trang chủ.
+  const card = page.getByRole("listitem").filter({ has: page.getByRole("link", { name: /Lớp A/ }) });
+  await card.getByRole("link", { name: "Điểm danh hôm nay" }).click();
+  await expect(page).toHaveURL(new RegExp(`/lop/${state().classA}/diem-danh/${todayInVietnam()}$`));
 
   await page.getByRole("button", { name: "Tất cả có mặt" }).click();
   await expect(page.getByText("Đã điểm danh 4/4")).toBeVisible();
@@ -232,7 +234,9 @@ test("GLV lớp khác không xem được lớp này", async ({ page }) => {
 
 test("không cuộn ngang trên màn hình điểm danh", async ({ page }) => {
   await login(page, "glv-a@e2e.vn");
+  // Đi qua trang lớp (trang chủ cũng có nút "Điểm danh hôm nay" trên từng thẻ: chờ rời trang chủ trước).
   await page.getByRole("link", { name: /Lớp A/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/lop/${state().classA}$`));
   await page.getByRole("link", { name: "Điểm danh hôm nay" }).click();
   await expect(page.getByText(/Đã điểm danh/)).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

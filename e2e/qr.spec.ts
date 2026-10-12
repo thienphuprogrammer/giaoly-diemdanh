@@ -4,6 +4,7 @@ import postgres from "postgres";
 
 const state = () => JSON.parse(readFileSync("e2e/.state.json", "utf8")) as { classA: string; classQ: string };
 const LOGIN_PW = "e2e-password-1";
+const WRONG_LOGIN_PW = "khong-dung-1";
 const sql = () => postgres(process.env.E2E_DATABASE_URL!, { max: 1 });
 
 // Mỗi project dùng một GLV riêng (xem global-setup): giới hạn tải bảng tra tính theo người dùng.
@@ -265,22 +266,41 @@ test("kết thúc buổi: chưa cho đánh vắng khi còn lượt quét chưa l
   await expect(review.getByText(/Còn 1 lượt chưa lưu xong/)).toBeHidden();
 });
 
-test("phiên hết hạn khi đang quét: giữ lượt, báo cần đăng nhập lại, đăng nhập xong gửi tiếp", async ({ page, context }) => {
+test("phiên hết hạn khi đang quét: giữ lượt, Đăng nhập lại về đúng màn quét, mỗi lượt chỉ ghi một lần", async ({ page, context }) => {
   page.on("dialog", (d) => void d.accept());
   await login(page, reopener());
   await openScanner(page, state().classA);
-  await context.clearCookies();
+  const scannerPath = new URL(page.url()).pathname;
+  await context.clearCookies(); // phiên hết hạn giữa buổi
   await feed(page, await tokenOf("Nguyễn Chi"));
   await expect(page.getByText(/Cần đăng nhập lại/)).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: "Nguyễn Chi" }).getByText("Chờ đăng nhập")).toBeVisible();
-  expect(await storedQueueSizes(page)).toEqual([1]);
+  await feed(page, await tokenOf("Nguyễn Dũng"));
+  const recent = page.getByRole("listitem");
+  await expect(recent.filter({ hasText: "Nguyễn Chi" }).getByText("Chờ đăng nhập")).toBeVisible();
+  await expect(recent.filter({ hasText: "Nguyễn Dũng" }).getByText(/Chờ đăng nhập|Đang gửi/)).toBeVisible();
+  await expect.poll(() => storedQueueSizes(page)).toEqual([2]);
 
-  await login(page, reopener());
-  await openScanner(page, state().classA);
-  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đã lưu 1")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Đăng nhập lại" }).click();
+  await expect(page).toHaveURL((u) => u.pathname === "/login" && u.searchParams.get("next") === scannerPath);
+  // Gõ sai một lần: vẫn giữ `next` cho lần đăng nhập tiếp theo.
+  await page.getByLabel("Email").fill(reopener());
+  await page.getByLabel("Mật khẩu").fill(WRONG_LOGIN_PW);
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
+  await expect(page.getByText("Email hoặc mật khẩu không đúng")).toBeVisible();
+  await page.getByLabel("Email").fill(reopener());
+  await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
+  const roster = page.waitForResponse((r) => r.url().includes("/api/diem-danh/bang-tra"));
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
+  await expect(page).toHaveURL((u) => u.pathname === scannerPath);
+  expect((await roster).status()).toBe(200);
+  await waitScannerReady(page);
+  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đã lưu 2")).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => storedQueueSizes(page)).toEqual([]);
   const db = sql();
-  try { expect((await todayMarks(db)).map((r) => r.full_name)).toEqual(["Nguyễn Chi"]); } finally { await db.end(); }
+  try {
+    expect((await todayMarks(db)).map((r) => [r.full_name, r.status])).toEqual([["Nguyễn Chi", "present"], ["Nguyễn Dũng", "present"]]);
+    expect(await db`select 1 from attendance_scans where kind = 'scan'`).toHaveLength(2);
+  } finally { await db.end(); }
 });
 
 test("đăng xuất khi còn lượt quét chưa gửi thì hỏi trước và xóa hàng chờ khỏi máy", async ({ page }) => {
