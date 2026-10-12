@@ -135,4 +135,18 @@ describe("checkRouteSource", () => {
     expect(checkRouteSource("src/app/api/other/route.ts", src, ["src/app/api/health/route.ts"])).not.toBeNull();
     expect(checkRouteSource("src/app/api/health/route.ts", src)).not.toBeNull();
   });
+
+  it("mục `tệp::dấu` chỉ miễn khi tệp đó tham chiếu đúng hàm xác thực riêng (cron dùng CRON_SECRET, không phiên)", () => {
+    const CRON = "src/app/api/cron/nhac-viec/route.ts";
+    const allow = [`${CRON}::handleCronRequest`];
+    const good = `export const GET = (r: Request) => handleCronRequest(r, deps);`;
+    expect(checkRouteSource(CRON, good, allow)).toBeNull();
+    // Đúng tệp nhưng bỏ mất lời gọi xác thực: vi phạm.
+    expect(checkRouteSource(CRON, `export const GET = () => runReminders(db);`, allow)).not.toBeNull();
+    // Dấu chỉ nằm trong chú thích/chuỗi: không tính.
+    expect(checkRouteSource(CRON, `// handleCronRequest(\nexport const GET = () => run("handleCronRequest");`, allow)).not.toBeNull();
+    // Tệp khác (kể cả cùng thư mục cron) không được miễn dù có cùng nội dung.
+    expect(checkRouteSource("src/app/api/cron/khac/route.ts", good, allow)).not.toBeNull();
+    expect(checkRouteSource("src/app/api/cron/khac/route.ts", `export const GET = () => new Response("x");`, allow)).not.toBeNull();
+  });
 });

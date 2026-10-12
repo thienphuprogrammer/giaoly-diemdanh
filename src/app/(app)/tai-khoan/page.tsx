@@ -28,6 +28,11 @@ export default async function AccountPage() {
       </div>
       {/* Khoá công khai đọc từ biến môi trường lúc chạy (không phải NEXT_PUBLIC_*): đổi khoá không cần build lại. */}
       <PushToggle userId={user.id} publicKey={vapidPublicKeyFromEnv()} subscribe={subscribePushAction} unsubscribe={unsubscribePushAction} sendTest={sendTestPushAction} />
+      <p className="-mt-3 px-1 text-sm text-ink-soft" data-testid="reminder-help">
+        <span className="font-semibold text-ink">Nhắc việc:</span> khi đã bật thông báo, GLV được nhắc nếu 30 phút sau giờ học
+        (đặt ở trang lớp) mà buổi hôm nay chưa điểm danh; trưởng khối được báo khi có em chạm ngưỡng cảnh báo vắng học hoặc
+        vắng lễ (mỗi em một lần mỗi học kỳ). Thông báo chỉ ghi tên lớp, không ghi tên các em.
+      </p>
       <LogoutButton userId={user.id} action={logout} unsubscribePush={unsubscribePushAction} />
     </section>
   );

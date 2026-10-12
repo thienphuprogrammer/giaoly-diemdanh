@@ -101,18 +101,37 @@ describe("checkEnv: cờ nguy hiểm và tùy chọn", () => {
     expect(levels(checkEnv({ ...base, DB_POOL_MAX: "abc" }, { prod: true }), "DB_POOL_MAX")).toEqual(["warn"]);
     expect(levels(checkEnv({ ...base, DB_POOL_MAX: "3" }, { prod: true }), "DB_POOL_MAX")).toEqual([]);
   });
-  it("VAPID_* và CRON_SECRET chỉ thông tin, thiếu không làm fail", () => {
+  it("VAPID_* chỉ thông tin; CRON_SECRET thiếu thì cảnh báo kèm chỉ dẫn tài liệu; không mục nào làm fail", () => {
     const cs = checkEnv(base, { prod: true });
     expect(levels(cs, "OPTIONAL_PUSH")).toEqual(["info"]);
-    expect(levels(cs, "OPTIONAL_CRON")).toEqual(["info"]);
+    expect(levels(cs, "OPTIONAL_CRON")).toEqual(["warn"]);
+    expect(cs.find((c) => c.id === "OPTIONAL_CRON")?.message).toMatch(/docs\/deploy-vercel-ios\.md/);
+    expect(cs.find((c) => c.id === "OPTIONAL_CRON")?.message).toContain("openssl rand -base64 48");
     expect(summarize(cs).failed).toBe(false);
     const keys = webpush.generateVAPIDKeys();
-    const cron = randomBytes(12).toString("hex");
+    const cron = randomBytes(24).toString("hex");
     const set = checkEnv({ ...base, VAPID_PUBLIC_KEY: keys.publicKey, VAPID_PRIVATE_KEY: keys.privateKey, VAPID_SUBJECT: "mailto:a@giaoxu.vn", CRON_SECRET: cron }, { prod: true });
     expect(set.filter((c) => c.id.startsWith("OPTIONAL")).every((c) => c.level === "info")).toBe(true);
     expect(set.find((c) => c.id === "OPTIONAL_PUSH")?.message).toContain("hợp lệ");
     const dump = JSON.stringify(set);
     for (const v of [keys.publicKey, keys.privateKey, cron]) expect(dump).not.toContain(v);
+  });
+
+  it("CRON_SECRET ngắn hơn 32 ký tự hoặc trông như giá trị mẫu thì cảnh báo (route sẽ trả 503), không in giá trị", () => {
+    const short = randomBytes(8).toString("hex");
+    const cs = checkEnv({ ...base, CRON_SECRET: short }, { prod: true });
+    expect(levels(cs, "OPTIONAL_CRON")).toEqual(["warn"]);
+    expect(cs.find((c) => c.id === "OPTIONAL_CRON")?.message).toContain("32");
+    expect(JSON.stringify(cs)).not.toContain(short);
+    expect(levels(checkEnv({ ...base, CRON_SECRET: "x".repeat(40) }, { prod: true }), "OPTIONAL_CRON")).toEqual(["warn"]);
+    const good = randomBytes(36).toString("base64");
+    expect(levels(checkEnv({ ...base, CRON_SECRET: good }, { prod: true }), "OPTIONAL_CRON")).toEqual(["info"]);
+  });
+
+  it("PUSH_DRY_RUN đặt: production thì cảnh báo, dev thì ghi chú; không đặt thì không có mục", () => {
+    expect(levels(checkEnv({ ...base, PUSH_DRY_RUN: "1" }, { prod: true }), "PUSH_DRY_RUN")).toEqual(["warn"]);
+    expect(levels(checkEnv({ ...base, PUSH_DRY_RUN: "1" }, { prod: false }), "PUSH_DRY_RUN")).toEqual(["info"]);
+    expect(levels(checkEnv(base, { prod: true }), "PUSH_DRY_RUN")).toEqual([]);
   });
 
   it("VAPID_* đặt thiếu hoặc sai thì cảnh báo (không fail), nêu tên biến nhưng không in giá trị", () => {

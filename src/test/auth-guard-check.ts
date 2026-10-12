@@ -190,9 +190,15 @@ export function checkServerActionSource(file: string, src: string, allow: readon
 }
 
 /** Route handler phải tự xác thực: tham chiếu getCurrentUser hoặc đi qua handleScanApi (đã gọi getUser). `allow` là tệp route công khai có chủ đích (đường dẫn tương đối). */
+/**
+ * `allow`: `tệp` (route công khai, miễn hẳn) hoặc `tệp::hàm` (route tự xác thực bằng cách khác phiên, ví dụ cron bằng
+ * CRON_SECRET): chỉ miễn khi chính tệp đó GỌI `hàm(` ngoài chú thích/chuỗi; bỏ lời gọi đó thì lại là vi phạm.
+ */
 export function checkRouteSource(file: string, src: string, allow: readonly string[] = []): GuardViolation | null {
   if (allow.includes(file)) return null;
   const masked = maskLiterals(src);
+  const markers = allow.filter((a) => a.startsWith(`${file}::`)).map((a) => a.slice(file.length + 2));
+  if (markers.some((m) => /^\w+$/.test(m) && new RegExp(`\\b${m}\\s*\\(`).test(masked))) return null;
   if (/\bgetCurrentUser\b/.test(masked) || /\bhandleScanApi\b/.test(masked)) return null;
   return { file, name: "route", reason: "route handler không tham chiếu getCurrentUser hoặc handleScanApi" };
 }

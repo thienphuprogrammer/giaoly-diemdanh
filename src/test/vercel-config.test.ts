@@ -12,4 +12,7 @@ describe("vercel.json", () => {
     expect(cfg).not.toHaveProperty("headers");
     expect(raw).not.toMatch(/postgres:\/\/|AUTH_SECRET|CRON_SECRET/);
   });
+  it("không bật `crons` mặc định: gói Hobby chỉ cho cron mỗi ngày, lịch 10 phút làm deploy thất bại (xem docs/deploy-vercel-ios.md)", () => {
+    expect(cfg).not.toHaveProperty("crons");
+  });
 });

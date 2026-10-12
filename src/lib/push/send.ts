@@ -22,6 +22,17 @@ export interface SendPushOptions {
   vapid: VapidConfig;
   ttlSeconds?: number;
   log?: (message: string) => void;
+  /** Chỉ để test; mặc định `process.env`. */
+  env?: Record<string, string | undefined>;
+}
+
+/**
+ * Công tắc kiểm thử `PUSH_DRY_RUN=1`: không gửi ra mạng, coi như thành công. Chỉ có hiệu lực khi NODE_ENV là `test` hoặc
+ * `development` (E2E chạy `next dev`); bản build production (`NODE_ENV=production`) luôn bỏ qua. Chỉ đọc từ biến môi
+ * trường của tiến trình, không request nào bật được. `pnpm preflight --prod` cảnh báo nếu biến được đặt.
+ */
+export function isPushDryRun(env: Record<string, string | undefined>): boolean {
+  return env.PUSH_DRY_RUN === "1" && (env.NODE_ENV === "test" || env.NODE_ENV === "development");
 }
 export interface SendResult { outcome: PushOutcome; status: number | null }
 
@@ -60,6 +71,7 @@ export async function sendPush(target: PushTarget, message: PushMessage, opts: S
     log("push: stored endpoint no longer allowed, removing");
     return { outcome: "gone", status: null };
   }
+  if (isPushDryRun(opts.env ?? process.env)) return { outcome: "ok", status: null };
   try {
     const res = await webpush.sendNotification(
       { endpoint: endpoint.endpoint, keys: { p256dh: target.keys.p256dh, auth: target.keys.auth } },

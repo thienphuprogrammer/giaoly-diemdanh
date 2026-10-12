@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { defineConfig } from "@playwright/test";
 import webpush from "web-push";
 
@@ -5,6 +6,10 @@ const url = process.env.E2E_DATABASE_URL ?? "";
 const PORT = 3100;
 // Khoá VAPID sinh mới mỗi lần chạy (không có khoá trong repo); E2E giả lập PushManager nên không gửi ra dịch vụ push thật.
 const vapid = webpush.generateVAPIDKeys();
+// Bí mật cho route nhắc việc, sinh lúc chạy. Ghi vào môi trường của tiến trình chạy test để các worker (thừa kế môi
+// trường) và web server dùng cùng một giá trị; không có giá trị nào trong repo.
+process.env.E2E_CRON_TOKEN ??= randomBytes(36).toString("base64url");
+const cronToken = process.env.E2E_CRON_TOKEN;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -29,6 +34,8 @@ export default defineConfig({
     env: {
       DATABASE_URL: url, AUTH_SECRET: "e".repeat(40), NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1",
       VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:e2e@giaoxu.vn",
+      // PUSH_DRY_RUN chỉ có hiệu lực ở dev/test: tác vụ nhắc việc không gửi ra dịch vụ push thật trong E2E.
+      CRON_SECRET: cronToken, PUSH_DRY_RUN: "1",
     },
   },
 });

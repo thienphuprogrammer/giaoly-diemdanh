@@ -11,8 +11,11 @@ import { checkRouteSource, checkServerActionSource } from "./auth-guard-check";
  * - login: hành động đăng nhập, chưa có phiên; xác thực bằng email + mật khẩu (authenticate).
  * - logout nội tuyến ở /tai-khoan: trang đã gọi requireUser; hành động chỉ xóa cookie của chính request, không đụng dữ liệu.
  * - route /api/health: kiểm tra sống công khai có chủ đích (giám sát, kiểm tra sau deploy); chỉ trả {ok, db, version}, không đọc phiên hay dữ liệu.
+ * - route /api/cron/nhac-viec: tác vụ định kỳ, không có phiên người dùng; xác thực bằng `Authorization: Bearer <CRON_SECRET>`
+ *   (so sánh hằng thời gian, thiếu/ngắn bí mật thì 503). Chỉ miễn khi CHÍNH tệp đó gọi `handleCronRequest(` (dạng `tệp::hàm`).
  */
-const ALLOW_ROUTES = ["src/app/api/health/route.ts"];
+const CRON_ROUTE = "src/app/api/cron/nhac-viec/route.ts";
+const ALLOW_ROUTES = ["src/app/api/health/route.ts", `${CRON_ROUTE}::handleCronRequest`];
 const ALLOW = ["src/app/login/actions.ts::login", "src/app/(app)/tai-khoan/page.tsx::logout"];
 
 const SRC = path.resolve(__dirname, "..");
@@ -49,8 +52,25 @@ describe("ranh giới xác thực (cấu trúc)", () => {
     expect(violations).toEqual([]);
   });
 
-  it("route công khai được miễn đúng một tệp và vẫn còn tồn tại", () => {
-    for (const rel of ALLOW_ROUTES) expect(files.some((f) => f.rel === rel), `${rel} không còn`).toBe(true);
+  it("route được miễn vẫn còn tồn tại (tránh danh sách thừa)", () => {
+    for (const entry of ALLOW_ROUTES) {
+      const rel = entry.split("::")[0];
+      expect(files.some((f) => f.rel === rel), `${rel} không còn`).toBe(true);
+    }
+  });
+
+  it("route cron chỉ xác thực bằng CRON_SECRET: không đọc cookie/phiên, có GET (Vercel Cron) và POST", () => {
+    const f = files.find((x) => x.rel === CRON_ROUTE);
+    expect(f).toBeDefined();
+    expect(f!.src).not.toMatch(/\bcookies\s*\(|getCurrentUser|requireUser/);
+    expect(f!.src).toMatch(/export const GET\b/);
+    expect(f!.src).toMatch(/export const POST\b/);
+    expect(checkRouteSource(CRON_ROUTE, f!.src, ALLOW_ROUTES)).toBeNull();
+  });
+
+  it("miễn trừ của cron không áp cho route khác cùng thư mục", () => {
+    const src = `export const GET = (r: Request) => handleCronRequest(r, deps);`;
+    expect(checkRouteSource("src/app/api/cron/khac/route.ts", src, ALLOW_ROUTES)).not.toBeNull();
   });
 
   it("mục trong danh sách cho phép vẫn còn tồn tại (tránh danh sách thừa)", () => {

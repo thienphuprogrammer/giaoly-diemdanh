@@ -84,6 +84,18 @@ function pushCheck(env: Env): Check {
   return { id: "OPTIONAL_PUSH", level: "info", message: "VAPID_*: đã đặt và hợp lệ (thông báo đẩy bật)." };
 }
 
+const CRON_DOC = "Xem docs/deploy-vercel-ios.md, mục \"Nhắc việc tự động\"; sinh bằng: openssl rand -base64 48";
+
+/** Nhắc việc tự động cần CRON_SECRET (≥ 32 ký tự); thiếu/ngắn thì route cron trả 503: cảnh báo, không làm fail. */
+function cronCheck(env: Env): Check {
+  const s = env.CRON_SECRET?.trim() ?? "";
+  const warn = (message: string): Check => ({ id: "OPTIONAL_CRON", level: "warn", message: `${message} ${CRON_DOC}.` });
+  if (!s) return warn("CRON_SECRET: chưa đặt, nhắc việc tự động (/api/cron/nhac-viec) sẽ không chạy.");
+  if (s.length < MIN_SECRET) return warn(`CRON_SECRET quá ngắn (${s.length} ký tự, cần tối thiểu ${MIN_SECRET}); route nhắc việc sẽ từ chối chạy.`);
+  if (new Set(s).size < 8 || PLACEHOLDER.test(s)) return warn("CRON_SECRET trông như giá trị mẫu hoặc lặp ký tự.");
+  return { id: "OPTIONAL_CRON", level: "info", message: `CRON_SECRET: đã đặt (${s.length} ký tự).` };
+}
+
 export function checkEnv(env: Env, opts: EnvOptions): Check[] {
   const checks: Check[] = [...checkDatabaseUrl(env, opts), checkAuthSecret(env)];
 
@@ -97,9 +109,14 @@ export function checkEnv(env: Env, opts: EnvOptions): Check[] {
     checks.push({ id: "DB_POOL_MAX", level: "warn", message: "DB_POOL_MAX không hợp lệ (cần số nguyên 1–20); đang dùng mặc định 5." });
   }
 
-  // Chỉ thông tin cho các tác vụ sau (push, cron): chỉ báo có/không, không in giá trị.
+  // Thông báo đẩy và nhắc việc: chỉ báo trạng thái, không bao giờ in giá trị.
   checks.push(pushCheck(env));
-  checks.push({ id: "OPTIONAL_CRON", level: "info", message: env.CRON_SECRET ? "CRON_SECRET: đã đặt." : "CRON_SECRET: chưa đặt (chỉ cần khi bật tác vụ định kỳ ở bước sau)." });
+  checks.push(cronCheck(env));
+  if (env.PUSH_DRY_RUN) {
+    checks.push(opts.prod
+      ? { id: "PUSH_DRY_RUN", level: "warn", message: "PUSH_DRY_RUN đang được đặt. Biến này chỉ dành cho E2E (production luôn bỏ qua nó), hãy xoá khỏi biến môi trường của Vercel." }
+      : { id: "PUSH_DRY_RUN", level: "info", message: "PUSH_DRY_RUN đang được đặt: ở dev/test thông báo đẩy không được gửi ra mạng." });
+  }
   return checks;
 }
 

@@ -60,9 +60,10 @@ Vercel → Project → Settings → **Environment Variables** (áp cho **Product
 | `DB_PREPARE` | `false` | Chỉ khi dùng pooler giao dịch (cổng 6543). |
 | `DB_POOL_MAX` | ví dụ `3` | Tùy chọn (1–20, mặc định 5). Gói DB miễn phí có ít kết nối: giảm xuống nếu gặp "too many connections". |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | in ra bởi `pnpm push:keys` | Tùy chọn, để bật thông báo đẩy. Chạy `pnpm push:keys` **trên máy bạn**, chép ba dòng vào Vercel (đổi `VAPID_SUBJECT` thành `mailto:` email liên hệ của giáo xứ hoặc `https://` tên miền của app). `VAPID_PRIVATE_KEY` là bí mật: không commit, không gửi qua chat. Đổi khoá thì mọi thiết bị phải bật lại thông báo (trang Tài khoản tự đăng ký lại nếu quyền đã cấp). Không cần build lại khi đổi, chỉ cần deploy lại để biến có hiệu lực. |
+| `CRON_SECRET` | chuỗi ngẫu nhiên | Tùy chọn, để bật nhắc việc tự động (mục 9). ≥ 32 ký tự, sinh trên máy bạn bằng `openssl rand -base64 48`. Bí mật: không commit, không gửi qua chat. Thiếu hoặc ngắn hơn 32 ký tự thì route nhắc việc trả 503 và không chạy. |
 | `CSP_ALLOW_UNSAFE_EVAL` | `1` | Tùy chọn, **chỉ** khi có iPhone iOS 15 trở xuống (xem `docs/ios-checklist.md` mục 5). Mặc định bỏ trống. Phải deploy lại sau khi đổi. |
 
-**Không đặt** `NEXT_PUBLIC_E2E_SCAN_BRIDGE` (chỉ dành cho kiểm thử). `DATABASE_URL_UNPOOLED` chỉ cần trên máy bạn khi migrate, không cần đặt trên Vercel. `CRON_SECRET` sẽ cần ở bước tác vụ định kỳ (Task 39); hiện chưa cần. `pnpm preflight --prod` cho biết `VAPID_*` đã đủ và đúng dạng chưa (không in giá trị).
+**Không đặt** `NEXT_PUBLIC_E2E_SCAN_BRIDGE` (chỉ dành cho kiểm thử). `DATABASE_URL_UNPOOLED` chỉ cần trên máy bạn khi migrate, không cần đặt trên Vercel. **Không đặt** `PUSH_DRY_RUN` (chỉ dành cho E2E; production luôn bỏ qua nó). `pnpm preflight --prod` cho biết `VAPID_*` và `CRON_SECRET` đã đủ và đúng dạng chưa (không in giá trị).
 
 ## 4. Chạy migration và tạo tài khoản đầu tiên (từ máy bạn)
 
@@ -159,7 +160,74 @@ Cách đọc kết quả:
 - Migration **chỉ đi tới** (không có lệnh lùi). Vì vậy: sao lưu trước khi migrate; viết migration tương thích ngược (thêm cột/bảng, không xóa ngay) để bản mã cũ vẫn chạy được trên database mới; nếu migration hỏng dữ liệu, khôi phục từ bản sao lưu (PITR hoặc dump), rồi mới rollback mã.
 - `pnpm preflight --prod` cho biết database đang ở số migration nào so với mã.
 
-## 9. Sau này
+## 9. Nhắc việc tự động
 
-- Hạ tầng thông báo đẩy (`VAPID_*`, nút "Bật thông báo" ở Tài khoản, lịch học của lớp) đã có. Bước tác vụ định kỳ (cron) sẽ thêm `crons` vào `vercel.json` và biến `CRON_SECRET` (Task 39); khi đó tài liệu này sẽ được bổ sung.
+App có route `/api/cron/nhac-viec`. Mỗi lần được gọi, nó gửi các thông báo đẩy đến hạn rồi dọn dẹp. Route **không tự chạy**: cần một bộ hẹn giờ gọi nó khoảng 10 phút một lần.
+
+**Mỗi thông báo nghĩa là gì**
+- **"Chưa điểm danh – Lớp A chưa điểm danh hôm nay"** (gửi GLV được phân công lớp). Lớp có lịch học (đặt ở trang lớp), hôm nay đúng thứ học, đã qua giờ bắt đầu từ 30 phút đến dưới 3 giờ (giờ Việt Nam), mà buổi học hôm nay chưa có dấu điểm danh nào. Buổi bị huỷ thì không nhắc. Mỗi lớp mỗi ngày nhắc một lần. Bấm vào thông báo mở trang điểm danh hôm nay.
+- **"Cảnh báo vắng học" / "Cảnh báo vắng lễ"** (gửi trưởng khối). Gửi khi có em đang học ở lớp trong khối vừa chạm ngưỡng cảnh báo trong học kỳ hiện tại:
+  - vắng học: từ 2 buổi học vắng không phép trở lên;
+  - vắng lễ: số tuần không đi lễ đạt ngưỡng của khối (cùng quy tắc với trang "Cần chú ý").
+
+  Mỗi em được báo một lần mỗi học kỳ cho mỗi loại. Nhiều em trong cùng một lần chạy được gộp thành một thông báo ("Có 2 em đạt ngưỡng cảnh báo vắng học ở Lớp A, Lớp B"). Bấm vào mở "Cần chú ý".
+- Thông báo hiện cả trên màn hình khoá nên **chỉ có tên lớp và số em**, không bao giờ có tên hay số điện thoại của em.
+- Một người chỉ nhận thông báo khi đã bấm "Bật thông báo" ở trang Tài khoản trên ít nhất một thiết bị. **iPhone/iPad**: cần iOS 16.4 trở lên và app phải được **Thêm vào Màn hình chính** rồi mở từ biểu tượng đó (mục 6). Safari thường không nhận thông báo đẩy.
+
+**Bước 1: tạo `CRON_SECRET`.** Trên máy bạn chạy `openssl rand -base64 48`. Dán kết quả vào Vercel → Settings → Environment Variables (Production) với tên `CRON_SECRET`, rồi deploy lại. Cần thêm `VAPID_*` (mục 3); thiếu `VAPID_*` thì route chỉ dọn dẹp, không gửi gì.
+
+**Bước 2: thử bằng tay** (thay tên miền của bạn):
+```bash
+read -rs CRON_SECRET   # dán bí mật rồi Enter (không hiện ra màn hình, không vào lịch sử lệnh)
+curl -sS --fail -H "Authorization: Bearer $CRON_SECRET" https://ten-app.vercel.app/api/cron/nhac-viec
+```
+Kết quả đúng là `{"sent":0,"skipped":…,"failed":0,"pruned":…,"complete":true}`. Ý nghĩa các số:
+- `sent`: số thông báo đã tới ít nhất một thiết bị;
+- `skipped`: số thông báo bỏ qua vì đã gửi rồi hoặc người nhận chưa bật thông báo;
+- `failed`: số thông báo gửi lỗi (không gửi lại);
+- `pruned`: số dòng nhật ký cũ đã dọn.
+
+Các mã lỗi:
+- **401**: sai hoặc thiếu bí mật;
+- **503**: `CRON_SECRET` chưa đặt hoặc ngắn hơn 32 ký tự trên Vercel.
+
+Gọi lại ngay một lần nữa sẽ không gửi trùng.
+
+**Bước 3: chọn một cách gọi định kỳ** (chỉ dùng một cách):
+
+- **(a) GitHub Actions** (miễn phí, đã có sẵn tệp `.github/workflows/reminders.yml`). Trên GitHub vào repo → Settings → Secrets and variables → Actions → **New repository secret**, tạo hai secret:
+  - `APP_URL` = `https://ten-app.vercel.app` (không có `/` ở cuối);
+  - `CRON_SECRET` = cùng giá trị như trên Vercel.
+
+  Workflow chạy mỗi 10 phút và có nút **Run workflow** để thử ngay. Lưu ý:
+  - lịch của GitHub có thể trễ vài phút đến hơn chục phút lúc cao điểm, và khoảng cách tối thiểu là 5 phút;
+  - cửa sổ nhắc kéo dài 2 tiếng rưỡi nên trễ như vậy vẫn ổn;
+  - GitHub tự tắt lịch của repo không có hoạt động trong 60 ngày (sẽ có email báo; bấm bật lại).
+- **(b) cron-job.org** (hoặc dịch vụ hẹn giờ tương tự). Tạo job với:
+  - URL `https://ten-app.vercel.app/api/cron/nhac-viec`, phương thức GET, mỗi 10 phút;
+  - mục Headers thêm `Authorization` = `Bearer <CRON_SECRET>`;
+  - tắt lưu nội dung phản hồi nếu có tuỳ chọn.
+
+  Bí mật nằm ở dịch vụ đó, nên chỉ dùng dịch vụ bạn tin cậy.
+- **(c) Vercel Cron** (chỉ gói **Pro**). Gói Hobby chỉ cho cron chạy **mỗi ngày một lần**, và lịch mỗi 10 phút sẽ làm **deploy thất bại**, vì vậy repo **không** bật sẵn. Nếu dùng Pro, thêm vào `vercel.json`:
+  ```json
+  "crons": [{ "path": "/api/cron/nhac-viec", "schedule": "*/10 * * * *" }]
+  ```
+  Vercel tự gửi header `Authorization: Bearer <CRON_SECRET>` khi biến `CRON_SECRET` đã đặt. Nhớ sửa test `src/test/vercel-config.test.ts` (đang khoá "không có `crons`").
+
+**An toàn**
+- Không có bí mật thì route không bao giờ chạy (503).
+- Bí mật không bao giờ được in ra log hay phản hồi.
+- Phản hồi chỉ gồm số đếm và có `Cache-Control: no-store`.
+- Hai lần gọi chồng nhau không gửi trùng: mỗi thông báo được ghi vào `notification_log` **trước** khi gửi.
+
+**Dọn dẹp** (mỗi ngày một lần trong lần chạy đầu tiên của ngày):
+- xoá nhật ký thay đổi cũ hơn 12 tháng;
+- xoá nhật ký thông báo cũ.
+
+Đổi bí mật: tạo giá trị mới, cập nhật ở Vercel (deploy lại) và ở nơi gọi (GitHub secret/cron-job.org) cùng lúc.
+
+## 10. Sau này
+
+- Thông báo đẩy và nhắc việc đã có (mục 3, 9). Có thể thêm loại nhắc khác bằng cách mở rộng `src/server/services/reminders.ts`.
 - Danh sách việc kiểm trước khi dùng thật: `docs/superpowers/qr-release-checklist.md`.

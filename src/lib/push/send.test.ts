@@ -88,3 +88,31 @@ describe("sendPush", () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain(bad);
   });
 });
+
+describe("PUSH_DRY_RUN (chỉ dev/test, chỉ bằng biến môi trường)", () => {
+  const log = vi.fn();
+  beforeEach(() => { sendNotification.mockReset(); log.mockReset(); });
+
+  it("isPushDryRun chỉ bật khi PUSH_DRY_RUN=1 VÀ NODE_ENV là test hoặc development", async () => {
+    const { isPushDryRun } = await import("./send");
+    expect(isPushDryRun({ PUSH_DRY_RUN: "1", NODE_ENV: "test" })).toBe(true);
+    expect(isPushDryRun({ PUSH_DRY_RUN: "1", NODE_ENV: "development" })).toBe(true);
+    expect(isPushDryRun({ PUSH_DRY_RUN: "1", NODE_ENV: "production" })).toBe(false);
+    expect(isPushDryRun({ PUSH_DRY_RUN: "1" })).toBe(false);
+    expect(isPushDryRun({ PUSH_DRY_RUN: "true", NODE_ENV: "test" })).toBe(false);
+    expect(isPushDryRun({ NODE_ENV: "test" })).toBe(false);
+  });
+
+  it("bật: trả ok, không gọi mạng; endpoint ngoài danh sách cho phép vẫn bị loại", async () => {
+    const env = { PUSH_DRY_RUN: "1", NODE_ENV: "test" };
+    expect(await sendPush(sub, payload, { vapid, log, env })).toEqual({ outcome: "ok", status: null });
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(await sendPush({ ...sub, endpoint: "https://169.254.169.254/x" }, payload, { vapid, log, env })).toEqual({ outcome: "gone", status: null });
+  });
+
+  it("production: biến bị bỏ qua, gửi thật", async () => {
+    sendNotification.mockResolvedValue({ statusCode: 201, body: "", headers: {} });
+    expect(await sendPush(sub, payload, { vapid, log, env: { PUSH_DRY_RUN: "1", NODE_ENV: "production" } })).toEqual({ outcome: "ok", status: 201 });
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+  });
+});

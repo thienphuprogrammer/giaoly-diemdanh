@@ -1,0 +1,34 @@
+# Gọi route nhắc việc mỗi ~10 phút (docs/deploy-vercel-ios.md, mục 9 "Nhắc việc tự động").
+# Cần hai repository secret: APP_URL (https://ten-app.vercel.app, không có "/" cuối) và CRON_SECRET (giống trên Vercel).
+# Lịch của GitHub có thể trễ (khoảng cách tối thiểu 5 phút); cửa sổ nhắc của app dài 2,5 giờ nên không sao.
+name: Nhắc việc
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: reminders
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Gọi /api/cron/nhac-viec
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set +x
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Thiếu secret APP_URL hoặc CRON_SECRET; bỏ qua."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 30 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/nhac-viec"
