@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import { optionalDate, optionalPhone, optionalText } from "@/lib/validation";
 
 export const studentFields = z.object({

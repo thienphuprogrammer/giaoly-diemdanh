@@ -33,6 +33,12 @@
   --warn-watch-tint: #fef3c7;
   --warn-alert: #991b1b;
   --warn-alert-tint: #fee2e2;
+
+  /* Vùng tai thỏ/home indicator của iPhone (cần viewport-fit=cover). 0 trên máy không có. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 @theme inline {
@@ -93,7 +99,11 @@
     background: var(--page);
     font-size: 1rem;
     line-height: 1.5;
+    /* Nút/ô đã có trạng thái :active/:focus riêng; tắt vệt xám mặc định khi chạm trên iOS. */
     -webkit-tap-highlight-color: transparent;
+    /* Xoay ngang trên iPhone có tai thỏ: nội dung không nằm dưới tai thỏ. */
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
   }
   h1, h2, h3 {
     font-family: var(--font-display);
@@ -110,6 +120,45 @@
   button, a {
     touch-action: manipulation;
   }
+}
+
+/*
+ * Safe-area: khoảng cách Tailwind (đơn vị --spacing) + inset của iPhone, vd. `pb-safe-4` = 1rem + home indicator.
+ * Dùng các tiện ích này thay cho env(...) rải rác trong component (test ios-css kiểm tra).
+ */
+@utility pb-safe {
+  padding-bottom: var(--safe-bottom);
+}
+@utility pb-safe-* {
+  padding-bottom: calc(var(--spacing) * --value(number) + var(--safe-bottom));
+}
+@utility pt-safe-* {
+  padding-top: calc(var(--spacing) * --value(number) + var(--safe-top));
+}
+@utility bottom-safe-* {
+  bottom: calc(var(--spacing) * --value(number) + var(--safe-bottom));
+}
+@utility top-safe {
+  top: var(--safe-top);
+}
+
+/*
+ * Màn quét (chỉ ở đây, không khóa zoom toàn app vì trợ năng): không phóng to bằng hai ngón/chạm đúp — `manipulation`
+ * cho trình duyệt chỉ hiểu giá trị đó, `pan-x pan-y` (đặt sau, thắng nếu được hỗ trợ) bỏ luôn pinch-zoom —
+ * và không nảy/kéo-để-tải-lại khi cuộn quá đầu trang (dễ làm rung khung camera).
+ */
+.scan-screen {
+  touch-action: manipulation;
+  touch-action: pan-x pan-y;
+}
+:root:has(.scan-screen), :root:has(.scan-screen) body {
+  overscroll-behavior: none;
+}
+/* Nhấn giữ khung camera: không bôi chọn, không hiện menu "Lưu video/Chia sẻ" của iOS. */
+.scan-viewfinder {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /*

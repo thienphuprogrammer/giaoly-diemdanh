@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import type { Layout, LayoutRow, Seat } from "./types";
 
 export const LIMITS = { minSeats: 2, maxSeats: 4, maxRows: 12, maxBenchesPerRow: 8, maxItemsPerRow: 16 } as const;

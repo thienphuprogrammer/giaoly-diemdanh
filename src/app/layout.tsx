@@ -1,6 +1,6 @@
-import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro, Lexend } from "next/font/google";
 import "./globals.css";
+import { appMetadata, appViewport } from "./pwa-meta";
 
 // Lexend: tiêu đề, số, nhãn trạng thái, nút. Be Vietnam Pro: chữ thường và biểu mẫu. Cả hai có bộ dấu tiếng Việt.
 const body = Be_Vietnam_Pro({
@@ -16,17 +16,8 @@ const display = Lexend({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "Điểm danh Giáo lý",
-  description: "Điểm danh lớp giáo lý theo sơ đồ chỗ ngồi",
-  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
-};
-
-export const viewport: Viewport = {
-  themeColor: "#f8fafc",
-  width: "device-width",
-  initialScale: 1,
-};
+export const metadata = appMetadata;
+export const viewport = appViewport;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

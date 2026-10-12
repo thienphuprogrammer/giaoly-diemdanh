@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encryptSession, readSession } from "@/lib/auth/session";
 import { SESSION_MAX_AGE_S } from "@/lib/auth/session-policy";
 import { NEXT_PATH_HEADER } from "@/lib/auth/next-path";
-import { proxy } from "./proxy";
+import { config, proxy } from "./proxy";
 
 const SIGNING_KEY = "k".repeat(40);
 const DAY = 24 * 60 * 60;
@@ -129,5 +129,18 @@ describe("proxy: next-path request header for requireUser()", () => {
     expect(forwardedNext(res)).toBeNull();
     // Danh sách header được giữ lại không chứa header này => Next xóa nó khỏi request.
     expect(res.headers.get("x-middleware-override-headers")?.split(",")).not.toContain(NEXT_PATH_HEADER);
+  });
+});
+
+describe("proxy matcher", () => {
+  // Next ghép matcher thành ^/(...)$; iOS tải icon/ảnh khởi động không kèm cookie nên chúng phải bỏ qua proxy.
+  const matches = (p: string) => config.matcher.some((m) => new RegExp(`^${m}$`).test(p));
+
+  it.each(["/apple-touch-icon.png", "/splash/iphone-1170x2532.png", "/icon-192.png", "/manifest.webmanifest"])("bỏ qua %s", (p) => {
+    expect(matches(p)).toBe(false);
+  });
+
+  it.each(["/", "/login", "/lop/abc/diem-danh/2026-10-12/quet", "/splash-screen-page"])("vẫn chạy cho trang %s", (p) => {
+    expect(matches(p)).toBe(true);
   });
 });

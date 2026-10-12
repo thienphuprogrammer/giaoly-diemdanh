@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // Khói: camera giả của Chromium + wasm tự host. `launchOptions` buộc worker riêng nên phải đặt ở cấp file.
 test.use({ permissions: ["camera"], launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] } });
@@ -18,6 +18,18 @@ test("camera giả: camera bật được và wasm giải mã tải không lỗi
   await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
   await page.goto(`/lop/${classA()}/diem-danh/${today()}/quet`);
   await wasm;
-  await expect(page.getByLabel("Hình từ camera")).toBeVisible();
+  const video = page.getByLabel("Hình từ camera");
+  await expect(video).toBeVisible();
+  // iOS chỉ phát camera nội tuyến khi video có đủ playsinline + muted + autoplay.
+  // (React đặt `muted` bằng thuộc tính DOM, không ra attribute HTML, nên đọc thuộc tính.)
+  expect(await video.evaluate((v: HTMLVideoElement) => ({ inline: v.playsInline, muted: v.muted, auto: v.autoplay })))
+    .toEqual({ inline: true, muted: true, auto: true });
+  // Chặn zoom/kéo nảy chỉ ở màn quét.
+  const styles = await page.evaluate(() => ({
+    touch: getComputedStyle(document.querySelector(".scan-screen")!).touchAction,
+    overscroll: getComputedStyle(document.documentElement).overscrollBehaviorY,
+    callout: getComputedStyle(document.querySelector(".scan-viewfinder")!).userSelect,
+  }));
+  expect(styles).toEqual({ touch: "pan-x pan-y", overscroll: "none", callout: "none" });
   expect(errors).toEqual([]);
 });

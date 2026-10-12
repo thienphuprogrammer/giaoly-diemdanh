@@ -15,7 +15,7 @@ export default async function ClassLayout({ children, params }: { children: Reac
   if (!cls) notFound();
   return (
     <div className="flex flex-col gap-6">
-      <header className="sticky top-0 z-20 print:hidden -mx-4 -mt-6 border-b border-border bg-surface/95 px-4 pt-3 backdrop-blur-sm sm:-mx-6 sm:px-6">
+      <header className="sticky top-safe z-20 print:hidden -mx-4 -mt-6 border-b border-border bg-surface/95 px-4 pt-3 backdrop-blur-sm sm:-mx-6 sm:px-6">
         <div className="flex min-h-11 items-center gap-1">
           <Link href="/" aria-label="Về danh sách lớp" className="btn btn-ghost btn-icon -ml-2.5 shrink-0">
             <ChevronLeft aria-hidden size={24} />

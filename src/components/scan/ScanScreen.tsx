@@ -109,8 +109,8 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
   const relogin = () => guard.hardNavigate(loginHref(selfHref ?? `${boardHref}/quet`));
 
   return (
-    <section aria-label="Quét thẻ QR" aria-busy={s.roster === null} className="flex min-h-dvh flex-col">
-      <header className="flex items-center gap-2 px-4 pt-3">
+    <section aria-label="Quét thẻ QR" aria-busy={s.roster === null} className="scan-screen flex min-h-dvh flex-col">
+      <header className="flex items-center gap-2 px-4 pt-safe-3">
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-lg font-semibold leading-tight">{v.title(heldOn)}</h1>
           <p className="truncate font-display text-sm text-ink-soft">{kind === "mass" ? className : `${className} · ${dateLabel(heldOn)}`}</p>
@@ -122,7 +122,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
         </button>
       </header>
 
-      <div className="flex flex-1 flex-col gap-3 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3">
+      <div className="flex flex-1 flex-col gap-3 px-4 pb-safe-24 pt-3">
         <OfflineBanner>Mất mạng — các lượt quét được giữ trên máy và sẽ tự gửi khi có mạng.</OfflineBanner>
         {s.authRequired && (
           <Notice tone="error" role="alert">
@@ -161,7 +161,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
               </div>
             )}>
             {camera === "denied"
-              ? "Vào cài đặt trình duyệt, cho trang này dùng camera rồi tải lại. Trong lúc đó vẫn điểm danh được bằng cách tìm tên."
+              ? "Vào cài đặt trình duyệt, cho trang này dùng camera rồi tải lại. iPhone: Cài đặt > Safari > Camera > Hỏi hoặc Cho phép; nếu mở từ biểu tượng ngoài Màn hình chính thì vuốt tắt hẳn app rồi mở lại để được hỏi lại. Trong lúc đó vẫn điểm danh được bằng cách tìm tên."
               : "Camera đang bị ứng dụng khác dùng, vừa bị tắt khi khóa máy, hoặc thiết bị không có camera. Bấm “Mở lại camera”, hoặc tìm tên để điểm danh."}
           </EmptyState>
         ) : (
@@ -231,7 +231,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn, from
         </ul>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-bar backdrop-blur-sm">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pb-safe-2 pt-2 shadow-bar backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
           {late && <p role="status" className="text-center text-sm font-medium text-st-late">Đang quét chế độ <b>Đi muộn</b>: thẻ quét sau sẽ ghi Đi muộn.</p>}
           <div className="flex items-stretch gap-2">

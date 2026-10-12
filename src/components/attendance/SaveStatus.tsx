@@ -51,7 +51,7 @@ export function SaveToasts({ failures, onRetry, onDismiss, undo }: {
     <>
     {/* Chừa chỗ dưới cùng của trang bằng đúng chiều cao vùng thông báo để không che các dòng cuối. */}
     <div aria-hidden style={{ height }} />
-    <div ref={box} className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 px-4 print:hidden">
+    <div ref={box} className="pointer-events-none fixed inset-x-0 bottom-safe-18 z-40 px-4 print:hidden">
       <div className="mx-auto flex max-w-xl flex-col gap-2">
         {failures.length > 0 && (
           <ul role="alert" aria-label="Chưa lưu được" className="pointer-events-auto flex max-h-[40dvh] flex-col divide-y divide-warn-alert/20 overflow-y-auto rounded-control border border-warn-alert/30 bg-warn-alert-tint shadow-sheet">

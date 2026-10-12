@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { SignJWT } from "jose";
 import postgres from "postgres";
 import { todayInVietnam } from "../src/lib/dates";

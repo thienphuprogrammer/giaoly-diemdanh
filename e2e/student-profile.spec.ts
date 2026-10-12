@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import postgres from "postgres";
 
 const state = () => JSON.parse(readFileSync("e2e/.state.json", "utf8")) as { classP: string; kidWithPhone: string; kidNoPhone: string };

@@ -54,7 +54,7 @@ export function ImportCsv({ classId }: { classId: string }) {
       <label className="grid gap-1.5">
         <span className="label">Chọn file</span>
         <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target)}
-          className="block w-full rounded-control border border-dashed border-ink-muted bg-surface-muted p-2 text-sm text-ink-soft file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-[8px] file:border file:border-border-strong file:bg-surface file:px-4 file:font-display file:text-sm file:font-medium file:text-ink" />
+          className="block w-full rounded-control border border-dashed border-ink-muted bg-surface-muted p-2 text-base text-ink-soft file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-[8px] file:border file:border-border-strong file:bg-surface file:px-4 file:font-display file:text-base file:font-medium file:text-ink" />
       </label>
       {errors.length > 0 && (
         <ul role="alert" className="grid gap-1 rounded-control border border-warn-alert/30 bg-warn-alert-tint px-3 py-2.5 text-sm font-medium text-warn-alert">

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import { PHONE_ERROR, normalizePhone } from "@/lib/phone";
 
 const blankToUndefined = <T>(v: T | "" | undefined): T | undefined => (v === "" ? undefined : v);

@@ -1,4 +1,7 @@
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { chromium } from "@playwright/test";
+import { APP_COLORS, IOS_SPLASH } from "../src/app/pwa-meta";
 
 const BG = `<rect width="512" height="512" fill="#1d4ed8"/>`;
 const ART = `
@@ -14,20 +17,37 @@ const MASKABLE_SCALE = 0.7;
 const ANY = svg(ART);
 const MASKABLE = svg(`<g transform="translate(256 256) scale(${MASKABLE_SCALE}) translate(-256 -256)">${ART}</g>`);
 
-const OUTPUTS: { path: string; size: number; svg: string }[] = [
-  { path: "public/icon-192.png", size: 192, svg: ANY },
-  { path: "public/icon-512.png", size: 512, svg: ANY },
-  { path: "public/icon-maskable-512.png", size: 512, svg: MASKABLE },
+/** Kích thước theo CSS px; `scale` = tỉ lệ điểm ảnh (ảnh ra = width*scale x height*scale). */
+interface Output { path: string; width: number; height: number; scale: number; html: string }
+const square = (file: string, size: number, art: string): Output =>
+  ({ path: file, width: size, height: size, scale: 1, html: `<body style="margin:0">${art}</body>` });
+
+// Ảnh khởi động iOS: nền trang, icon bo góc 120 CSS px ở giữa (không chữ, tránh lệ thuộc font của máy sinh ảnh).
+const SPLASH_ICON = 120;
+const splash = (s: (typeof IOS_SPLASH)[number]): Output => ({
+  path: `public${s.url}`, width: s.cssWidth, height: s.cssHeight, scale: s.ratio,
+  html: `<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:${APP_COLORS.background}">
+    <div style="width:${SPLASH_ICON}px;height:${SPLASH_ICON}px;border-radius:${SPLASH_ICON * 0.225}px;overflow:hidden">${ANY}</div></body>`,
+});
+
+const OUTPUTS: Output[] = [
+  square("public/icon-192.png", 192, ANY),
+  square("public/icon-512.png", 512, ANY),
+  square("public/icon-maskable-512.png", 512, MASKABLE),
+  // iOS tự bo góc và không nhận nền trong suốt: ảnh vuông kín nền.
+  square("public/apple-touch-icon.png", 180, ANY),
+  ...IOS_SPLASH.map(splash),
 ];
 
 async function main() {
   const browser = await chromium.launch();
   try {
     for (const out of OUTPUTS) {
-      const page = await browser.newPage({ viewport: { width: out.size, height: out.size } });
+      mkdirSync(path.dirname(out.path), { recursive: true });
+      const page = await browser.newPage({ viewport: { width: out.width, height: out.height }, deviceScaleFactor: out.scale });
       try {
-        await page.setContent(`<body style="margin:0">${out.svg}</body>`);
-        await page.screenshot({ path: out.path, clip: { x: 0, y: 0, width: out.size, height: out.size } });
+        await page.setContent(out.html);
+        await page.screenshot({ path: out.path, clip: { x: 0, y: 0, width: out.width, height: out.height } });
       } finally {
         await page.close();
       }
