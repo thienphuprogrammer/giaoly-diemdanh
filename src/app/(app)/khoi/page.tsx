@@ -1,5 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
-import { CalendarRange, KeyRound, Link2, Plus, Unlink, UserPlus, UsersRound } from "lucide-react";
+import { ArrowUpRight, CalendarRange, ChevronRight, KeyRound, Link2, Plus, Unlink, UserPlus, UsersRound } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { listClassesForUser } from "@/db/queries/classes";
@@ -87,6 +88,14 @@ export default async function GradePage() {
           <h2 className="text-xl font-semibold">Quản lý</h2>
           <p className="mt-0.5 text-sm text-ink-soft">Tạo lớp, tài khoản, phân công giáo lý viên và ngưỡng cảnh báo đi lễ của khối.</p>
         </div>
+        <Link href="/khoi/nam-hoc" className="card flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-surface-muted">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-action-tint text-action"><ArrowUpRight aria-hidden size={20} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Năm học mới và lên lớp</span>
+            <span className="block text-sm text-ink-soft">Tạo năm học, chuyển em sang lớp mới (hoàn tác được trong 24 giờ)</span>
+          </span>
+          <ChevronRight aria-hidden size={20} className="shrink-0 text-ink-muted" />
+        </Link>
         <div className="grid gap-4 sm:grid-cols-2">
           <SimpleForm title="Tạo lớp" icon={<Plus aria-hidden size={20} />} action={createClassAction} fields={[{ name: "name", label: "Tên lớp" }]} />
           <SimpleForm title="Tạo tài khoản GLV" icon={<UserPlus aria-hidden size={20} />} action={createCatechistAction}

@@ -50,6 +50,13 @@
       "when": 1791785788535,
       "tag": "0006_audit_keyset",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791787769404,
+      "tag": "0007_promotions",
+      "breakpoints": true
     }
   ]
 }

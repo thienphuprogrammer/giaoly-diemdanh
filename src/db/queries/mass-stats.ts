@@ -49,7 +49,8 @@ interface GridInput {
 export async function massGrid(db: Reader, { classIds, termId, excludeSessionId, studentId }: GridInput): Promise<MassGrid> {
   if (classIds.length === 0) return { weeks: new Map(), students: [] };
   // Ngày xuất hiện đầu tiên của mỗi em ở từng lớp (đi từ buổi của các lớp, dùng chỉ mục buổi theo lớp và khoá chính
-  // của `attendance`); ghép với em theo lớp HIỆN TẠI của em.
+  // của `attendance`); ghép với em theo lớp HIỆN TẠI của em. Em vừa lên lớp (Task 36, đổi `class_id`) vì vậy "bắt đầu
+  // lại" ở lớp mới: chưa có dòng nào ở lớp mới => chưa tuần nào bị tính vắng lễ; dòng ở lớp cũ không tính cho lớp mới.
   const first = db
     .select({
       studentId: attendance.studentId,

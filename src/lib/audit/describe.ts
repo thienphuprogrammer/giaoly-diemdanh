@@ -108,6 +108,37 @@ function describeThreshold(s: Bag): string {
   return `đổi ngưỡng cảnh báo đi lễ${grade ? ` của ${grade}` : ""}${b !== null && a !== null ? `: ${b} → ${a} lần vắng` : ""}`;
 }
 
+function describeNextGrade(s: Bag): string {
+  const grade = str(s.gradeName);
+  const head = `đặt khối kế tiếp${grade ? ` của ${grade}` : ""}`;
+  if (!("before" in s) && !("after" in s)) return head;
+  const label = (v: unknown) => str(v) ?? "chưa có";
+  return `${head}: ${label(s.before)} → ${label(s.after)}`;
+}
+
+function describeSchoolYear(s: Bag): string {
+  const name = str(s.yearName);
+  if (!name) return "tạo năm học mới";
+  const [from, to] = [s.term1Start, s.term2End].map((v) => { const d = typeof v === "string" ? shortDate(v) : null; return d && d !== v ? d : null; });
+  return `tạo năm học ${name}${from && to ? ` (${from} – ${to})` : ""}`;
+}
+
+function describePromotion(s: Bag): string {
+  const [from, to, count] = [str(s.fromClass), str(s.toClass), num(s.count)];
+  if (!from || !to || count === null) return "chuyển em sang lớp khác";
+  const seats = num(s.seatsRemoved);
+  const skipped = num(s.skipped);
+  const notes = [seats ? `bỏ ${seats} chỗ ngồi ở lớp cũ` : null, skipped ? `${skipped} em đã ở lớp mới` : null].filter((n) => n !== null);
+  return `chuyển ${count} em từ ${from} sang ${to}${notes.length ? ` (${notes.join(", ")})` : ""}`;
+}
+
+function describePromotionUndo(s: Bag): string {
+  const [from, to, restored] = [str(s.fromClass), str(s.toClass), num(s.restored)];
+  if (!from || !to || restored === null) return "hoàn tác một lượt lên lớp";
+  const missing = num(s.notRestored);
+  return `hoàn tác lên lớp ${from} → ${to}: trả ${restored} em về lớp cũ${missing ? `, ${missing} em không trả được` : ""}`;
+}
+
 function describeImport(s: Bag): string {
   const count = num(s.count);
   const skipped = num(s.skipped);
@@ -143,6 +174,10 @@ function what(action: string, s: Bag): string {
     case "session.cancel": return describeSession(s, "cancel");
     case "session.reopen": return describeSession(s, "reopen");
     case "grade.mass_threshold": return describeThreshold(s);
+    case "grade.next_grade": return describeNextGrade(s);
+    case "school_year.create": return describeSchoolYear(s);
+    case "promotion.apply": return describePromotion(s);
+    case "promotion.undo": return describePromotionUndo(s);
     default: return /^[a-z_]{1,32}\.[a-z_]{1,32}$/.test(action) ? `thực hiện một thay đổi (${action})` : "thực hiện một thay đổi";
   }
 }

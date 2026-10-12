@@ -35,3 +35,6 @@ export async function createTestDbBeforeMigration(tag: string) {
 
 /** Migration đổi chỉ mục nhật ký sang (phạm vi, at desc, id) cho phân trang keyset và thêm CHECK định dạng `action`. */
 export const AUDIT_KEYSET_MIGRATION = "0006_audit_keyset";
+
+/** Migration lên lớp: `grades.next_grade_id`, bảng `promotions`, loại nhật ký `school_year`/`promotion`. */
+export const PROMOTIONS_MIGRATION = "0007_promotions";

@@ -44,6 +44,18 @@ const CASES: [AuditAction, Record<string, unknown>, string][] = [
   ["session.reopen", day, "GLV An mở lại buổi học 12/10"],
   ["session.reopen", mass, "GLV An mở lại đi lễ 11/10"],
   ["grade.mass_threshold", { gradeName: "Khối 1", before: 2, after: 3 }, "GLV An đổi ngưỡng cảnh báo đi lễ của Khối 1: 2 → 3 lần vắng"],
+  ["grade.next_grade", { gradeName: "Khối 1", before: null, after: "Khối 2" }, "GLV An đặt khối kế tiếp của Khối 1: chưa có → Khối 2"],
+  ["grade.next_grade", { gradeName: "Khối 1", before: "Khối 2", after: null }, "GLV An đặt khối kế tiếp của Khối 1: Khối 2 → chưa có"],
+  ["school_year.create", { yearName: "2027-2028", term1Start: "2027-09-01", term2End: "2028-05-31" },
+    "GLV An tạo năm học 2027-2028 (01/09/2027 – 31/05/2028)"],
+  ["promotion.apply", { fromClass: "Lớp A", toClass: "Lớp B", count: 12, skipped: 0, seatsRemoved: 10 },
+    "GLV An chuyển 12 em từ Lớp A sang Lớp B (bỏ 10 chỗ ngồi ở lớp cũ)"],
+  ["promotion.apply", { fromClass: "Lớp A", toClass: "Lớp B", count: 2, skipped: 1, seatsRemoved: 0 },
+    "GLV An chuyển 2 em từ Lớp A sang Lớp B (1 em đã ở lớp mới)"],
+  ["promotion.undo", { fromClass: "Lớp A", toClass: "Lớp B", restored: 11, notRestored: 1 },
+    "GLV An hoàn tác lên lớp Lớp A → Lớp B: trả 11 em về lớp cũ, 1 em không trả được"],
+  ["promotion.undo", { fromClass: "Lớp A", toClass: "Lớp B", restored: 2, notRestored: 0 },
+    "GLV An hoàn tác lên lớp Lớp A → Lớp B: trả 2 em về lớp cũ"],
 ];
 
 describe("describeAuditEvent", () => {
@@ -76,6 +88,10 @@ describe("describeAuditEvent", () => {
     expect(text("attendance.bulk_present", { count: "x", sessionDate: "không phải ngày" })).toBe("GLV An bấm \"Tất cả có mặt\"");
     expect(text("session.cancel", {})).toBe("GLV An đánh dấu nghỉ lễ một buổi học");
     expect(text("grade.mass_threshold", {})).toBe("GLV An đổi ngưỡng cảnh báo đi lễ");
+    expect(text("grade.next_grade", {})).toBe("GLV An đặt khối kế tiếp");
+    expect(text("school_year.create", {})).toBe("GLV An tạo năm học mới");
+    expect(text("promotion.apply", {})).toBe("GLV An chuyển em sang lớp khác");
+    expect(text("promotion.undo", {})).toBe("GLV An hoàn tác một lượt lên lớp");
   });
 
   it("prints an already-masked phone as is and masks a legacy unmasked phone or card token that slipped into a stored summary", () => {

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getGrade } from "@/db/queries/grades";
 import { grades } from "@/db/schema";
@@ -52,4 +52,51 @@ export async function setMassThreshold(
     });
   }
   return ok({ gradeId, before: grade.massThreshold, after: threshold });
+}
+
+const NO_GRADE = "Không tìm thấy khối";
+const nextInput = z.object({ gradeId: z.string(), nextGradeId: z.string() });
+
+export interface NextGradeSettings {
+  gradeId: string;
+  gradeName: string;
+  nextGradeId: string | null;
+  /** Các khối khác (tên công khai trong giáo xứ) để chọn làm khối kế tiếp. */
+  options: { id: string; name: string }[];
+}
+
+export async function nextGradeSettings(db: Db, user: AppUser): Promise<NextGradeSettings | null> {
+  if (!user.isGradeHead || !user.gradeId) return null;
+  const grade = await getGrade(db, user.gradeId);
+  if (!grade) return null;
+  const options = await db.select({ id: grades.id, name: grades.name }).from(grades).where(ne(grades.id, grade.id)).orderBy(asc(grades.name));
+  return { gradeId: grade.id, gradeName: grade.name, nextGradeId: grade.nextGradeId, options };
+}
+
+/**
+ * Trưởng khối của khối NGUỒN chọn khối kế tiếp (lên lớp được sang các lớp của khối đó) hoặc bỏ chọn (`""`).
+ * Không có quản trị viên toàn hệ thống nên quyền này thuộc trưởng khối nguồn: họ chỉ chuyển được em CỦA KHỐI MÌNH sang lớp
+ * khối kia và không đọc thêm được gì của khối kia. Đổi thật thì ghi nhật ký `grade.next_grade` cùng câu lệnh.
+ */
+export async function setNextGrade(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {
+  const p = nextInput.safeParse(input);
+  if (!p.success) return fail("Dữ liệu không hợp lệ");
+  const { gradeId } = p.data;
+  if (!z.uuid().safeParse(gradeId).success || !canManageGrade(user, gradeId)) return fail(FORBIDDEN);
+  const grade = await getGrade(db, gradeId);
+  if (!grade) return fail(FORBIDDEN);
+  const raw = p.data.nextGradeId.trim();
+  let next: { id: string; name: string } | null = null;
+  if (raw !== "") {
+    if (raw === gradeId) return fail("Khối kế tiếp phải là một khối khác");
+    next = z.uuid().safeParse(raw).success ? await getGrade(db, raw) : null;
+    if (!next) return fail(NO_GRADE);
+  }
+  if ((next?.id ?? null) === grade.nextGradeId) return ok(undefined);
+  const before = grade.nextGradeId ? await getGrade(db, grade.nextGradeId) : null;
+  await writeWithAudit(db, db.update(grades).set({ nextGradeId: next?.id ?? null }).where(eq(grades.id, gradeId)).returning({ id: grades.id }), {
+    actorId: user.id, gradeId, entity: "grade_settings", entityId: gradeId, action: "grade.next_grade",
+    summary: { gradeName: redactText(grade.name), before: before ? redactText(before.name) : null, after: next ? redactText(next.name) : null },
+  });
+  return ok(undefined);
 }

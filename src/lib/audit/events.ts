@@ -4,7 +4,7 @@
  * hay SĐT đầy đủ (chỉ dạng đã che của `maskPhone`).
  */
 
-export const AUDIT_ENTITIES = ["attendance", "student", "seating_plan", "session", "grade_settings"] as const;
+export const AUDIT_ENTITIES = ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion"] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
 /** Mỗi hành động thuộc đúng một loại đối tượng; `recordAudit` từ chối cặp sai. */
@@ -28,6 +28,10 @@ export const AUDIT_ACTIONS = {
   "session.cancel": "session",
   "session.reopen": "session",
   "grade.mass_threshold": "grade_settings",
+  "grade.next_grade": "grade_settings",
+  "school_year.create": "school_year",
+  "promotion.apply": "promotion",
+  "promotion.undo": "promotion",
 } as const satisfies Record<string, AuditEntity>;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 
