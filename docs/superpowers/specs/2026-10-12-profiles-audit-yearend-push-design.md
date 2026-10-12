@@ -1,7 +1,7 @@
 # Mốc 9 — Hồ sơ em, nhật ký, cuối năm, nhắc việc và bản iPhone (PWA)
 
-Trạng thái: **chờ duyệt thiết kế** (12/10/2026). Nền: nhánh `feat/qr-attendance` (Mốc 7–8 xong, 92 E2E / 573 unit xanh).
-Người dùng đã chọn: PWA qua HTTPS; làm cả 4 nhóm tính năng: hồ sơ + lịch sử, nhật ký thay đổi, cuối năm, nhắc việc/thông báo.
+Trạng thái: **đã chốt câu hỏi mở (12/10/2026), triển khai theo thứ tự P1 → P1b → P2 → P3 → P4 → P5**. Nền: nhánh `feat/qr-attendance` (Mốc 7–8 xong, 92 E2E / 573 unit xanh).
+Người dùng đã chọn: PWA qua HTTPS; làm cả 4 nhóm tính năng: hồ sơ + lịch sử, nhật ký thay đổi, cuối năm, nhắc việc/thông báo; **thêm điểm danh đi lễ** (mục 1b).
 
 ## 0. Hiện trạng đã có (không làm lại)
 
@@ -13,6 +13,17 @@ Thiếu nhi có `parent_phone`, `note`, nhập CSV, xuất Excel thống kê (`t
 - Lối vào: bấm tên em ở danh sách thiếu nhi và ở "Cần chú ý" (nút "Gọi phụ huynh" ngay trên dòng cảnh báo).
 - Quyền: đọc = người đọc được lớp (GLV, trưởng khối); sửa ghi chú/SĐT = GLV được phân công. 404 như cũ cho người ngoài. Dùng `studentColumns` (không có `qr_token`).
 - Dữ liệu từ `attendance` + `sessions` + `terms` hiện có; không đổi schema (chỉ query mới, có test PGlite).
+
+## 1b. Điểm danh đi lễ (P1b) — yêu cầu bổ sung 12/10/2026
+
+Người dùng chốt: ghi nhận **cả hai cách**, **tính riêng với ngưỡng cảnh báo riêng**.
+
+- **Mô hình**: `sessions` thêm cột `kind` (`'class'` mặc định | `'mass'`); khoá duy nhất đổi thành `(class_id, held_on, kind)`. Buổi `mass` là buổi thánh lễ Chúa nhật của lớp; dùng lại toàn bộ bảng `attendance` (`present` / `absent_excused` / `absent_unexcused`; **không có `late`**), `attendance_scans`, quét QR, hoàn tác, nhật ký. Mọi truy vấn hiện có phải lọc `kind='class'` (thống kê, "Cần chú ý", quy tắc ≥2 vắng không phép, xuất Excel, "Đánh vắng còn lại" của buổi học): có test hồi quy cho từng nơi.
+- **Cách 1 — tích nhanh trong buổi học**: trên bảng điểm danh có phần "Đi lễ Chúa nhật" (gập được): nút "Cả lớp đi lễ" + chạm từng em (Có/Không/Chưa hỏi). Ghi vào buổi `mass` của **Chúa nhật gần nhất trên hoặc trước ngày học** (lớp học thứ Bảy → Chúa nhật liền trước; tạo buổi `mass` nếu chưa có). Mặc định "Chưa hỏi" = không có dòng.
+- **Cách 2 — điểm danh tại nhà thờ**: nút "Điểm danh đi lễ" ở trang lớp mở màn quét (cùng màn hình/hàng đợi bền/hoàn tác) cho buổi `mass` hôm nay (hoặc Chúa nhật chọn); quét QR = `present`; chế độ "Đi muộn" ẩn; quét em đang `absent_*` vẫn hỏi xác nhận. Quyền: GLV được phân công lớp đó (như quét thường), mỗi lớp quét em của lớp mình.
+- **Cảnh báo riêng**: số tuần **không đi lễ** trong học kỳ (chỉ tính các Chúa nhật có buổi `mass` được ghi cho lớp, em không có `present`; tuần chưa ghi nhận không bị tính). Ngưỡng cảnh báo mặc định **2 tuần/học kỳ**, cấu hình theo khối (`grades.mass_threshold`, trưởng khối sửa). Hiện ở hồ sơ em, "Cần chú ý" (nhãn riêng "Đi lễ") và báo cáo học kỳ (cột riêng). Không làm đổi quy tắc vắng buổi học.
+- **Nhật ký/nhắc việc**: hành động `attendance.*` có thêm `session_kind`; push trưởng khối khi chạm ngưỡng đi lễ (tối đa 1 lần/em/học kỳ/loại).
+- **Ngoài phạm vi**: lễ trọng/lễ buộc ngoài Chúa nhật (có thể thêm buổi `mass` ngày bất kỳ thủ công), điểm cộng, thống kê cấp giáo xứ.
 
 ## 2. Nhật ký thay đổi (P2)
 
@@ -51,9 +62,10 @@ P1 → P2 → P3 → P4 → P5 (P5 dùng được sớm: có thể triển khai 
 
 **Ngoài phạm vi**: app native/App Store, cổng phụ huynh, điểm kiểm tra/thi, ảnh học sinh, chế độ tối, offline thật cho bảng điểm danh (chạm trên bảng vẫn cần mạng; quét QR đã chịu được mất mạng), nhắn tin tự động tới phụ huynh (chỉ mở sẵn Zalo/SMS/Gọi).
 
-## 7. Câu hỏi còn mở (cần chủ dự án)
+## 7. Quyết định đã chốt (12/10/2026)
 
-1. Lên lớp: **chuyển** em (giữ thẻ QR, lịch sử theo em) hay **sao chép** (thẻ mới)? Đề xuất: chuyển.
-2. Giờ học và ngày học của từng lớp là gì (để nhắc)? Mặc định trống.
-3. Trưởng khối có nhận push khi em chạm ngưỡng không, hay chỉ xem trong "Cần chú ý"?
-4. Vùng triển khai: Singapore (`sin1`) được không?
+1. Lên lớp: **chuyển** em (giữ thẻ QR, lịch sử đi theo em).
+2. Giờ/ngày học: để trống được (không nhắc nếu trống).
+3. Trưởng khối **có** nhận push khi em chạm ngưỡng (học vắng và đi lễ).
+4. Vùng triển khai: Singapore (`sin1`) và Postgres cùng vùng.
+5. Đi lễ: ghi cả hai cách; tính riêng, ngưỡng riêng (mặc định 2 tuần/học kỳ, cấu hình theo khối).
