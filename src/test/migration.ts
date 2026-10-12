@@ -32,3 +32,6 @@ export async function createTestDbBeforeMigration(tag: string) {
     async apply() { for (const stmt of sqlOf(tag)) await client.exec(stmt); },
   };
 }
+
+/** Migration đổi chỉ mục nhật ký sang (phạm vi, at desc, id) cho phân trang keyset và thêm CHECK định dạng `action`. */
+export const AUDIT_KEYSET_MIGRATION = "0006_audit_keyset";

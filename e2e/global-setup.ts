@@ -105,6 +105,12 @@ export default async function globalSetup() {
     { sessionId: massWeeks[2].id, studentId: kidMassOne.id, status: "absent_excused" as const },
   ]);
 
+  // Lớp N (nhật ký): lớp riêng, GLV riêng; test tự gieo dòng nhật ký/lượt quét bằng SQL rồi dọn lại. Trưởng khối A đọc được (chỉ xem).
+  const [classN] = await db.insert(s.classes).values({ gradeId: gradeA.id, name: "Lớp N" }).returning();
+  const [glvN] = await db.insert(s.users).values({ email: "glv-n@e2e.vn", name: "GLV N", passwordHash: hash, gradeId: gradeA.id }).returning();
+  await db.insert(s.classCatechists).values({ classId: classN.id, userId: glvN.id });
+  await db.insert(s.students).values([{ classId: classN.id, fullName: "Nhật Ký Một" }, { classId: classN.id, fullName: "Nhật Ký Hai" }]);
+
   const kids = await db.insert(s.students).values(["An", "Bình", "Chi", "Dũng"].map((n) => ({ classId: classA.id, fullName: `Nguyễn ${n}` }))).returning();
   const [plan] = await db.insert(s.seatingPlans).values({
     classId: classA.id, name: "Sơ đồ E2E", isActive: true,
@@ -119,7 +125,7 @@ export default async function globalSetup() {
   const [past] = await db.insert(s.sessions).values({ classId: classA.id, termId: term.id, heldOn: dayOffset(-7) }).returning();
   await db.insert(s.attendance).values({ sessionId: past.id, studentId: kids[0].id, status: "absent_unexcused" });
 
-  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id,
+  writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, classN: classN.id, glvN: glvN.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id,
     gradeC: gradeC.id, classM: classM.id, kidMassWarn: kidMassWarn.id, kidMassOne: kidMassOne.id }));
   await sql.end();
 }

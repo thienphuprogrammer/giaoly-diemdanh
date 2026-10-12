@@ -52,10 +52,11 @@ const MASK = "••••••";
 const CARD_PAYLOAD = /dd1\.[0-9a-f]{32}/i;
 const HEX_TOKEN = /(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])/i;
 /**
- * Dãy ≥ 8 chữ số, có thể xen khoảng trắng/dấu chấm, không dính chữ/số/gạch ngang hai bên: ngày YYYY-MM-DD và các đoạn
- * toàn số của UUID (`12345678-…`) không bị coi là SĐT.
+ * SĐT Việt Nam: bắt đầu bằng 0, 84 hoặc +84 (có thể "(0"), các chữ số xen khoảng trắng/dấu chấm/gạch ngang/ngoặc, có thể
+ * dính tiền tố chữ ASCII ("sdt0901…"). Neo ở đầu số để ngày ISO (2026-10-12), số đếm và đoạn toàn số của UUID không bị che:
+ * trước tiền tố/chữ số đầu không được có chữ, số hoặc gạch ngang, nên "…-e0901…" trong UUID không khớp.
  */
-const PHONE_LIKE = /(?<![0-9A-Za-z-])\+?\d(?:[ .]?\d){7,}(?![0-9A-Za-z-])/;
+const PHONE_LIKE = /(?<![0-9A-Za-z-])(?:[A-Za-z]{1,10})?(?:\+?84|(?:\(\s?)?0)(?:[ .\-()]*\d){7,}(?![0-9A-Za-z-])/;
 const MASKED_PHONE = /^•+\d{0,3}$/;
 
 /** Che SĐT: chỉ giữ 3 số cuối, độ dài cố định để không lộ độ dài số. */
@@ -78,7 +79,7 @@ export function redactText(text: string): string {
 const normKey = (key: string) => key.toLowerCase().replace(/[^a-z]/g, "");
 const isForbiddenKey = (key: string) => {
   const k = normKey(key);
-  return k.includes("token") || k.includes("password") || k.includes("payload") || k === "secret";
+  return k.includes("token") || k.includes("password") || k.includes("payload") || k.includes("secret");
 };
 const isPhoneKey = (key: string) => normKey(key).includes("phone");
 

@@ -1,5 +1,5 @@
 "use client";
-import { ChartColumn, ClipboardCheck, LayoutGrid, UsersRound, type LucideIcon } from "lucide-react";
+import { ChartColumn, ClipboardCheck, History, LayoutGrid, UsersRound, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -8,6 +8,7 @@ const TABS: { slug: string; label: string; icon: LucideIcon }[] = [
   { slug: "/thieu-nhi", label: "Thiếu nhi", icon: UsersRound },
   { slug: "/so-do", label: "Sơ đồ", icon: LayoutGrid },
   { slug: "/thong-ke", label: "Thống kê", icon: ChartColumn },
+  { slug: "/nhat-ky", label: "Nhật ký", icon: History },
 ];
 
 export function ClassTabs({ classId }: { classId: string }) {

@@ -184,10 +184,12 @@ export const auditEvents = pgTable(
     summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
   },
   (t) => [
-    index("audit_events_class_at_idx").on(t.classId, t.at.desc()),
-    index("audit_events_grade_at_idx").on(t.gradeId, t.at.desc()),
+    // Keyset (at desc, id desc): cột cuối `id` để thứ tự ổn định khi trùng `at`.
+    index("audit_events_class_at_idx").on(t.classId, t.at.desc(), t.id.desc()),
+    index("audit_events_grade_at_idx").on(t.gradeId, t.at.desc(), t.id.desc()),
     index("audit_events_at_idx").on(t.at),
     check("audit_events_scope", sql`${t.classId} is not null or ${t.gradeId} is not null`),
     check("audit_events_summary_object", sql`jsonb_typeof(${t.summary}) = 'object'`),
+    check("audit_events_action_format", sql`${t.action} ~ '^[a-z_]+\\.[a-z_]+$'`),
   ],
 );

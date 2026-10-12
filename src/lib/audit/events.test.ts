@@ -57,6 +57,34 @@ describe("redactText", () => {
     expect(redactText("gọi +84901234567")).toBe("gọi ••••••567");
   });
 
+  it.each([
+    ["090-123-4567", "••••••567"],
+    ["0901-234-567", "••••••567"],
+    ["+84-90-123-4567", "••••••567"],
+    ["(090) 1234567", "••••••567"],
+    ["sdt0901234567", "••••••567"],
+    ["SDT:0901234567", "SDT:••••••567"],
+    ["84901234567", "••••••567"],
+  ])("masks phone-shaped %s", (raw, masked) => {
+    expect(redactText(raw)).toBe(masked);
+    expect(redactText(`gọi mẹ ${raw} nhé`)).toContain("••••••567");
+    expect(redactText(`gọi mẹ ${raw} nhé`)).not.toMatch(/0901|123|90-/);
+  });
+
+  it.each([
+    "2026-10-12", "ngày 2026-10-12", "12 em", "2 tuần", "đã nghỉ 12345678 lần", "buổi 12/10", "Khối 1 - Lớp 2A",
+    "12345678-1234-4123-8123-123456789012", "f0123456789e", "id-e09012345678", "2026-10-12 2026-10-13",
+  ])("keeps %s untouched", (text) => {
+    expect(redactText(text)).toBe(text);
+    expect(() => sanitizeSummary({ note: text })).not.toThrow();
+  });
+
+  it("rejects phone-shaped strings with separators or a letter prefix in summaries", () => {
+    for (const bad of ["090-123-4567", "(090) 1234567", "sdt0901234567", "+84-90-123-4567"]) {
+      expect(() => sanitizeSummary({ note: bad })).toThrow(AuditSummaryError);
+    }
+  });
+
   it("keeps ordinary text, dates and short numbers", () => {
     expect(redactText("Ốm, nghỉ 2 buổi từ 2026-10-04")).toBe("Ốm, nghỉ 2 buổi từ 2026-10-04");
     expect(redactText("Phêrô Nguyễn Văn An")).toBe("Phêrô Nguyễn Văn An");
@@ -79,6 +107,13 @@ describe("sanitizeSummary", () => {
     ["payload", { payload: "x" }],
     ["password", { password: "x" }],
     ["nested token", { after: { Token: "x" } }],
+    ["cardToken", { cardToken: "x" }],
+    ["refresh_token_hash", { refresh_token_hash: "x" }],
+    ["clientSecret", { clientSecret: "x" }],
+    ["SECRET_KEY", { SECRET_KEY: "x" }],
+    ["passwordHash", { passwordHash: "x" }],
+    ["rawPayloadJson", { rawPayloadJson: "x" }],
+    ["nested secretValue", { before: { secretValue: "x" } }],
   ])("rejects a forbidden key (%s)", (_name, summary) => {
     expect(() => sanitizeSummary(summary)).toThrow(AuditSummaryError);
   });

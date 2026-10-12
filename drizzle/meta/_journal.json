@@ -43,6 +43,13 @@
       "when": 1791784253913,
       "tag": "0005_audit_events",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791785788535,
+      "tag": "0006_audit_keyset",
+      "breakpoints": true
     }
   ]
 }
