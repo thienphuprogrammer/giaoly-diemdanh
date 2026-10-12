@@ -1,12 +1,14 @@
 "use client";
 import { Check, CircleAlert, Clock, LogIn, RefreshCw, Search, Undo2, UserCheck, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RemainingAbsentButton, RemainingAbsentSheet } from "@/components/attendance/RemainingAbsent";
 import { useLeaveGuard } from "@/components/nav/useLeaveGuard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Notice } from "@/components/ui/Notice";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { Pill, StatusPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
+import { remainingAbsentBlock } from "@/lib/attendance/remaining-absent";
 import { dateLabel } from "@/lib/date-label";
 import { QrCamera, type CameraState } from "./QrCamera";
 import { useScanFeedbackSetting } from "./feedback";
@@ -27,15 +29,19 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
   const [review, setReview] = useState(false);
-  const guard = useLeaveGuard(s.pending, { navigate: "replace" });
+  const [absentOpen, setAbsentOpen] = useState(false);
+  const absentSaving = s.absent.phase === "saving";
+  const busyCount = s.pending + (absentSaving ? 1 : 0); // đánh vắng đang lưu cũng chặn rời trang
+  const guard = useLeaveGuard(busyCount, { navigate: "replace" });
   const leaving = guard.target !== null;
-  const paused = !!s.confirm || finding || review || leaving;
+  const paused = !!s.confirm || finding || review || absentOpen || leaving;
   useWakeLock(camera === "on" || camera === "restarting");
   // Sheet đặt focus lại mỗi khi onClose đổi: giữ các hàm đóng ổn định để không cướp focus khỏi ô tìm kiếm.
-  const { setConfirm } = s;
+  const { setConfirm, clearAbsent } = s;
   const closeConfirm = useCallback(() => setConfirm(null), [setConfirm]);
   const closeFinding = useCallback(() => { setFinding(false); setQuery(""); }, []);
-  const closeReview = useCallback(() => setReview(false), []);
+  const closeReview = useCallback(() => { setReview(false); clearAbsent(); }, [clearAbsent]);
+  const closeAbsent = useCallback(() => setAbsentOpen(false), []);
   const searchRef = useRef<HTMLInputElement>(null);
   // Effect của cha chạy sau effect của Sheet (vốn focus vào khung): đưa focus về ô tìm để gõ ngay.
   useEffect(() => { if (finding) searchRef.current?.focus(); }, [finding]);
@@ -51,6 +57,8 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
   const needsAction = s.queue.events.filter((e) => e.state === "needs_confirm" || e.state === "rejected" || e.state === "failed");
   const boardHref = `/lop/${classId}/diem-danh/${heldOn}`;
   const late = s.mode === "late";
+  // Còn lượt quét đang gửi/lỗi/cần chọn thì không đánh vắng (tránh chạy đua với hàng đợi); nói rõ lý do.
+  const absentBlock = remainingAbsentBlock({ unsaved: s.pending, busy: absentSaving, notReady: s.roster === null });
   const goBoard = () => { setReview(false); guard.go(boardHref); };
   const relogin = () => guard.hardNavigate(`/login?next=${encodeURIComponent(`${boardHref}/quet`)}`);
 
@@ -212,7 +220,7 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
         </Sheet>
       )}
 
-      {review && (
+      {review && !absentOpen && (
         <Sheet label="Kiểm tra cuối buổi" onClose={closeReview}>
           <h2 className="font-display text-lg font-semibold">Em chưa điểm danh ({s.unmarked.length})</h2>
           <ul className="text-sm">{s.unmarked.map((r) => <li key={r.studentId} className="py-1">{r.fullName}</li>)}{s.unmarked.length === 0 && <li className="text-ink-soft">Tất cả đã được điểm danh.</li>}</ul>
@@ -224,17 +232,34 @@ export function ScanScreen({ sessionId, userId, classId, className, heldOn }: Sc
             ))}
             {needsAction.length === 0 && <li className="text-ink-soft">Không có lượt nào cần xử lý.</li>}
           </ul>
-          <p className="text-sm text-ink-soft">Không tự chuyển em chưa điểm danh thành vắng. Muốn đánh vắng, mở bảng điểm danh.</p>
+          <p className="text-sm text-ink-soft">App không tự đánh vắng. Nếu các em còn lại đều vắng, bấm nút dưới để ghi “vắng không phép” cho tất cả; sau đó vẫn đổi từng em sang “có phép” được trên bảng điểm danh.</p>
+          {s.absent.phase === "done" && (
+            <Notice tone="success" role="status">{s.absent.marked > 0 ? `Đã đánh vắng ${s.absent.marked} em.` : "Không còn em nào cần đánh vắng."}</Notice>
+          )}
+          {s.absent.phase === "saving" && <Notice tone="info" role="status">Đang lưu…</Notice>}
+          {s.absent.phase === "error" && (
+            <Notice tone="error" role="alert">
+              <p>{s.absent.message}</p>
+              {s.unmarked.length > 0 && <button type="button" onClick={() => setAbsentOpen(true)} className="btn btn-secondary btn-sm mt-2">Thử lại đánh vắng</button>}
+            </Notice>
+          )}
+          <RemainingAbsentButton count={s.unmarked.length} blockedReason={absentBlock} onOpen={() => { s.clearAbsent(); setAbsentOpen(true); }} />
           <button type="button" onClick={goBoard} className="btn btn-primary btn-lg">Mở bảng điểm danh</button>
         </Sheet>
       )}
 
+      {absentOpen && (
+        <RemainingAbsentSheet students={s.unmarked.map((r) => ({ id: r.studentId, fullName: r.fullName, saintName: r.saintName }))} blockedReason={absentBlock}
+          onClose={closeAbsent} onConfirm={() => { closeAbsent(); void s.markRemainingAbsent(); }} />
+      )}
+
       {leaving && (
-        <Sheet label={s.pending > 0 ? "Còn lượt chưa lưu" : "Đã lưu hết"} onClose={guard.stay}>
-          {s.pending > 0 ? (
+        <Sheet label={busyCount > 0 ? "Còn lượt chưa lưu" : "Đã lưu hết"} onClose={guard.stay}>
+          {busyCount > 0 ? (
             <>
-              <p className="font-display text-lg font-semibold">Còn {s.unsaved.total} lượt chưa xong</p>
+              <p className="font-display text-lg font-semibold">Còn {s.unsaved.total + (absentSaving ? 1 : 0)} lượt chưa xong</p>
               <ul className="text-ink-soft" role="status">
+                {absentSaving && <li>Đang lưu việc đánh vắng các em còn lại: ở lại vài giây, xong sẽ tự về bảng điểm danh.</li>}
                 {s.unsaved.sending > 0 && <li>{s.unsaved.sending} lượt đang gửi: ở lại vài giây, gửi xong sẽ tự về bảng điểm danh.</li>}
                 {s.unsaved.failed > 0 && <li>{s.unsaved.failed} lượt chưa gửi được: thử gửi lại, hoặc ghi tay trên bảng điểm danh.</li>}
                 {s.unsaved.needsConfirm > 0 && <li>{s.unsaved.needsConfirm} em đang vắng cần chọn Có mặt/Đi muộn: bấm “Cần chọn” trong danh sách.</li>}

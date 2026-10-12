@@ -4,7 +4,8 @@ import { listSessions } from "@/db/queries/attendance";
 import { attendance, seatAssignments, seatingPlans, students } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedBasics } from "@/test/fixtures";
-import { markAllPresent, openSession, readBoard, setCancelled, setStatus, undoMarkAllPresent } from "./attendance";
+import { markAllPresent, markRemainingAbsent, openSession, readBoard, setCancelled, setStatus, undoMarkAllPresent } from "./attendance";
+import { classStats } from "./stats";
 
 // Mốc "bây giờ" sau mọi ngày dùng trong test để kiểm tra ngày tương lai không ảnh hưởng.
 const LATE_NOW = new Date("2027-02-01T05:00:00Z");
@@ -256,5 +257,120 @@ describe("readBoard and listSessions", () => {
     const list = await listSessions(db, b.classId);
     expect(list.map((s) => s.heldOn)).toEqual(["2026-10-11", "2026-10-04"]);
     expect(list[1]).toMatchObject({ marked: 1, absent: 1 });
+  });
+});
+
+describe("markRemainingAbsent", () => {
+  const rowsOf = (db: Awaited<ReturnType<typeof setup>>["db"], sessionId: string) =>
+    db.select().from(attendance).where(eq(attendance.sessionId, sessionId));
+
+  it("marks only active students without a row as absent_unexcused with no event id", async () => {
+    const { db, b, mk, open } = await setup();
+    const [an, binh, chi, dung, em] = [await mk("An"), await mk("Bình"), await mk("Chi"), await mk("Dũng"), await mk("Em")];
+    const hidden = await mk("Ẩn", { active: false });
+    const sessionId = await open("2026-10-11");
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "present", reason: null });
+    await setStatus(db, b.glv, { sessionId, studentId: binh.id, status: "late", reason: null });
+    await setStatus(db, b.glv, { sessionId, studentId: chi.id, status: "absent_excused", reason: "ốm" });
+    const r = await markRemainingAbsent(db, b.glv, { sessionId });
+    expect(r.ok && r.data.marked).toBe(2);
+    expect(r.ok && [...r.data.studentIds].sort()).toEqual([dung.id, em.id].sort());
+    const rows = await rowsOf(db, sessionId);
+    const of = (id: string) => rows.find((x) => x.studentId === id);
+    expect(of(dung.id)).toMatchObject({ status: "absent_unexcused", lastEventId: null, updatedBy: b.glv.id });
+    expect(of(em.id)?.status).toBe("absent_unexcused");
+    expect(of(an.id)?.status).toBe("present");
+    expect(of(binh.id)?.status).toBe("late");
+    expect(of(chi.id)).toMatchObject({ status: "absent_excused", reason: "ốm" });
+    expect(of(hidden.id)).toBeUndefined();
+  });
+
+  it("does not touch existing rows (updatedAt and lastEventId unchanged)", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    await mk("Bình");
+    const sessionId = await open("2026-10-11");
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "present", reason: null });
+    const before = (await rowsOf(db, sessionId)).find((x) => x.studentId === an.id)!;
+    await markRemainingAbsent(db, b.glv, { sessionId });
+    const after = (await rowsOf(db, sessionId)).find((x) => x.studentId === an.id)!;
+    expect(after).toEqual(before);
+  });
+
+  it("is idempotent: a second call marks nothing", async () => {
+    const { db, b, mk, open } = await setup();
+    await mk("An");
+    const sessionId = await open("2026-10-11");
+    const first = await markRemainingAbsent(db, b.glv, { sessionId });
+    const second = await markRemainingAbsent(db, b.glv, { sessionId });
+    expect(first.ok && first.data.marked).toBe(1);
+    expect(second.ok && second.data.marked).toBe(0);
+    expect(second.ok && second.data.studentIds).toEqual([]);
+    expect(await rowsOf(db, sessionId)).toHaveLength(1);
+  });
+
+  it("is a no-op when everyone is already marked", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    const sessionId = await open("2026-10-11");
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "present", reason: null });
+    const r = await markRemainingAbsent(db, b.glv, { sessionId });
+    expect(r.ok && r.data.marked).toBe(0);
+  });
+
+  it("is not confused with markAllPresent undo (rows have no batch id)", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    await mk("Bình");
+    const sessionId = await open("2026-10-11");
+    await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "present", reason: null });
+    await markRemainingAbsent(db, b.glv, { sessionId });
+    const batch = await markAllPresent(db, b.glv, { sessionId });
+    expect(batch.ok && batch.data.marked).toBe(0); // không còn em nào chưa có dòng
+    const undone = await undoMarkAllPresent(db, b.glv, { sessionId, batchId: crypto.randomUUID() });
+    expect(undone.ok && undone.data.studentIds).toEqual([]);
+    expect((await rowsOf(db, sessionId)).filter((x) => x.status === "absent_unexcused")).toHaveLength(1);
+  });
+
+  it("rejects cancelled (holiday) sessions without writing", async () => {
+    const { db, b, mk, open } = await setup();
+    await mk("An");
+    const sessionId = await open("2026-10-11");
+    await setCancelled(db, b.glv, { sessionId, cancelled: true });
+    expect(await markRemainingAbsent(db, b.glv, { sessionId })).toEqual({ ok: false, error: "Buổi này đã được đánh dấu nghỉ lễ" });
+    expect(await rowsOf(db, sessionId)).toHaveLength(0);
+  });
+
+  it("is forbidden for read-only heads and other catechists, and rejects bad ids", async () => {
+    const { db, b, mk, open } = await setup();
+    await mk("An");
+    const sessionId = await open("2026-10-11");
+    expect(await markRemainingAbsent(db, b.head, { sessionId })).toEqual({ ok: false, error: "Không tìm thấy buổi học" });
+    expect(await markRemainingAbsent(db, b.otherGlv, { sessionId })).toEqual({ ok: false, error: "Không tìm thấy buổi học" });
+    expect((await markRemainingAbsent(db, b.glv, { sessionId: "nope" })).ok).toBe(false);
+    expect((await markRemainingAbsent(db, b.glv, {})).ok).toBe(false);
+    expect(await rowsOf(db, sessionId)).toHaveLength(0);
+  });
+
+  it("raises stats and warnings: two absent sessions reach the warning level", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    const [s1, s2] = [await open("2026-10-04"), await open("2026-10-11")];
+    await markRemainingAbsent(db, b.glv, { sessionId: s1 });
+    let stats = await classStats(db, b.glv, b.classId, b.termId);
+    expect(stats!.rows.find((r) => r.studentId === an.id)!.summary).toMatchObject({ unexcused: 1 });
+    expect(stats!.rows.find((r) => r.studentId === an.id)!.summary.warning.level).toBe("watch");
+    await markRemainingAbsent(db, b.glv, { sessionId: s2 });
+    stats = await classStats(db, b.glv, b.classId, b.termId);
+    expect(stats!.rows.find((r) => r.studentId === an.id)!.summary.warning.level).toBe("warning");
+  });
+
+  it("lets a catechist change a marked child to excused afterwards", async () => {
+    const { db, b, mk, open } = await setup();
+    const an = await mk("An");
+    const sessionId = await open("2026-10-11");
+    await markRemainingAbsent(db, b.glv, { sessionId });
+    expect((await setStatus(db, b.glv, { sessionId, studentId: an.id, status: "absent_excused", reason: "ốm" })).ok).toBe(true);
+    expect((await rowsOf(db, sessionId))[0].status).toBe("absent_excused");
   });
 });

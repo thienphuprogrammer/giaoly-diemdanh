@@ -108,6 +108,31 @@ export async function undoMarkAllPresent(db: Db, user: AppUser, input: unknown):
   return ok({ studentIds: removed.map((r) => r.id) });
 }
 
+/**
+ * Kết thúc buổi: ghi "vắng không phép" cho các em đang hoạt động CHƯA có dòng điểm danh. Không đụng dòng có sẵn
+ * (có mặt/đi muộn/có phép) nên idempotent và an toàn khi hai thiết bị cùng bấm. `lastEventId` để null: dòng này không
+ * thuộc lượt quét hay lần "Tất cả có mặt" nào, nên hoàn tác của hai thao tác kia không bao giờ xoá nhầm; muốn sửa thì đổi
+ * trạng thái từng em (ví dụ "có phép").
+ */
+export async function markRemainingAbsent(db: Db, user: AppUser, input: unknown): Promise<ActionResult<{ marked: number; studentIds: string[] }>> {
+  const p = z.object({ sessionId: z.string() }).safeParse(input);
+  if (!p.success) return fail(firstError(p.error));
+  const session = await loadWritableSession(db, user, p.data.sessionId);
+  if (!session) return fail(NOT_FOUND_SESSION);
+  if (session.cancelled) return fail(CANCELLED);
+  const roster = await db.select({ id: students.id }).from(students)
+    .where(and(eq(students.classId, session.classId), eq(students.active, true)));
+  const markedIds = new Set(
+    (await db.select({ id: attendance.studentId }).from(attendance).where(eq(attendance.sessionId, session.id))).map((m) => m.id),
+  );
+  const missing = roster.filter((s) => !markedIds.has(s.id));
+  const inserted = missing.length === 0 ? [] : await db.insert(attendance)
+    .values(missing.map((m) => ({ sessionId: session.id, studentId: m.id, status: "absent_unexcused" as const, updatedBy: user.id, lastEventId: null })))
+    .onConflictDoNothing()
+    .returning({ id: attendance.studentId });
+  return ok({ marked: inserted.length, studentIds: inserted.map((r) => r.id) });
+}
+
 export async function setCancelled(db: Db, user: AppUser, input: unknown): Promise<ActionResult> {
   const p = z.object({ sessionId: z.string(), cancelled: z.boolean() }).safeParse(input);
   if (!p.success) return fail(firstError(p.error));

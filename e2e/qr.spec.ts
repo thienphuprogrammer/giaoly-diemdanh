@@ -193,6 +193,78 @@ test("Back khi còn lượt chưa lưu thì hỏi lại; Xong về bảng bằng
   await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
 });
 
+test("kết thúc buổi: Đánh vắng các em còn lại từ sheet cuối buổi; quét lại em vừa đến vẫn đổi được", async ({ page }) => {
+  await login(page, reopener());
+  await openScanner(page, state().classA);
+  await feed(page, await tokenOf("Nguyễn An"));
+  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đã lưu 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Kiểm tra cuối buổi" }).click();
+  const review = page.getByRole("dialog", { name: "Kiểm tra cuối buổi" });
+  await review.getByRole("button", { name: "Đánh vắng 3 em còn lại" }).click();
+  const confirm = page.getByRole("dialog", { name: "Đánh vắng các em còn lại" });
+  const names = confirm.getByRole("list", { name: "Các em sẽ bị đánh vắng" });
+  await expect(names).toContainText("Nguyễn Bình");
+  await expect(names).toContainText("Nguyễn Chi");
+  await expect(names).toContainText("Nguyễn Dũng");
+  await expect(names).not.toContainText("Nguyễn An");
+  await confirm.getByRole("button", { name: "Huỷ" }).click();
+  await expect(review).toBeVisible(); // Huỷ quay về sheet cuối buổi, chưa ghi gì
+  const db = sql();
+  try {
+    expect((await todayMarks(db)).map((r) => r.full_name)).toEqual(["Nguyễn An"]);
+    await review.getByRole("button", { name: "Đánh vắng 3 em còn lại" }).click();
+    await confirm.getByRole("button", { name: "Đánh vắng", exact: true }).click();
+    await expect(review.getByText("Đã đánh vắng 3 em.")).toBeVisible();
+    await expect(review.getByText("Tất cả đã được điểm danh.")).toBeVisible();
+    await expect(review.getByRole("button", { name: /Đánh vắng \d+ em còn lại/ })).toHaveCount(0);
+    expect((await todayMarks(db)).map((r) => [r.full_name, r.status])).toEqual([
+      ["Nguyễn An", "present"], ["Nguyễn Bình", "absent_unexcused"], ["Nguyễn Chi", "absent_unexcused"], ["Nguyễn Dũng", "absent_unexcused"],
+    ]);
+    const [ev] = await db`select count(*)::int as n from attendance a join sessions se on se.id = a.session_id where se.held_on = ${today()} and a.status = 'absent_unexcused' and a.last_event_id is not null`;
+    expect(ev.n).toBe(0); // dòng đánh vắng không mang mã lượt quét/lô nào
+  } finally {
+    await db.end();
+  }
+
+  // Em đến muộn: quét lại em đang bị ghi vắng => hỏi xác nhận như thường, đổi được sang Có mặt.
+  await page.keyboard.press("Escape");
+  await expect(review).toBeHidden();
+  await feed(page, await tokenOf("Nguyễn Bình"));
+  await page.getByRole("dialog", { name: /Chọn trạng thái cho Nguyễn Bình/ }).getByRole("button", { name: "Có mặt" }).click();
+  await expect(page.getByLabel("Tổng kết lượt quét").getByText("Đã lưu 2")).toBeVisible();
+  const db2 = sql();
+  try {
+    expect((await todayMarks(db2)).find((r) => r.full_name === "Nguyễn Bình")?.status).toBe("present");
+  } finally {
+    await db2.end();
+  }
+});
+
+test("kết thúc buổi: chưa cho đánh vắng khi còn lượt quét chưa lưu, nói rõ lý do", async ({ page, context }) => {
+  await login(page, reopener());
+  await openScanner(page, state().classA);
+  await page.route(QUET_API, (route) => route.abort("internetdisconnected"));
+  await feed(page, await tokenOf("Nguyễn Bình"));
+  await page.getByRole("button", { name: "Kiểm tra cuối buổi" }).click();
+  const review = page.getByRole("dialog", { name: "Kiểm tra cuối buổi" });
+  const button = review.getByRole("button", { name: /Đánh vắng \d+ em còn lại/ });
+  await expect(button).toBeDisabled();
+  await expect(review.getByText(/Còn 1 lượt chưa lưu xong/)).toBeVisible();
+  const db = sql();
+  try {
+    expect(await todayMarks(db)).toHaveLength(0);
+  } finally {
+    await db.end();
+  }
+
+  await page.unroute(QUET_API);
+  await context.setOffline(true);
+  await context.setOffline(false);
+  await expect(button).toBeEnabled({ timeout: 10_000 });
+  await expect(review.getByText(/Còn 1 lượt chưa lưu xong/)).toBeHidden();
+});
+
 test("phiên hết hạn khi đang quét: giữ lượt, báo cần đăng nhập lại, đăng nhập xong gửi tiếp", async ({ page, context }) => {
   page.on("dialog", (d) => void d.accept());
   await login(page, reopener());

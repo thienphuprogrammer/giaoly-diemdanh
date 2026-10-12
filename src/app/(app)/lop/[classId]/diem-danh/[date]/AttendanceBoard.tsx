@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { SeatMap } from "@/components/seating/SeatMap";
 import { SaveStatus, SaveToasts } from "@/components/attendance/SaveStatus";
+import { RemainingAbsentButton, RemainingAbsentSheet } from "@/components/attendance/RemainingAbsent";
 import { StatusSheet } from "@/components/attendance/StatusSheet";
 import { SEAT_TILE, StudentButton } from "@/components/attendance/StudentButton";
 import { useLeaveGuard } from "@/components/nav/useLeaveGuard";
@@ -13,6 +14,7 @@ import { StatusPill, WarningPill } from "@/components/ui/Pill";
 import { Sheet } from "@/components/ui/Sheet";
 import { STATUS_META, STATUS_ORDER, type StatusKey } from "@/components/ui/status";
 import { countMarked } from "@/lib/attendance/marks";
+import { remainingAbsentBlock, unmarkedStudents } from "@/lib/attendance/remaining-absent";
 import { toggleStatus } from "@/lib/attendance/toggle";
 import { evaluateWarningFromCount } from "@/lib/attendance/warning";
 import { seatKey } from "@/lib/seating/assignments";
@@ -33,6 +35,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
   const [mode, setMode] = useState<"map" | "list">(board.plan ? "map" : "list");
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [confirmHoliday, setConfirmHoliday] = useState(false);
+  const [confirmAbsent, setConfirmAbsent] = useState(false);
   const readOnly = !board.canWrite || cancelled || saves.stale;
   const guard = useLeaveGuard(saves.pending + saves.failures.length);
 
@@ -45,6 +48,7 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
 
   const closeSheet = useCallback(() => setSheetFor(null), []);
   const closeHoliday = useCallback(() => setConfirmHoliday(false), []);
+  const closeAbsent = useCallback(() => setConfirmAbsent(false), []);
   const tap = (id: string) => { if (!readOnly) void save(id, { status: toggleStatus(marks[id]?.status ?? null), reason: null }); };
   const onHolidayChange = (value: boolean) => {
     if (value && countMarked(marks) > 0) setConfirmHoliday(true);
@@ -61,6 +65,8 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
   const unseated = board.students.filter((s) => !seated.has(s.id));
   const total = board.students.length;
   const marked = countMarked(marks);
+  const remaining = unmarkedStudents(board.students, marks);
+  const absentBlock = remainingAbsentBlock({ unsaved: saves.pending + saves.failures.length, busy: saves.busy, notReady: saves.stale });
   const tally = (key: StatusKey) => board.students.filter((st) => (marks[st.id]?.status ?? "none") === key).length;
   const choice = (pressed: boolean, key: "present" | "absent_unexcused", failed: boolean) =>
     `btn btn-sm w-full border-2 ${pressed ? STATUS_META[key].solid : "btn-secondary"} ${failed ? "ring-[3px] ring-warn-alert ring-offset-2" : ""}`;
@@ -92,6 +98,9 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
             </button>
           </div>
         )}
+        {board.canWrite && !cancelled && (
+          <RemainingAbsentButton count={remaining.length} blockedReason={absentBlock} onOpen={() => setConfirmAbsent(true)} />
+        )}
         {board.canWrite && (
           <label className="-mx-1 flex min-h-11 items-center justify-between gap-3 rounded-control px-1">
             <span className="flex flex-col">
@@ -104,7 +113,14 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
       </div>
       {board.canWrite && <OfflineBanner>Mất mạng — chưa lưu được. Các lần chạm sẽ báo lỗi để thử lại khi có mạng.</OfflineBanner>}
       {cancelled && <Notice tone="info" role="status">Buổi nghỉ lễ — không tính vào thống kê.</Notice>}
-      {saves.error && <Notice tone="error" role="alert">{saves.error}</Notice>}
+      {saves.error && (
+        <Notice tone="error" role="alert">
+          <p>{saves.error}</p>
+          {saves.absentFailed && (
+            <button type="button" onClick={() => setConfirmAbsent(true)} className="btn btn-secondary btn-sm mt-2">Thử lại đánh vắng</button>
+          )}
+        </Notice>
+      )}
 
       <div role="tablist" aria-label="Cách điểm danh" className="grid grid-cols-2 gap-1 rounded-control border border-border bg-surface-muted p-1">
         {(["map", "list"] as const).map((m) => {
@@ -203,6 +219,11 @@ export function AttendanceBoard({ board, renderId }: { board: Board; renderId: s
             <button type="button" className="btn btn-primary btn-lg" onClick={() => { closeHoliday(); void saves.setCancelledOnServer(true); }}>Nghỉ lễ</button>
           </div>
         </Sheet>
+      )}
+
+      {confirmAbsent && (
+        <RemainingAbsentSheet students={remaining} blockedReason={absentBlock} onClose={closeAbsent}
+          onConfirm={() => { closeAbsent(); void saves.markRemainingAbsent(); }} />
       )}
 
       {guard.target && (

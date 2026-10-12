@@ -92,6 +92,62 @@ test("trạng thái lưu, hoàn tác Tất cả có mặt và xác nhận nghỉ
   await expect(page.getByText("Buổi nghỉ lễ — không tính vào thống kê.")).toBeVisible();
 });
 
+test("kết thúc buổi: đánh vắng các em còn lại có xác nhận, chỉ ghi em chưa có dấu, lỗi thì thử lại", async ({ page }) => {
+  await openBoard(page);
+  await page.getByRole("button", { name: /Nguyễn Bình: chưa điểm danh/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
+
+  const open = page.getByRole("button", { name: "Đánh vắng 3 em còn lại" });
+  await expect(open).toBeVisible();
+  expect((await open.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await open.click();
+  const dialog = page.getByRole("dialog", { name: "Đánh vắng các em còn lại" });
+  const names = dialog.getByRole("list", { name: "Các em sẽ bị đánh vắng" });
+  await expect(names).toContainText("Nguyễn An");
+  await expect(names).toContainText("Nguyễn Chi");
+  await expect(names).toContainText("Nguyễn Dũng");
+  await expect(names).not.toContainText("Nguyễn Bình");
+  await expect(dialog).toContainText("vắng không phép");
+  await expect(dialog).toContainText("có phép");
+  await dialog.getByRole("button", { name: "Huỷ" }).click();
+  await expect(page.getByText("Đã điểm danh 1/4")).toBeVisible();
+
+  // Mạng lỗi: báo lỗi kèm "Thử lại", chưa ghi gì.
+  const boardPath = new URL(page.url()).pathname;
+  const isBoard = (url: URL) => url.pathname === boardPath;
+  await page.route(isBoard, (route) => (route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue()));
+  await open.click();
+  await dialog.getByRole("button", { name: "Đánh vắng", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Không lưu được" })).toBeVisible();
+  await expect(page.getByText("Đã điểm danh 1/4")).toBeVisible();
+  await page.unroute(isBoard);
+
+  await page.getByRole("button", { name: "Thử lại đánh vắng" }).click();
+  await dialog.getByRole("button", { name: "Đánh vắng", exact: true }).click();
+  await expect(page.getByText("Đã điểm danh 4/4")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Đánh vắng \d+ em còn lại/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Nguyễn Chi: Vắng không phép/ })).toBeVisible();
+
+  const sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1 });
+  try {
+    const rows = await sql`
+      select st.full_name, a.status, a.last_event_id from attendance a
+      join sessions se on se.id = a.session_id join students st on st.id = a.student_id
+      where se.held_on = ${todayInVietnam()} and se.class_id = ${state().classA} order by st.full_name`;
+    expect(rows.map((r) => [r.full_name, r.status, r.last_event_id])).toEqual([
+      ["Nguyễn An", "absent_unexcused", null], ["Nguyễn Bình", "present", null], ["Nguyễn Chi", "absent_unexcused", null], ["Nguyễn Dũng", "absent_unexcused", null],
+    ]);
+  } finally {
+    await sql.end();
+  }
+
+  // An đã vắng buổi trước + buổi này => cảnh báo; Chi/Dũng mới 1 buổi.
+  await page.goto("/can-chu-y");
+  await expect(page.getByText("Nguyễn An")).toBeVisible();
+  await expect(page.getByText(/Cảnh báo · 2 buổi/)).toBeVisible();
+});
+
 test("bảng lấy dữ liệu mới khi tab hiện lại và khi quay lại bằng Back", async ({ page }) => {
   await openBoard(page);
   const sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1 });
