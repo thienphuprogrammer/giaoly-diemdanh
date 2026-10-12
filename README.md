@@ -1,6 +1,8 @@
 # Điểm danh Giáo lý
 
-Ứng dụng web (PWA) để giáo lý viên (GLV) điểm danh lớp giáo lý theo sơ đồ chỗ ngồi trên điện thoại, kèm thống kê học kỳ, danh sách cần chú ý và xuất Excel. Giao diện hoàn toàn bằng tiếng Việt.
+Ứng dụng web (PWA) để giáo lý viên (GLV) điểm danh lớp giáo lý theo sơ đồ chỗ ngồi hoặc thẻ QR trên điện thoại, điểm danh đi lễ, hồ sơ từng em, thống kê và báo cáo học kỳ (in A4 / PDF / Excel), danh sách cần chú ý, nhật ký thay đổi, năm học mới và lên lớp, thông báo đẩy và nhắc việc tự động. Giao diện hoàn toàn bằng tiếng Việt.
+
+Mục lục nhanh: [Cài đặt](#cài-đặt-và-chạy) · [Triển khai](#triển-khai) · [Quy trình sử dụng](#quy-trình-sử-dụng) · [Hồ sơ em](#hồ-sơ-em) · [Điểm danh đi lễ](#điểm-danh-đi-lễ) · [Nhật ký thay đổi](#nhật-ký-thay-đổi) · [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp) · [Báo cáo học kỳ](#báo-cáo-học-kỳ) · [Thẻ QR](#điểm-danh-bằng-thẻ-qr) · [Thông báo đẩy và nhắc việc](#thông-báo-đẩy-web-push-và-lịch-học) · [iPhone](#dùng-trên-iphone) · [Kiểm thử](#kiểm-thử) · [Giới hạn đã biết](#giới-hạn-đã-biết)
 
 Công nghệ: Next.js 16 (App Router), React 19, Postgres (Drizzle ORM), Tailwind CSS 4, Vitest, Playwright.
 
@@ -8,11 +10,11 @@ Công nghệ: Next.js 16 (App Router), React 19, Postgres (Drizzle ORM), Tailwin
 
 - Node.js >= 22.9 (mã dùng `Map.groupBy`; script `seed` và `db:migrate` dùng `--env-file-if-exists`)
 - pnpm 10
-- Một database Postgres 16 (Neon, Supabase hoặc tự dựng); tối thiểu Postgres ≥ 15 (bảng `notification_log` dùng `UNIQUE NULLS NOT DISTINCT`)
+- Một database Postgres 16 (Neon, Supabase hoặc tự dựng); **tối thiểu PostgreSQL 15** (bảng `notification_log` dùng `UNIQUE NULLS NOT DISTINCT`; `pnpm preflight` báo LỖI nếu máy chủ cũ hơn)
 
 ## Biến môi trường
 
-Sao chép `.env.example` thành `.env.local` rồi điền giá trị. Không commit các tệp `.env*`.
+Sao chép `.env.example` thành `.env.local` rồi điền giá trị (các biến tuỳ chọn có sẵn ở dạng chú thích, kèm lệnh sinh). Không commit `.env.local` hay tệp `.env*` nào chứa giá trị thật.
 
 | Biến | Ý nghĩa |
 |------|---------|
@@ -22,7 +24,7 @@ Sao chép `.env.example` thành `.env.local` rồi điền giá trị. Không co
 | `DB_POOL_MAX` | Tùy chọn. Số kết nối tối đa mỗi instance, 1–20, mặc định 5 (giảm xuống ở DB gói miễn phí nếu thiếu kết nối) |
 | `DB_PREPARE` | Tùy chọn. Đặt `false` khi `DATABASE_URL` đi qua pooler chế độ giao dịch (pgbouncer, cổng 6543); mặc định bật |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Tùy chọn (thông báo đẩy). Sinh cặp khoá bằng `pnpm push:keys` (chỉ in ra màn hình, không ghi tệp); `VAPID_SUBJECT` là `mailto:email-liên-hệ` hoặc `https://tên-miền`. **`VAPID_PRIVATE_KEY` là bí mật: không commit.** Thiếu cả ba = thông báo đẩy tắt (nút ở Tài khoản hiện "Chưa sẵn sàng"); đặt thiếu/sai = `pnpm preflight` cảnh báo. Khoá công khai được trang đọc lúc chạy (không phải `NEXT_PUBLIC_*`), đổi khoá không cần build lại nhưng mọi thiết bị phải đăng ký lại (tự làm khi mở trang Tài khoản). |
-| `CRON_SECRET` | Tùy chọn (nhắc việc tự động). Bí mật ≥ 32 ký tự cho route `/api/cron/nhac-viec`, sinh bằng `openssl rand -base64 48`. **Bí mật: không commit.** Khoảng trắng/xuống dòng đầu cuối được cắt bỏ. Thiếu hoặc ngắn hơn 32 ký tự thì route trả 503 và không bao giờ chạy; `pnpm preflight --prod` cảnh báo. Cách kích hoạt định kỳ: `docs/deploy-vercel-ios.md`, mục "Nhắc việc tự động". |
+| `CRON_SECRET` | Tùy chọn (nhắc việc tự động **và dọn nhật ký 365 ngày**). Bí mật ≥ 32 ký tự cho route `/api/cron/nhac-viec`, sinh bằng `openssl rand -base64 48`. **Bí mật: không commit.** Khoảng trắng/xuống dòng đầu cuối được cắt bỏ. Thiếu hoặc ngắn hơn 32 ký tự thì route trả 503 và không bao giờ chạy (không nhắc, không dọn nhật ký); `pnpm preflight --prod` cảnh báo. Cách kích hoạt định kỳ: `docs/deploy-vercel-ios.md`, mục 9 "Nhắc việc tự động". |
 | `PUSH_DRY_RUN` | **Chỉ E2E.** `1` = không gửi thông báo đẩy ra mạng (coi như thành công), chỉ có hiệu lực khi `NODE_ENV` là `test`/`development`; bản production luôn bỏ qua. Không đặt trên Vercel (`pnpm preflight --prod` báo LỖI). |
 | `CSP_ALLOW_UNSAFE_EVAL` | Tùy chọn, mặc định tắt. Đặt `1` lúc build nếu cần hỗ trợ iPhone iOS 15 trở xuống (máy quét QR cần WebAssembly), đổi lại CSP yếu hơn (cho phép `'unsafe-eval'`). Mặc định máy quét cần iOS 16+. Xem `docs/ios-checklist.md`. |
 
@@ -53,22 +55,105 @@ Mở http://localhost:3000 và đăng nhập bằng tài khoản vừa tạo.
 
 ## Triển khai
 
-Triển khai lên Vercel (vùng Singapore `sin1`) với Postgres hosted cùng vùng, rồi dùng trên iPhone: xem [`docs/deploy-vercel-ios.md`](docs/deploy-vercel-ios.md). Có sẵn `vercel.json`, route kiểm tra sống `GET /api/health` (công khai, chỉ trả `ok`/`db`/`version`) và `pnpm preflight [--prod]` (kiểm biến môi trường, kết nối DB và migration đã đủ chưa). Migration chạy có kiểm soát bằng `pnpm db:migrate` từ máy bạn, không tự chạy khi build.
+Triển khai lên Vercel (vùng Singapore `sin1`) với Postgres hosted cùng vùng, rồi dùng trên iPhone: xem [`docs/deploy-vercel-ios.md`](docs/deploy-vercel-ios.md) (hướng dẫn từng bước, gồm biến môi trường, migration, sao lưu/quay lui và nhắc việc). Có sẵn `vercel.json`, route kiểm tra sống `GET /api/health` (công khai, chỉ trả `ok`/`db`/`version`) và `pnpm preflight [--prod]` (kiểm biến môi trường, kết nối DB, phiên bản PostgreSQL ≥ 15, múi giờ và migration đã đủ chưa).
+
+- `DATABASE_URL` chỉ cần lúc chạy (`src/db/client.ts` kết nối lười), `next build` không cần.
+- **Migration không tự chạy khi build**: sao lưu database rồi chạy `pnpm db:migrate` từ máy bạn trước khi deploy bản có migration mới. Migration chỉ đi tới (không có lệnh lùi).
+- Danh sách kiểm phát hành Mốc 9 (kết quả chạy thật + việc của chủ dự án): [`docs/superpowers/release-checklist-moc9.md`](docs/superpowers/release-checklist-moc9.md).
+
+### Kiểm tra CSP trên bản production (bước tay)
+
+E2E chạy bằng `next dev`, nơi CSP cho phép `'unsafe-eval'`; CSP thật của bản build **không** được E2E kiểm. Sau mỗi lần đổi `next.config.ts`, `src/lib/security-headers.ts`, thư viện QR hoặc thêm script bên thứ ba, hãy tự kiểm một lần:
+
+1. `pnpm build && pnpm start` (hoặc mở bản Preview trên Vercel).
+2. Mở DevTools → Console, đi qua: `/login`, trang chủ, một bảng điểm danh (chạm một em), màn **Quét QR** (camera chạy, quét một thẻ), trang Tài khoản (bấm "Bật thông báo"), một báo cáo in được.
+3. Không được có dòng "Refused to … because it violates the following Content Security Policy directive". Tab Network → tài liệu HTML phải có header `Content-Security-Policy` không chứa `'unsafe-eval'` (trừ khi build với `CSP_ALLOW_UNSAFE_EVAL=1`).
 
 ## Quy trình sử dụng
 
 1. Trưởng khối đăng nhập, vào mục **Khối**.
-2. Tạo **lớp**.
+2. Tạo **lớp**, đặt **lịch học** (thứ + giờ, ở trang lớp, do GLV của lớp đặt) nếu muốn được nhắc điểm danh.
 3. Tạo **tài khoản GLV** (đặt mật khẩu tạm thời cho họ). Khi GLV quên mật khẩu, trưởng khối vào trang **Khối**, mục **Đặt lại mật khẩu**, chọn GLV rồi nhập mật khẩu tạm mới (10–72 ký tự) và gửi cho họ.
 4. **Gán GLV vào lớp** (hoặc gán chính mình để điểm danh thay).
-5. GLV nhập hoặc nhập CSV danh sách thiếu nhi, tạo sơ đồ chỗ ngồi, rồi điểm danh từng buổi bằng sơ đồ hoặc checklist.
-6. Cuối năm, trưởng khối vào **Khối → Năm học mới và lên lớp**: tạo năm học (dùng chung cho mọi khối; xoá được khi chưa có buổi nào) và cho em **lên lớp** (chuyển em sang lớp khác, giữ thẻ QR và lịch sử; hoàn tác được trong 24 giờ, chỗ ngồi cũ không khôi phục).
+5. GLV nhập hoặc nhập CSV danh sách thiếu nhi, tạo sơ đồ chỗ ngồi, rồi điểm danh từng buổi bằng sơ đồ, checklist hoặc **quét thẻ QR**; ghi **đi lễ** ngay trên bảng hoặc quét tại nhà thờ.
+6. Theo dõi **Cần chú ý**, **hồ sơ từng em** và **Thống kê**; cuối học kỳ in **báo cáo học kỳ**.
+7. Cuối năm, trưởng khối vào **Khối → Năm học mới và lên lớp** (mục [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp)).
 
-### Lên lớp: mô hình tin cậy
+Quyền: GLV được phân công lớp thì **ghi** lớp đó; trưởng khối **đọc** mọi lớp của khối mình (ghi khi tự gán vào lớp). Người không có quyền mở đường dẫn của lớp sẽ thấy 404.
 
-- Chỉ trưởng khối của khối **nguồn** chuyển em, và chỉ em đang học ở lớp của khối mình; lớp đích là lớp cùng khối hoặc lớp của **khối kế tiếp** do chính trưởng khối nguồn chọn (không có quản trị viên toàn hệ thống, không có bước đồng ý của khối đích).
-- Bù lại là minh bạch: mỗi lượt chuyển ghi nhật ký ở **cả lớp cũ và lớp mới**; trưởng khối đích thấy lượt "Chuyển vào" (chỉ xem) và một băng báo 7 ngày khi khối khác chuyển em vào hoặc chọn khối mình làm khối kế tiếp. Trưởng khối nguồn không đọc thêm được gì của khối đích.
-- Điểm danh cũ (kể cả hôm nay, nếu chuyển giữa buổi) ở lại lớp cũ và không sửa được cho các em đã chuyển; thống kê học kỳ **đã qua** của lớp cũ vẫn giữ các em đó (ghi "đã lên lớp khác"), học kỳ hiện tại tính theo lớp hiện tại.
+## Hồ sơ em
+
+Bấm tên em ở danh sách thiếu nhi, "Cần chú ý" hoặc thống kê để mở `/lop/<lớp>/thieu-nhi/<em>`:
+
+- Chuyên cần học kỳ (có mặt, muộn, vắng có/không phép, % chuyên cần), lịch sử từng buổi học (mới nhất trước; buổi huỷ không tính) và khối **Đi lễ** (tuần đã tính, đi lễ / vắng lễ từng tuần, cảnh báo theo ngưỡng của khối). Lịch sử theo em nên vẫn thấy các buổi ở lớp cũ sau khi lên lớp.
+- Nút liên hệ phụ huynh: **Gọi**, **Nhắn Zalo** (mở `zalo.me`), **SMS**; không có số thì hiện "Chưa có số phụ huynh". "Cần chú ý" có thêm nút **Gọi phụ huynh** cạnh từng em. Số điện thoại chỉ dùng để dựng liên kết trên máy chủ, không đưa vào props của các thành phần chạy ở trình duyệt trong danh sách.
+- GLV của lớp sửa nhanh số phụ huynh và ghi chú ngay trên hồ sơ; trưởng khối chỉ xem.
+- **Kiểm số điện thoại chặt** (Việt Nam, 10–11 chữ số, chấp nhận `+84`/`84`/`0084`, dấu cách/chấm/gạch được bỏ khi lưu) ở **mọi** đường lưu: thêm, sửa, sửa nhanh, nhập CSV. Hệ quả cần biết:
+  - Em có số **dạng cũ không hợp lệ** (lưu từ trước khi kiểm chặt) vẫn hiện số thô nhưng **không có nút liên hệ**, và **không lưu được bất kỳ sửa đổi nào của em đó cho tới khi sửa lại số** (hoặc xoá số).
+  - Nhập CSV **bỏ qua các dòng có số không hợp lệ** (báo số dòng bị bỏ), các dòng khác vẫn được nhập.
+
+## Điểm danh đi lễ
+
+Đi lễ Chúa nhật được ghi **riêng** với buổi học (một "buổi đi lễ" mỗi tuần cho mỗi lớp, `sessions.kind = 'mass'`), có hai cách, dùng cách nào cũng được, kết quả là một:
+
+1. **Tích nhanh trong buổi học**: trên bảng điểm danh, mở mục **Đi lễ** (gập sẵn, hiện "Đi lễ: N/M em · Chúa nhật dd/mm/yyyy"). Mỗi em có bốn lựa chọn: **Chưa hỏi / Có đi / Có phép / Không phép**; nút **Cả lớp đi lễ** ghi "có đi" cho các em chưa hỏi (có Hoàn tác vài giây). Tuần đi lễ là **Chúa nhật gần nhất trên hoặc trước ngày học** (học Chúa nhật → chính ngày đó; học thứ Bảy → Chúa nhật hôm trước). Đi lễ không có "đi muộn".
+2. **Quét thẻ tại nhà thờ**: trang lớp → **Điểm danh đi lễ** (Chúa nhật tuần này), hoặc từ mục Đi lễ của bảng → **Quét tại nhà thờ**. Máy quét như buổi học nhưng mỗi lượt quét = "Đi lễ"; em đang ghi vắng thì hỏi xác nhận. Cuối buổi chỉ xem danh sách "Em chưa ghi nhận đi lễ", **không có nút đánh vắng** (chưa ghi nhận không tính là vắng). Ngày khác Chúa nhật (lễ trọng) phải chọn thủ công.
+
+**Huỷ / mở lại một tuần**: "Tuần này không có lễ" (trên mục Đi lễ của bảng hoặc trên đầu máy quét) đánh dấu tuần đó không tính; "Mở lại tuần đi lễ" bỏ đánh dấu. Huỷ đi lễ và "Buổi nghỉ lễ" của buổi học độc lập với nhau.
+
+**Cách tính "vắng lễ"** (một định nghĩa dùng chung cho hồ sơ, thống kê đi lễ, Cần chú ý, báo cáo và thông báo):
+
+- Một **tuần đã ghi nhận** = buổi đi lễ của lớp trong học kỳ, **không bị huỷ** và **có ít nhất một dòng** (của bất kỳ em nào). Tuần chưa mở, mở mà trống, hoặc đã huỷ thì không tính.
+- Em **vắng lễ** một tuần đã ghi nhận khi em **không có dòng "có đi"** trong tuần đó (vắng có phép, không phép hay chưa hỏi đều là vắng lễ).
+- **Em vào lớp giữa chừng** (không có cột ngày nhập học): chỉ tính các tuần **từ ngày của dòng điểm danh đầu tiên của em ở lớp hiện tại** (buổi học hoặc đi lễ, mọi học kỳ). Sau khi lên lớp, việc đếm bắt đầu lại ở lớp mới.
+- **Cảnh báo vắng lễ** khi số tuần vắng lễ ≥ **ngưỡng của khối** (mặc định **2**, trưởng khối sửa ở trang Khối, 1–20).
+
+**Hạn chế cần biết**: em **chưa từng được ghi dòng nào** (không có dòng điểm danh nào ở lớp hiện tại, kể cả buổi học) thì **không bao giờ bị cảnh báo vắng lễ**. Để tránh bỏ sót, cuối mỗi buổi học hãy bấm **Đánh vắng các em còn lại** (bảng điểm danh hoặc "Kiểm tra cuối buổi" của máy quét) để mọi em đều có ít nhất một dòng.
+
+## Nhật ký thay đổi
+
+Tab **Nhật ký** của mỗi lớp (`/lop/<lớp>/nhat-ky`) cho **mọi người đọc được lớp** (GLV của lớp, trưởng khối của khối) xem dòng thời gian: ai, lúc nào, đổi gì; lọc theo ngày và loại (Điểm danh, Đi lễ, Thiếu nhi, Sơ đồ, Buổi học, Quét thẻ), phân trang "Xem thêm".
+
+- **Có ghi** (cùng giao dịch với thay đổi, chỉ khi thật sự có thay đổi): đổi trạng thái điểm danh/đi lễ (trước → sau), "Tất cả có mặt"/"Cả lớp đi lễ" và hoàn tác, "Đánh vắng các em còn lại", huỷ/mở lại buổi học hoặc tuần đi lễ, thêm/sửa/nghỉ học/đi học lại/nhập CSV/sửa liên hệ/cấp lại mã thẻ của em, tạo/áp mẫu/lưu bố cục/kích hoạt/xoá sơ đồ, đổi lịch học, lượt lên lớp và hoàn tác (ở **cả lớp cũ và lớp mới**).
+- **Lượt quét thẻ** nằm trong nhật ký quét riêng (`attendance_scans`) và được **gộp vào cùng dòng thời gian** (lọc "Quét thẻ").
+- **Không ghi**: xếp một em vào ghế (`assignSeat`), mở buổi điểm danh, việc quản trị tài khoản (tạo GLV, đặt lại mật khẩu, gán lớp, tạo lớp). Thay đổi cấp khối (ngưỡng đi lễ, khối kế tiếp, tạo/xoá năm học) được ghi nhưng **chưa có trang xem cấp khối** (nhật ký lớp chỉ hiện dòng của lớp).
+- Không bao giờ ghi mã thẻ hay mật khẩu; số điện thoại chỉ lưu dạng che (`••••••567`); ghi chú tự do không được ghi.
+- **Lưu giữ 365 ngày**: dòng cũ hơn được xoá bởi phần dọn dẹp hằng ngày của tác vụ nhắc việc (`/api/cron/nhac-viec`). **Không đặt `CRON_SECRET` (hoặc không có gì gọi route) thì không có dọn dẹp**: nhật ký tăng mãi. Nhật ký quét `attendance_scans` **không bao giờ được dọn** (kể cả khi cron chạy).
+
+## Năm học mới và lên lớp
+
+Trưởng khối vào **Khối → Năm học mới và lên lớp** (`/khoi/nam-hoc`).
+
+**Năm học**
+
+- Năm học (gồm hai học kỳ) **dùng chung cho mọi khối**. App gợi ý tên và ngày từ năm trước (+1 năm). Kiểm tra: tên không trùng (không phân biệt hoa thường), học kỳ 1 kết thúc trước học kỳ 2, cả năm tối đa 400 ngày, không chồng lên học kỳ nào đã có, học kỳ 1 bắt đầu sau năm học gần nhất và trong khoảng 400 ngày trước đến 550 ngày sau hôm nay.
+- Tạo nhầm thì **xoá được khi năm đó chưa có buổi điểm danh nào**. Ghi nhật ký cấp khối.
+- Giữa hai năm học (hè), các trang thống kê mặc định hiện **học kỳ gần nhất đã bắt đầu**; năm học tạo sẵn cho tương lai không thành "hiện tại".
+
+**Lên lớp** (chuyển em sang lớp khác):
+
+- Chọn lớp nguồn, lớp đích (cùng khối, hoặc lớp của **khối kế tiếp** do trưởng khối nguồn đặt), tích các em (mặc định tất cả em đang học; em đã nghỉ ở lại lớp cũ), xác nhận. Tối đa 200 em mỗi lượt; bấm hai lần không chuyển hai lần.
+- Đây là **chuyển** (đổi lớp hiện tại của em), không phải sao chép: em giữ nguyên **thẻ QR**, hồ sơ và lịch sử. **Chỗ ngồi ở mọi sơ đồ của lớp cũ bị xoá** (danh sách được lưu để tham khảo) và **không được khôi phục khi hoàn tác**.
+- **Hoàn tác trong 24 giờ** (trưởng khối của khối nguồn): chỉ đưa về các em **còn ở lớp đích**; em đã bị chuyển tiếp lần nữa thì phải hoàn tác lượt mới hơn trước. Sau 24 giờ thì chuyển lại bằng một lượt lên lớp mới.
+- Điểm danh cũ (kể cả hôm nay nếu chuyển giữa buổi) ở lại lớp cũ và không sửa được cho các em đã chuyển.
+
+**Thống kê học kỳ sau khi lên lớp**
+
+- **Học kỳ hiện tại**: tính theo lớp hiện tại (lớp cũ không còn em đã chuyển; lớp mới có em, chưa có dòng nào).
+- **Học kỳ đã qua** của một lớp gồm: (a) mọi em **có dòng điểm danh** (học hoặc đi lễ) ở buổi của lớp đó trong học kỳ, em đã chuyển đi được ghi "(đã lên lớp khác)", em đã nghỉ ghi "(đã nghỉ)"; cộng (b) em đang học ở lớp mà **không có dòng nào ở buổi của lớp khác** trong học kỳ đó. Vì vậy em được chuyển **vào** lớp sau học kỳ đó (đã có dòng ở lớp cũ) **không** hiện thành thành viên trống ở học kỳ cũ của lớp mới; em của lớp chưa từng được điểm danh thì vẫn ở lại. Quy tắc này dùng chung cho thống kê, thống kê đi lễ, trang Khối, báo cáo in, Excel và tổng hợp khối.
+- Danh sách cần hành động (trang chủ, "Cần chú ý", thông báo) **chỉ** gồm em đang học ở lớp.
+
+**Mô hình tin cậy**
+
+- Chỉ trưởng khối của khối **nguồn** chuyển em, và chỉ em đang học ở lớp của khối mình; lớp đích là lớp cùng khối hoặc lớp của **khối kế tiếp** do chính trưởng khối nguồn chọn (không có quản trị viên toàn hệ thống, không có bước đồng ý của khối đích). Đặt khối kế tiếp cần xác nhận hai bước và được ghi nhật ký.
+- Bù lại là minh bạch: mỗi lượt chuyển ghi nhật ký ở **cả lớp cũ và lớp mới**; trưởng khối đích thấy lượt "Chuyển vào" (chỉ xem) và một băng báo 7 ngày khi khối khác chuyển em vào hoặc chọn khối mình làm khối kế tiếp. Trưởng khối nguồn **không** đọc thêm được gì của khối đích.
+
+## Báo cáo học kỳ
+
+- **Báo cáo lớp in được**: Thống kê → **Báo cáo in được** (`/lop/<lớp>/thong-ke/bao-cao?termId=…`, cùng quyền đọc lớp). Khổ A4, đầu trang (lớp, khối, học kỳ, ngày tạo, người tạo), bảng từng em: có mặt, muộn, vắng có/không phép, % chuyên cần, đi lễ (đi/đã ghi), cảnh báo; dòng tổng; đầu bảng lặp lại mỗi trang. Bấm **In / Lưu PDF** (chọn "Lưu dưới dạng PDF" trong hộp in của trình duyệt). Không có số điện thoại hay mã thẻ.
+- **Excel lớp**: nút Excel ở trang Thống kê (như trước).
+- **Tổng hợp khối** (chỉ trưởng khối): Khối → **Báo cáo học kỳ** (`/khoi/bao-cao`): mỗi lớp số em, số buổi, % có mặt, số em cảnh báo vắng học/vắng lễ, số tuần đi lễ đã ghi; danh sách "Em đang cảnh báo (đang học ở lớp)" (không có số điện thoại); tải **Excel** (hai sheet "Tổng hợp khối" và "Cảnh báo").
+- Học kỳ đã qua dùng quy tắc danh sách ở mục [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp).
 
 ## Điểm danh bằng thẻ QR
 
@@ -132,11 +217,15 @@ Thẻ nên quét ở khoảng cách tay, tránh bóng loáng của lớp ép pla
 
 ### Nhắc việc tự động (`/api/cron/nhac-viec`)
 
-- Route `GET|POST /api/cron/nhac-viec` chỉ xác thực bằng header `Authorization: Bearer <CRON_SECRET>` (so sánh hằng thời gian; không đọc phiên). Trả `Cache-Control: no-store` và chỉ các số đếm `{sent, skipped, failed, pruned, truncated}`. Gọi mỗi ~10 phút bằng GitHub Actions (`.github/workflows/reminders.yml`), cron-job.org hoặc Vercel Cron (gói Pro); xem `docs/deploy-vercel-ios.md`.
-- **Nhắc GLV**: lớp có lịch học, hôm nay đúng thứ học, đã qua giờ bắt đầu từ 30 phút đến dưới 3 giờ (giờ Việt Nam) mà buổi học hôm nay chưa có dấu điểm danh nào (buổi huỷ thì không nhắc) → mọi GLV được phân công lớp, một lần mỗi lớp mỗi ngày: "Chưa điểm danh – Lớp A chưa điểm danh hôm nay".
+- Route `GET|POST /api/cron/nhac-viec` chỉ xác thực bằng header `Authorization: Bearer <CRON_SECRET>` (so sánh hằng thời gian; không đọc phiên). Trả `Cache-Control: no-store` và chỉ các số đếm `{sent, skipped, failed, pruned, truncated}`.
+- **Route không tự chạy**: cần một bộ gọi định kỳ (~10 phút). Chọn một trong ba (chi tiết: `docs/deploy-vercel-ios.md` mục 9):
+  - **GitHub Actions** (`.github/workflows/reminders.yml`, lịch 10 phút): đặt secret `APP_URL`, `CRON_SECRET`, **rồi** đặt repository variable `REMINDERS_ENABLED=true`. Chưa đặt biến thì lịch bỏ qua job (không có lần chạy đỏ khi vừa merge mà chưa có secret); nút "Run workflow" luôn chạy để thử. Phút Actions chỉ miễn phí cho repo **công khai**; repo riêng tư ở lịch 10 phút tốn khoảng 4.400 phút/tháng (vượt 2.000 phút miễn phí): đổi lịch sang 30 phút hoặc dùng bộ gọi ngoài.
+  - **Bộ gọi ngoài** (cron-job.org hoặc tương tự) với header `Authorization`.
+  - **Vercel Cron**: chỉ gói **Pro** (gói Hobby chỉ cho cron mỗi ngày một lần; lịch 10 phút làm deploy thất bại, nên repo không bật sẵn).
+- **Nhắc GLV**: chỉ khi hôm nay **nằm trong một học kỳ** (không nhắc dịp hè/giữa hai học kỳ) và lớp **còn ít nhất một em đang học** (lớp trống, vd. cả lớp đã lên lớp, không bị nhắc); lớp có lịch học, hôm nay đúng thứ học, đã qua giờ bắt đầu từ 30 phút đến dưới 3 giờ (giờ Việt Nam) mà buổi học hôm nay chưa có dấu điểm danh nào (buổi huỷ thì không nhắc; dòng đi lễ không tính) → mọi GLV được phân công lớp, một lần mỗi lớp mỗi ngày: "Chưa điểm danh – Lớp A chưa điểm danh hôm nay".
 - **Báo trưởng khối**: em đang học ở lớp đang ở trạng thái cảnh báo vắng học (≥ 2 buổi học vắng không phép trong học kỳ hiện tại) hoặc vắng lễ (số tuần không đi lễ ≥ ngưỡng của khối, cùng quy tắc với "Cần chú ý") → trưởng khối của khối đó, một lần mỗi em mỗi học kỳ mỗi loại, gộp thành một thông báo mỗi lần chạy ("Có 2 em đạt ngưỡng cảnh báo vắng học ở Lớp A, Lớp B"), mở "Cần chú ý". "Vừa chạm ngưỡng" nghĩa là lần chạy đầu tiên thấy em ở trạng thái cảnh báo khi trưởng khối đã bật thông báo: lần chạy đầu sau khi triển khai (hoặc sau khi trưởng khối bật thông báo) gửi **một** thông báo gộp cho các cảnh báo đang có. **Không thông báo nào có tên hay số điện thoại của em** (màn hình khoá).
 - **Không gửi trùng**: dòng `notification_log` được ghi **trước** khi gửi (`on conflict do nothing`), chỉ gửi khi ghi được; hai lần chạy chồng nhau không gửi hai lần. Dòng chỉ được **giữ khi tới được ít nhất một thiết bị**; không tới thiết bị nào (lỗi mạng, 429/5xx, 401/403, lỗi cục bộ, hoặc mọi thiết bị vừa hết hạn 404/410) thì **nhả dòng** để lần sau thử lại. Số lần thử có giới hạn vì mỗi lần lỗi tăng bộ đếm của đăng ký (xoá sau 5 lần lỗi tạm thời hoặc 10 lần 401/403). Thiết bị vừa hết hạn được đếm là `skipped`, không phải `failed`. Người chưa bật thông báo trên thiết bị nào thì bỏ qua và không ghi dòng (bật sau vẫn nhận được). Mỗi lần chạy có ngân sách 20 giây (route `maxDuration` 60), kiểm trước mỗi lần gửi và sau phần tính ngưỡng: hết thì dừng gọn (`truncated: true`), lần sau làm tiếp.
-- **Dọn dẹp mỗi ngày một lần** (cùng lần chạy): nhật ký thay đổi cũ hơn 365 ngày, `notification_log` nhắc điểm danh cũ hơn 120 ngày, thông báo ngưỡng cũ hơn 400 ngày (giữ lâu hơn một học kỳ để không báo lại).
+- **Dọn dẹp mỗi ngày một lần** (cùng lần chạy, chạy cả khi chưa cấu hình VAPID): nhật ký thay đổi cũ hơn 365 ngày, `notification_log` nhắc điểm danh cũ hơn 120 ngày, thông báo ngưỡng cũ hơn 400 ngày (giữ lâu hơn một học kỳ để không báo lại). Nhật ký quét `attendance_scans` không được dọn.
 
 ### Xác thực: mọi server action tự kiểm
 
@@ -148,6 +237,14 @@ Proxy (`src/proxy.ts`) **không còn chặn request không phải GET khi thiế
 - **`X-Forwarded-Host` chỉ đáng tin sau reverse proxy ghi đè header đó** (Vercel làm vậy). Kiểm tra Origin của API quét dựa vào header này: nếu tự host mà đặt app trực tiếp ra internet, hãy có proxy chuẩn hóa/ghi đè `X-Forwarded-Host`.
 - **`NEXT_PUBLIC_E2E_SCAN_BRIDGE` chỉ dùng cho E2E** (cầu nối `window.__scanFeed` đưa mã giả lập vào mà không cần camera; chỉ `playwright.config.ts` đặt biến này, E2E chạy bằng `next dev`). Cầu nối chỉ bật khi biến bằng `1` **và** `NODE_ENV` không phải `production`; điều kiện này bị loại lúc biên dịch nên **bản `next build` không còn chứa mã cầu nối** (kể cả khi lỡ đặt biến; kiểm bằng `grep -r __scanFeed .next/static` sau khi build: không có kết quả). Dù vậy, đừng đặt biến này trên production.
 - **Header bảo mật** (`next.config.ts`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy: camera=(self), microphone=(), geolocation=()` (chỉ trang của app được xin camera), và HSTS ở production. `Content-Security-Policy` chặn thật, chỉ nguồn của chính app (`src/lib/security-headers.ts`; `'wasm-unsafe-eval'` cho bộ đọc QR, `'unsafe-eval'` chỉ ở dev hoặc khi đặt `CSP_ALLOW_UNSAFE_EVAL=1`).
+
+## Dùng trên iPhone
+
+App là PWA: mở bằng Safari → Chia sẻ → **Thêm vào Màn hình chính**, rồi mở từ biểu tượng (đăng nhập lại một lần: app cài và tab Safari không chung đăng nhập). Hướng dẫn và danh sách thử trên máy thật: [`docs/ios-checklist.md`](docs/ios-checklist.md).
+
+- **Máy quét QR cần iOS 16+** (WebAssembly dưới CSP chặt). iOS 15 trở xuống chỉ chạy được máy quét khi build với `CSP_ALLOW_UNSAFE_EVAL=1` (CSP yếu hơn); quyết định dựa trên máy thật của GLV.
+- **Thông báo đẩy cần iOS 16.4+ và app đã cài lên Màn hình chính** (Safari thường không nhận). Wake Lock (giữ màn hình sáng khi quét) cũng cần iOS 16.4+.
+- Camera trong app cài: lần đầu iOS hỏi quyền; bị từ chối thì cấp lại trong Cài đặt (xem mục Camera ở trên).
 
 ## Kiểm thử
 
@@ -186,20 +283,19 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 
 `public/icon-192.png`, `public/icon-512.png` và `public/icon-maskable-512.png` (biểu tượng có vùng đệm cho Android) được sinh bằng `node --import tsx scripts/make-icons.ts` (cần Playwright Chromium: `pnpm exec playwright install chromium`). Manifest nằm ở `src/app/manifest.ts`.
 
-## Triển khai lên Vercel
-
-1. Đặt `DATABASE_URL` và `AUTH_SECRET` trong Project Settings, mục Environment Variables, cho cả môi trường Production và Preview. `DATABASE_URL` chỉ cần lúc chạy: `src/db/client.ts` kết nối lười ở lần truy vấn đầu tiên nên `next build` không cần biến này (thiếu biến thì lần truy vấn đầu báo lỗi rõ ràng).
-2. Trước mỗi lần deploy có migration mới, chạy `pnpm db:migrate` với `DATABASE_URL` trỏ tới database production.
-3. Không commit `.env*` vào git.
-
 ## Giới hạn đã biết
 
-- **Phiên đăng nhập không thu hồi được từ máy chủ.** Đăng xuất hoặc đặt lại mật khẩu không vô hiệu hóa cookie đã cấp: cookie vẫn dùng được tới khi hết hạn (trượt 30 ngày, trần tuyệt đối 90 ngày). Cần thêm phiên bản phiên theo từng người dùng (session version) để khắc phục.
-- **Không có chế độ ngoại tuyến thật.** Hàng chờ quét chỉ giữ lượt chưa gửi trên thiết bị tối đa 3 ngày; điểm danh chỉ được ghi khi thiết bị có mạng. Thao tác trên bảng điểm danh cần kết nối ngay lúc bấm.
-- **Chưa có nhắc muộn tự động** theo giờ bắt đầu lớp.
-- **Giới hạn tốc độ nằm trong bộ nhớ từng instance**, chưa có bộ đếm dùng chung/phân tán.
+- **Phiên đăng nhập không thu hồi được từ máy chủ.** Đăng xuất hoặc **đặt lại mật khẩu không vô hiệu hóa cookie đã cấp**: cookie vẫn dùng được tới khi hết hạn (trượt 30 ngày, **trần tuyệt đối 90 ngày**). Tài khoản bị xoá thì bị chặn ngay. Cần thêm phiên bản phiên theo từng người dùng (session version) để khắc phục.
+- **Không có chế độ ngoại tuyến thật.** Hàng chờ quét chỉ giữ lượt chưa gửi trên thiết bị tối đa 3 ngày; điểm danh chỉ được ghi khi thiết bị có mạng. **Chạm trên bảng điểm danh (và mục Đi lễ) không có hàng chờ**: cần kết nối ngay lúc bấm.
+- **Giới hạn tốc độ nằm trong bộ nhớ từng instance** (quét, bảng tra, bật/gửi thử thông báo đẩy), chưa có bộ đếm dùng chung/phân tán; nhiều instance serverless thì giới hạn thực tế cao hơn.
 - **Khóa đăng nhập theo email**, không giới hạn theo IP. Tài khoản bị khóa tạm khi sai quá 5 lần; vẫn thử tiếp thì thời gian khóa kéo dài. Kẻ tấn công biết email của một GLV có thể khóa tài khoản đó.
-- **Cần Node >= 22.9** do dùng `Map.groupBy` và cờ `--env-file-if-exists`.
+- **Cần PostgreSQL ≥ 15** (`NULLS NOT DISTINCT`) và **Node >= 22.9** (`Map.groupBy`, `--env-file-if-exists`).
+- **Nhắc việc cần bộ gọi ngoài**: Vercel Hobby chỉ cho cron mỗi ngày một lần; dùng GitHub Actions (nhớ `REMINDERS_ENABLED=true`; repo riêng tư tốn phút Actions), cron-job.org hoặc Vercel Pro. Không có `CRON_SECRET`/bộ gọi thì không nhắc và **không dọn nhật ký 365 ngày**; `attendance_scans` không bao giờ được dọn.
+- **Cảnh báo vắng lễ** không có cho em chưa từng có dòng điểm danh nào ở lớp hiện tại (không có ngày nhập học): hãy dùng "Đánh vắng các em còn lại" cuối mỗi buổi. Em vào lớp giữa kỳ chỉ được tính từ dòng đầu tiên (heuristic).
+- **Kiểm số điện thoại chặt** chặn lưu em có số dạng cũ cho tới khi sửa số; CSV bỏ dòng có số sai.
+- **Nhật ký cấp khối** (ngưỡng đi lễ, khối kế tiếp, năm học) được ghi nhưng chưa có trang xem; xếp ghế (`assignSeat`) và việc quản trị tài khoản không được ghi.
+- **Lên lớp**: chỗ ngồi cũ không khôi phục khi hoàn tác; không có bước đồng ý của khối đích (xem "Mô hình tin cậy").
+- **CSP production chỉ kiểm tay** (E2E chạy `next dev`); xem "Kiểm tra CSP trên bản production". Máy quét trên iOS ≤ 15 cần `CSP_ALLOW_UNSAFE_EVAL=1`.
 - Nút tùy chọn trên ô chỗ ngồi là một điều khiển phụ, khá nhỏ.
 - **Đảm bảo đồng thời** (advisory lock, `FOR UPDATE`, so sánh-và-ghi) được kiểm thử bằng `pnpm test:pg` trên Postgres thật nhiều kết nối, nhưng chưa thử tải nhiều tiến trình/instance thật.
-- Chưa thử trên điện thoại thật (Android/iPhone) và chưa đo độ trễ trên hạ tầng thật: xem `docs/superpowers/qr-release-checklist.md`.
+- Chưa thử trên điện thoại thật (Android/iPhone), chưa thử thông báo đẩy tới máy thật và chưa đo độ trễ trên hạ tầng thật: xem [`docs/superpowers/release-checklist-moc9.md`](docs/superpowers/release-checklist-moc9.md) (việc của chủ dự án).

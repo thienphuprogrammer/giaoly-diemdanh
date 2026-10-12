@@ -97,7 +97,7 @@ unset SEED_PASSWORD
 
 `pnpm seed` ưu tiên `DATABASE_URL_UNPOOLED` (nếu có), và tôn trọng `DB_PREPARE` khi chỉ có chuỗi pooler. Khi xong, **xóa hoặc không giữ** `.env.local` chứa chuỗi production trên máy dùng chung.
 
-`pnpm preflight` kiểm: `DATABASE_URL` hợp lệ và không phải localhost (khi `--prod`), `AUTH_SECRET` đủ dài và không phải giá trị mẫu, không có `NEXT_PUBLIC_E2E_SCAN_BRIDGE`, kết nối được database, và số migration trong database khớp với mã. Nó che mật khẩu và che một phần máy chủ/người dùng khi in; thoát với mã lỗi khác 0 nếu có mục `[LỖI]`.
+`pnpm preflight` kiểm: `DATABASE_URL` hợp lệ và không phải localhost (khi `--prod`), `AUTH_SECRET` đủ dài và không phải giá trị mẫu, không có `NEXT_PUBLIC_E2E_SCAN_BRIDGE`, kết nối được database, PostgreSQL từ bản 15 trở lên (bản cũ hơn báo `[LỖI]` vì migration cần `NULLS NOT DISTINCT`), múi giờ database, và số migration trong database khớp với mã. Nó che mật khẩu và che một phần máy chủ/người dùng khi in; thoát với mã lỗi khác 0 nếu có mục `[LỖI]`.
 
 ## 5. Deploy và kiểm tra
 
@@ -165,7 +165,7 @@ Cách đọc kết quả:
 App có route `/api/cron/nhac-viec`. Mỗi lần được gọi, nó gửi các thông báo đẩy đến hạn rồi dọn dẹp. Route **không tự chạy**: cần một bộ hẹn giờ gọi nó khoảng 10 phút một lần.
 
 **Mỗi thông báo nghĩa là gì**
-- **"Chưa điểm danh – Lớp A chưa điểm danh hôm nay"** (gửi GLV được phân công lớp). Lớp có lịch học (đặt ở trang lớp), hôm nay đúng thứ học, đã qua giờ bắt đầu từ 30 phút đến dưới 3 giờ (giờ Việt Nam), mà buổi học hôm nay chưa có dấu điểm danh nào. Buổi bị huỷ thì không nhắc. Mỗi lớp mỗi ngày nhắc một lần. Bấm vào thông báo mở trang điểm danh hôm nay.
+- **"Chưa điểm danh – Lớp A chưa điểm danh hôm nay"** (gửi GLV được phân công lớp). **Chỉ trong học kỳ** (hè và khoảng trống giữa hai học kỳ không nhắc) và **chỉ lớp còn em đang học** (lớp trống, ví dụ cả lớp đã lên lớp, không nhắc). Lớp có lịch học (đặt ở trang lớp), hôm nay đúng thứ học, đã qua giờ bắt đầu từ 30 phút đến dưới 3 giờ (giờ Việt Nam), mà buổi học hôm nay chưa có dấu điểm danh nào. Buổi bị huỷ thì không nhắc. Mỗi lớp mỗi ngày nhắc một lần. Bấm vào thông báo mở trang điểm danh hôm nay.
 - **"Cảnh báo vắng học" / "Cảnh báo vắng lễ"** (gửi trưởng khối). Gửi khi lần chạy thấy có em đang học ở lớp trong khối đang ở trạng thái cảnh báo trong học kỳ hiện tại mà trưởng khối chưa được báo về em đó:
   - vắng học: từ 2 buổi học vắng không phép trở lên;
   - vắng lễ: số tuần không đi lễ đạt ngưỡng của khối (cùng quy tắc với trang "Cần chú ý").
@@ -201,7 +201,10 @@ Gọi lại ngay một lần nữa sẽ không gửi trùng.
   - `APP_URL` = `https://ten-app.vercel.app` (không có `/` ở cuối);
   - `CRON_SECRET` = cùng giá trị như trên Vercel.
 
-  Workflow chạy mỗi 10 phút và có nút **Run workflow** để thử ngay. Lưu ý:
+  Sau khi tạo hai secret, vào tab **Variables** (cùng trang) → **New repository variable**: tên `REMINDERS_ENABLED`, giá trị `true`. **Chưa đặt biến này thì lịch tự động bỏ qua** (để repo vừa merge mà chưa có secret không sinh lần chạy đỏ mỗi 10 phút); nút **Run workflow** (chạy tay) luôn chạy, dùng để thử trước khi bật biến. Muốn tạm dừng nhắc: đổi biến thành `false`.
+
+  Workflow chạy mỗi 10 phút. Lưu ý:
+  - **chi phí**: phút GitHub Actions chỉ miễn phí cho repo **công khai**. Repo **riêng tư** chỉ có 2.000 phút/tháng miễn phí, mà lịch 10 phút tốn khoảng **4.400 phút/tháng** (mỗi lần chạy tính tròn 1 phút). Với repo riêng tư: sửa `cron: "*/10 * * * *"` thành `"*/30 * * * *"` trong `.github/workflows/reminders.yml` (khoảng 1.500 phút/tháng; cửa sổ nhắc 2,5 giờ vẫn đủ), hoặc dùng cách (b);
   - lịch của GitHub có thể trễ vài phút đến hơn chục phút lúc cao điểm, và khoảng cách tối thiểu là 5 phút;
   - cửa sổ nhắc kéo dài 2 tiếng rưỡi nên trễ như vậy vẫn ổn;
   - lịch chỉ chạy trên **nhánh mặc định** (thường là `main`): tệp workflow phải nằm ở nhánh đó;
@@ -226,13 +229,15 @@ Gọi lại ngay một lần nữa sẽ không gửi trùng.
 - Phản hồi chỉ gồm số đếm và có `Cache-Control: no-store`.
 - Hai lần gọi chồng nhau không gửi trùng: mỗi thông báo được ghi vào `notification_log` **trước** khi gửi. Dòng được giữ khi tới được ít nhất một thiết bị; không tới thiết bị nào thì dòng được nhả để lần sau thử lại.
 
-**Dọn dẹp** (mỗi ngày một lần trong lần chạy đầu tiên của ngày):
-- xoá nhật ký thay đổi cũ hơn 12 tháng;
+**Dọn dẹp** (mỗi ngày một lần trong lần chạy đầu tiên của ngày, kể cả khi chưa đặt `VAPID_*`):
+- xoá nhật ký thay đổi cũ hơn 12 tháng (365 ngày);
 - xoá nhật ký thông báo cũ.
+
+Không đặt `CRON_SECRET` hoặc không có bộ gọi thì **không có dọn dẹp**: nhật ký thay đổi tăng mãi. Nhật ký quét thẻ (`attendance_scans`) không bao giờ được dọn.
 
 Dán bí mật cẩn thận: khoảng trắng/xuống dòng ở đầu cuối được app tự cắt, nhưng nơi gọi có thể gửi nguyên văn, nên hãy xoá chúng ở mọi nơi (`pnpm preflight --prod` cảnh báo nếu có). Đổi bí mật: tạo giá trị mới, cập nhật ở Vercel (deploy lại) và ở nơi gọi (GitHub secret/cron-job.org) cùng lúc.
 
 ## 10. Sau này
 
 - Thông báo đẩy và nhắc việc đã có (mục 3, 9). Có thể thêm loại nhắc khác bằng cách mở rộng `src/server/services/reminders.ts`.
-- Danh sách việc kiểm trước khi dùng thật: `docs/superpowers/qr-release-checklist.md`.
+- Danh sách việc kiểm trước khi dùng thật: `docs/superpowers/release-checklist-moc9.md` (Mốc 9; bản cũ của đợt QR: `docs/superpowers/qr-release-checklist.md`).

@@ -1,5 +1,7 @@
 # Danh sách kiểm phát hành: QR và độ tin cậy
 
+> Bản lưu của đợt QR (2026-10-12, trước Mốc 9). Kết quả mới nhất và việc của chủ dự án: [`release-checklist-moc9.md`](release-checklist-moc9.md). Một số mục "chưa làm" ở mục 3 đã có ở Mốc 9 (CSP, nhắc việc tự động); endpoint `ket-qua` đã bị xoá ở Mốc 9.
+
 Ngày chạy: 2026-10-12. Nhánh `feat/qr-attendance`, nền `49f4c61` cộng đợt sửa sau review cuối (lịch sử Xong, hàng chờ trên máy chặn "Đánh vắng", máy quét buổi nghỉ lễ, gia cố). Các số dưới đây là lần chạy lại thật sau đợt sửa đó.
 
 Quy ước: `[x]` = đã chạy thật ở bước này, kèm kết quả; `[ ]` = chưa làm. Mục **"việc của chủ dự án"** cần điện thoại thật, hạ tầng thật hoặc dữ liệu thật mà môi trường phát triển không có: không được tích trước khi tự tay kiểm.
@@ -55,4 +57,4 @@ Quy ước: `[x]` = đã chạy thật ở bước này, kèm kết quả; `[ ]`
 - Không có test thành phần (component) cho các hook quét; chỉ có logic thuần và E2E.
 - **CSP**: chưa đặt Content-Security-Policy (chỉ có các header ở mục 1).
 - **Nút nhanh trang chủ** vẫn hiện "Quét QR" cho buổi hôm nay đã đánh dấu nghỉ lễ (trang chủ không đọc buổi); máy quét tự báo nghỉ lễ và từ chối.
-- Giữ nguyên (đã cân nhắc, không đổi ở đợt này): endpoint `ket-qua`, tách các hàm dài, đặt namespace cho `batchId`, thu hồi phiên.
+- Giữ nguyên (đã cân nhắc, không đổi ở đợt này): endpoint kết quả quét (đã xoá ở Mốc 9), tách các hàm dài, đặt namespace cho `batchId`, thu hồi phiên.
