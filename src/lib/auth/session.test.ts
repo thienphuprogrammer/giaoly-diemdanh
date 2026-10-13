@@ -1,7 +1,7 @@
 import { SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import { decryptSession, encryptSession, readSession } from "./session";
-import { SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S } from "./session-policy";
+import { LEGACY_SESSION_MAX_AGE_S, SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S } from "./session-policy";
 
 const SECRET = "s".repeat(32);
 
@@ -70,22 +70,22 @@ describe("session", () => {
   it("migrates a token without sat to sat = exp - 30 days", async () => {
     const exp = now() + 7 * DAY;
     const legacy = await new SignJWT({ userId: "u1" }).setProtectedHeader({ alg: "HS256" }).setExpirationTime(exp).sign(new TextEncoder().encode(SECRET));
-    expect(await readSession(legacy, SECRET)).toEqual({ userId: "u1", exp, sat: exp - SESSION_MAX_AGE_S, ver: 0 });
+    expect(await readSession(legacy, SECRET)).toEqual({ userId: "u1", exp, sat: exp - LEGACY_SESSION_MAX_AGE_S, ver: 0 });
   });
 
-  it("refuses a token whose login is older than 90 days, in readSession and decryptSession (DAL)", async () => {
+  it("refuses a token whose login is older than the absolute cap, in readSession and decryptSession (DAL)", async () => {
     const token = await encryptSession({ userId: "u1", sat: now() - SESSION_ABSOLUTE_MAX_S - 3600 }, SECRET, now() + DAY);
     expect(await readSession(token, SECRET)).toBeNull();
     expect(await decryptSession(token, SECRET)).toBeNull();
   });
 
-  it("accepts a token logged in 89 days ago", async () => {
-    const token = await encryptSession({ userId: "u1", sat: now() - 89 * DAY }, SECRET, now() + DAY);
+  it("accepts a token logged in 300 days ago", async () => {
+    const token = await encryptSession({ userId: "u1", sat: now() - 300 * DAY }, SECRET, now() + DAY);
     expect(await decryptSession(token, SECRET)).toEqual({ userId: "u1" });
   });
 
-  it("refuses a validly signed token whose exp exceeds the 30-day maximum (same check as the proxy)", async () => {
-    const token = await encryptSession({ userId: "u1" }, SECRET, now() + 60 * DAY);
+  it("refuses a validly signed token whose exp exceeds the maximum lifetime (same check as the proxy)", async () => {
+    const token = await encryptSession({ userId: "u1" }, SECRET, now() + SESSION_MAX_AGE_S + 30 * DAY);
     expect(await readSession(token, SECRET)).toBeNull();
     expect(await decryptSession(token, SECRET)).toBeNull();
   });

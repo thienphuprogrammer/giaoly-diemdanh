@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { visibleAssignments } from "@/lib/seating/assignments";
 import type { Assignment, Layout } from "@/lib/seating/types";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
@@ -6,6 +6,7 @@ import { attendance, seatAssignments, seatingPlans, sessions, students, terms, t
 import type { Db } from "../types";
 import { missedMassWeeks } from "./mass-stats";
 import { studentColumns } from "./students";
+import { sortByGivenName } from "@/lib/students/name";
 
 export async function findTermFor(db: Db, date: string, schoolYearId?: string) {
   const [row] = await db
@@ -110,9 +111,8 @@ async function priorClassUnexcused(db: Db, session: typeof sessions.$inferSelect
 }
 
 export async function loadBoardData(db: Db, session: typeof sessions.$inferSelect) {
-  const roster = await db.select(studentColumns).from(students)
-    .where(and(eq(students.classId, session.classId), eq(students.active, true)))
-    .orderBy(asc(students.fullName));
+  const roster = sortByGivenName(await db.select(studentColumns).from(students)
+    .where(and(eq(students.classId, session.classId), eq(students.active, true))));
   const marks = await db.select().from(attendance).where(eq(attendance.sessionId, session.id));
   // "Vắng trước đó" theo loại buổi, vẫn một truy vấn: buổi học = số buổi học vắng KP; buổi đi lễ = số tuần đi lễ đã
   // ghi nhận mà em không đi (`missedMassWeeks`, định nghĩa spec §1b), không tính buổi đang mở.

@@ -8,6 +8,7 @@ import { isActionable } from "@/lib/promotion";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
 import { z } from "zod";
 import { guardClass } from "../guard";
+import { compareByGivenName } from "@/lib/students/name";
 
 export interface StatRow {
   studentId: string;
@@ -78,7 +79,7 @@ export async function attentionList(db: Db, user: AppUser, termId: string, today
       Number(b.level === "warning") - Number(a.level === "warning") ||
       b.unexcused - a.unexcused ||
       a.className.localeCompare(b.className, "vi") ||
-      a.fullName.localeCompare(b.fullName, "vi"));
+      compareByGivenName(a.fullName, b.fullName));
 }
 
 export interface GradeRow {

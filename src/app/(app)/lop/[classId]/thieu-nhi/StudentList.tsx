@@ -66,8 +66,9 @@ export function StudentList({ classId, students, canWrite }: {
         </EmptyState>
       ) : (
         <div className="card overflow-hidden">
-          <div aria-hidden className={`hidden gap-3 border-b border-border bg-surface-muted px-4 py-2.5 text-xs font-semibold text-ink-soft lg:grid ${canWrite ? "lg:grid-cols-[minmax(0,1fr)_7rem_9rem_8rem]" : "lg:grid-cols-[minmax(0,1fr)_7rem_9rem]"}`}>
-            <span>Thiếu nhi / tên thánh</span>
+          <div aria-hidden className={`hidden gap-3 border-b border-border bg-surface-muted px-4 py-2.5 text-xs font-semibold text-ink-soft lg:grid ${canWrite ? "lg:grid-cols-[minmax(0,1fr)_8rem_7rem_9rem_8rem]" : "lg:grid-cols-[minmax(0,1fr)_8rem_7rem_9rem]"}`}>
+            <span>Họ và tên đệm / tên thánh</span>
+            <span>Tên</span>
             <span>Ngày sinh</span>
             <span>SĐT phụ huynh</span>
             {canWrite && <span className="text-right">Thao tác</span>}

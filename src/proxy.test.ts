@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encryptSession, readSession } from "@/lib/auth/session";
-import { SESSION_MAX_AGE_S } from "@/lib/auth/session-policy";
+import { SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S } from "@/lib/auth/session-policy";
 import { NEXT_PATH_HEADER } from "@/lib/auth/next-path";
 import { config, proxy } from "./proxy";
 
@@ -46,8 +46,8 @@ describe("proxy: unauthenticated page requests", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  it("refuses (redirects) a validly signed token whose login is older than 90 days, without refreshing it", async () => {
-    const old = await encryptSession({ userId: "u1", sat: nowS() - 91 * DAY }, SIGNING_KEY, nowS() + DAY);
+  it("refuses (redirects) a validly signed token whose login is older than the absolute cap, without refreshing it", async () => {
+    const old = await encryptSession({ userId: "u1", sat: nowS() - SESSION_ABSOLUTE_MAX_S - DAY }, SIGNING_KEY, nowS() + DAY);
     const res = await proxy(req("/lop/abc", { token: old }));
     expect(location(res)).toBe(`${ORIGIN}/login?next=%2Flop%2Fabc`);
     expect(res.cookies.get("session")?.value).toBe("");
@@ -78,12 +78,12 @@ describe("proxy: unauthenticated page requests", () => {
 
 describe("proxy: sliding session", () => {
   it("does not re-issue a fresh token", async () => {
-    const res = await proxy(req("/", { token: await tokenExpiringIn(20 * DAY) }));
+    const res = await proxy(req("/", { token: await tokenExpiringIn(100 * DAY) }));
     expect(location(res)).toBeNull();
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  it("re-issues a 30-day httpOnly lax cookie when under 3 days remain, keeping sat", async () => {
+  it("re-issues a 180-day httpOnly lax cookie when under 30 days remain, keeping sat", async () => {
     const token = await encryptSession({ userId: "u1", sat: nowS() - 50 * DAY, ver: 7 }, SIGNING_KEY, nowS() + 2 * DAY);
     const original = await readSession(token, SIGNING_KEY);
     const res = await proxy(req("/lop/abc", { token }));
@@ -100,8 +100,8 @@ describe("proxy: sliding session", () => {
     expect(renewed!.exp - nowS()).toBeGreaterThan(SESSION_MAX_AGE_S - 5);
   });
 
-  it("does not refresh once the login is older than 90 days (session ends at its exp)", async () => {
-    const token = await encryptSession({ userId: "u1", sat: nowS() - 90 * DAY - 60 }, SIGNING_KEY, nowS() + DAY);
+  it("does not refresh once the login is older than the absolute cap (session ends at its exp)", async () => {
+    const token = await encryptSession({ userId: "u1", sat: nowS() - SESSION_ABSOLUTE_MAX_S - 60 }, SIGNING_KEY, nowS() + DAY);
     const res = await proxy(req("/lop/abc", { token }));
     expect(location(res)).toBeNull();
     expect(res.headers.get("set-cookie")).toBeNull();

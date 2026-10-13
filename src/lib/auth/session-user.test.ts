@@ -7,7 +7,7 @@ import { canAccess, canManageGrade } from "@/lib/access/can-access";
 import { proxy } from "@/proxy";
 import { createTestDb } from "@/test/db";
 import { encryptSession, readSession } from "./session";
-import { SESSION_MAX_AGE_S } from "./session-policy";
+import { LEGACY_SESSION_MAX_AGE_S } from "./session-policy";
 import { loadSessionUser } from "./session-user";
 
 const SIGNING_KEY = "k".repeat(40);
@@ -92,9 +92,9 @@ describe("loadSessionUser", () => {
 
   it("judges a legacy token without sat by its inferred login time (exp - 30 days)", async () => {
     const { db, user } = await setup(new Date((nowS() - 10) * 1000));
-    expect(await loadSessionUser(db, await legacyToken(user.id, nowS() + SESSION_MAX_AGE_S - 60), SIGNING_KEY)).toBeNull();
+    expect(await loadSessionUser(db, await legacyToken(user.id, nowS() + LEGACY_SESSION_MAX_AGE_S - 60), SIGNING_KEY)).toBeNull();
     // exp xa hơn: lúc đăng nhập suy ra (exp - 30 ngày) sau mốc đổi → vẫn hợp lệ.
-    expect(await loadSessionUser(db, await legacyToken(user.id, nowS() + SESSION_MAX_AGE_S), SIGNING_KEY)).not.toBeNull();
+    expect(await loadSessionUser(db, await legacyToken(user.id, nowS() + LEGACY_SESSION_MAX_AGE_S), SIGNING_KEY)).not.toBeNull();
   });
 
   it("accepts a session created at or after the change (boundary: same second is accepted)", async () => {

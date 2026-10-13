@@ -4,6 +4,7 @@ import { attendance, classMemberships, classes, sessions, students, terms } from
 import type { Db } from "../types";
 import { membershipOf, type Membership } from "@/lib/promotion";
 import { studentColumns } from "./students";
+import { sortByGivenName } from "@/lib/students/name";
 
 export async function listTerms(db: Db, schoolYearId?: string) {
   if (schoolYearId !== undefined && !z.uuid().safeParse(schoolYearId).success) return [];
@@ -30,9 +31,8 @@ export async function resolveTerm(db: Db, termId: string | undefined, today: str
 
 export async function rosterOf(db: Db, classIds: string[]) {
   if (classIds.length === 0) return [];
-  return db.select(studentColumns).from(students)
-    .where(and(inArray(students.classId, classIds), eq(students.active, true)))
-    .orderBy(asc(students.fullName));
+  return sortByGivenName(await db.select(studentColumns).from(students)
+    .where(and(inArray(students.classId, classIds), eq(students.active, true))));
 }
 
 /** Học kỳ đã kết thúc trước hôm nay (ngày Việt Nam). */
@@ -54,9 +54,8 @@ export type RosterEntry = Awaited<ReturnType<typeof rosterOf>>[number] & Members
 export async function termRoster(db: Db, classIds: string[], term: { id: string; endsOn: string }, today: string): Promise<RosterEntry[]> {
   const label = <T extends { classId: string; active: boolean }>(s: T) => ({ ...s, ...membershipOf({ currentClassId: s.classId, active: s.active }, s.classId) });
   if (!isPastTerm(term, today) || classIds.length === 0) return (await rosterOf(db, classIds)).map(label);
-  const members = (await db.select(studentColumns).from(students)
-    .where(and(inArray(students.classId, classIds), eq(students.active, true), notMarkedElsewhereIn(term.id)))
-    .orderBy(asc(students.fullName))).map(label);
+  const members = sortByGivenName(await db.select(studentColumns).from(students)
+    .where(and(inArray(students.classId, classIds), eq(students.active, true), notMarkedElsewhereIn(term.id)))).map(label);
   const pairs = await db
     .selectDistinct({ ...studentColumns, currentClassId: students.classId, classId: sessions.classId })
     .from(attendance)
@@ -77,7 +76,7 @@ export async function termRoster(db: Db, classIds: string[], term: { id: string;
   for (const { currentClassId, ...s } of unmarkedFormer) {
     if (!existing.has(`${s.classId}:${s.id}`)) all.push({ ...s, ...membershipOf({ currentClassId, active: s.active }, s.classId) });
   }
-  return all.sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
+  return sortByGivenName(all);
 }
 
 export const neverMarkedInTerm = (termId: string) => sql`not exists (

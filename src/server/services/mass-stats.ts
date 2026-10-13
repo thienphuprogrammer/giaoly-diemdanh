@@ -8,6 +8,7 @@ import { isMassWarning, tallyMass, type MassCell, type MassWeek } from "@/lib/at
 import { todayInVietnam } from "@/lib/dates";
 import { isActionable } from "@/lib/promotion";
 import { guardClass } from "../guard";
+import { compareByGivenName } from "@/lib/students/name";
 
 export interface MassStatRow {
   studentId: string;
@@ -112,5 +113,5 @@ export async function massAttentionList(db: Db, user: AppUser, termId: string, t
     .sort((a, b) =>
       b.missed - a.missed ||
       a.className.localeCompare(b.className, "vi") ||
-      a.fullName.localeCompare(b.fullName, "vi"));
+      compareByGivenName(a.fullName, b.fullName));
 }

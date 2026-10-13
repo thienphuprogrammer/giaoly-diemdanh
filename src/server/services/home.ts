@@ -10,6 +10,7 @@ import { todayInVietnam } from "@/lib/dates";
 import { massAttentionList, type MassAttentionItem } from "./mass-stats";
 import { attentionList, type AttentionItem } from "./stats";
 import { listSchoolYearsForUser, resolveSchoolYearForUser, type SchoolYearSummary } from "./school-years";
+import { compareByGivenName } from "@/lib/students/name";
 
 export interface HomeClass {
   id: string;
@@ -93,7 +94,7 @@ function combinedAttention(absence: AttentionItem[], mass: MassAttentionItem[]):
   }
   return [...combined.values()].sort((a, b) =>
     Number(b.warning) - Number(a.warning) ||
-    a.fullName.localeCompare(b.fullName, "vi") ||
+    compareByGivenName(a.fullName, b.fullName) ||
     a.className.localeCompare(b.className, "vi") || a.studentId.localeCompare(b.studentId));
 }
 

@@ -1,6 +1,7 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { students } from "../schema";
 import type { Db } from "../types";
+import { sortByGivenName } from "@/lib/students/name";
 
 export interface QrCard { studentId: string; fullName: string; saintName: string | null; token: string }
 
@@ -10,5 +11,5 @@ export function listQrCards(db: Db, classId: string): Promise<QrCard[]> {
     .select({ studentId: students.id, fullName: students.fullName, saintName: students.saintName, token: students.qrToken })
     .from(students)
     .where(and(eq(students.classId, classId), eq(students.active, true)))
-    .orderBy(asc(students.fullName));
+    .then((rows) => sortByGivenName(rows));
 }

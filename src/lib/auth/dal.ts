@@ -12,7 +12,7 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 /**
- * JWT và cookie cùng thời hạn 30 ngày; proxy cấp lại khi còn < 3 ngày (phiên trượt).
+ * JWT và cookie cùng thời hạn 180 ngày; proxy cấp lại khi còn < 30 ngày (phiên trượt).
  * `authTime` (giây): lúc đăng nhập ghi vào `sat`, mặc định bây giờ. Đổi mật khẩu truyền đúng mốc đổi để phiên mới của
  * thiết bị đó không bao giờ rơi trước `password_changed_at`.
  */

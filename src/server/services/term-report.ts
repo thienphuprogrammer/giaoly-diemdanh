@@ -8,6 +8,7 @@ import type { ReportInput } from "@/lib/report/term-report";
 import { guardClass } from "../guard";
 import { massAttentionList, massStats } from "./mass-stats";
 import { attentionList, classStats, gradeOverview } from "./stats";
+import { compareByGivenName } from "@/lib/students/name";
 
 export interface ReportTerm { id: string; name: string; startsOn: string; endsOn: string }
 
@@ -112,6 +113,6 @@ export async function gradeReport(db: Db, user: AppUser, termId: string, today: 
       studentId, fullName: (a ?? m)!.fullName, className: (a ?? m)!.className,
       unexcused: a ? a.unexcused : null, missedMass: m ? m.missed : null,
     };
-  }).sort((x, y) => x.className.localeCompare(y.className, "vi") || x.fullName.localeCompare(y.fullName, "vi"));
+  }).sort((x, y) => x.className.localeCompare(y.className, "vi") || compareByGivenName(x.fullName, y.fullName));
   return { gradeName: grade.name, term, classes, warnings };
 }

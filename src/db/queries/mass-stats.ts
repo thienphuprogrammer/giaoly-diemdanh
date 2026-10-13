@@ -4,6 +4,7 @@ import { membershipOf } from "@/lib/promotion";
 import { attendance, classMemberships, classes, grades, sessions, students } from "../schema";
 import type { Db } from "../types";
 import { neverMarkedInTerm, notMarkedElsewhereIn } from "./stats";
+import { sortByGivenName } from "@/lib/students/name";
 
 type Reader = Pick<Db, "select" | "selectDistinct">;
 
@@ -131,8 +132,7 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
         studentId ? eq(students.id, studentId) : eq(students.active, true),
         // Học kỳ đã qua: cùng quy tắc với `termRoster` (em được chuyển vào sau, đã có dòng ở lớp khác, không thuộc lớp).
         includeFormer ? notMarkedElsewhereIn(termId) : undefined,
-      ))
-      .orderBy(asc(students.fullName)),
+      )),
     formerQuery,
     unmarkedFormerQuery,
   ]);
@@ -161,7 +161,7 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
 function mergeRoster<T extends { id: string; classId: string; fullName: string }>(roster: T[], extra: T[]): T[] {
   const have = new Set(roster.map((s) => `${s.classId}:${s.id}`));
   const added = extra.filter((s) => !have.has(`${s.classId}:${s.id}`));
-  return added.length === 0 ? roster : [...roster, ...added].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
+  return sortByGivenName(added.length === 0 ? roster : [...roster, ...added]);
 }
 
 /**

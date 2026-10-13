@@ -17,7 +17,7 @@ function currentPath(request: NextRequest): string {
  * - Request khác GET (server action gửi tới URL trang) luôn đi tiếp, kể cả khi thiếu cookie: proxy trả 307 sẽ phá giao
  *   thức redirect của action. requireUser() (mọi server action đều gọi) chặn và chuyển về /login?next= theo header do
  *   proxy đặt. Proxy chỉ là lớp lạc quan; ranh giới quyền thật nằm ở DAL.
- * - Phiên hợp lệ còn < 3 ngày → cấp lại cookie 30 ngày trên response (Server Component không đặt được cookie).
+ * - Phiên hợp lệ còn < 30 ngày → cấp lại cookie 180 ngày trên response (Server Component không đặt được cookie).
  * Proxy chỉ kiểm chữ ký/hạn; user vẫn được đọc lại từ DB ở mỗi request (DAL), nên tài khoản bị xóa vẫn bị chặn.
  */
 export async function proxy(request: NextRequest) {
@@ -42,7 +42,7 @@ export async function proxy(request: NextRequest) {
   headers.set(NEXT_PATH_HEADER, path);
   const res = NextResponse.next({ request: { headers } });
   if (decision === "refresh" && session) {
-    // Giữ nguyên `sat` (lúc đăng nhập) để trần 90 ngày không bị đẩy lùi.
+    // Giữ nguyên `sat` (lúc đăng nhập) để trần 1 năm không bị đẩy lùi.
     res.cookies.set(SESSION_COOKIE, await encryptSession({ userId: session.userId, sat: session.sat, ver: session.ver }, secret), sessionCookieOptions());
   }
   return res;

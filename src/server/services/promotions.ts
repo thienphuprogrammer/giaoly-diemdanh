@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { classesWithCountsOfGrades, findPromotionByToken, getPromotion, getPromotionClass, hasLaterPromotion, listGradePromotions, recentNextGradeEvents, type PromotionClass } from "@/db/queries/promotions";
 import { getGrade } from "@/db/queries/grades";
@@ -11,6 +11,7 @@ import { MAX_PROMOTION, STALE_PROMOTION } from "@/lib/promotion";
 import { recordAudit } from "../audit";
 import { NOT_FOUND } from "../guard";
 import { fail, ok, type ActionResult } from "../result";
+import { sortByGivenName } from "@/lib/students/name";
 
 /**
  * Lên lớp (spec §3, quyết định đã chốt: CHUYỂN em). Đổi `students.class_id` sang lớp đích: thẻ QR (`qr_token`) giữ nguyên,
@@ -98,12 +99,11 @@ export async function previewPromotion(db: Db, user: AppUser, input: unknown): P
   if (!pair) return fail(NOT_FOUND);
   const rows = await db.select({ id: students.id, fullName: students.fullName, saintName: students.saintName })
     .from(students)
-    .where(and(eq(students.classId, pair.from.id), eq(students.active, true)))
-    .orderBy(asc(students.fullName));
+    .where(and(eq(students.classId, pair.from.id), eq(students.active, true)));
   return ok({
     from: { id: pair.from.id, name: pair.from.name, schoolYearId: pair.from.schoolYearId, schoolYearName: pair.from.schoolYearName },
     to: { id: pair.to.id, name: pair.to.name, gradeName: pair.to.gradeName, schoolYearId: pair.to.schoolYearId, schoolYearName: pair.to.schoolYearName },
-    students: [...rows].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi")).map((s) => ({ ...s, selected: true })),
+    students: sortByGivenName(rows).map((s) => ({ ...s, selected: true })),
   });
 }
 

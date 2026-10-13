@@ -1,6 +1,7 @@
-import { and, asc, eq, ne, or } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { classMemberships, students } from "../schema";
 import type { Db } from "../types";
+import { sortByGivenName } from "@/lib/students/name";
 
 /** Mọi truy vấn thiếu nhi dùng danh sách cột này; `qrToken` cố ý vắng mặt để không lọt xuống client. */
 export const studentColumns = {
@@ -15,10 +16,9 @@ export const studentColumns = {
 } as const;
 
 export async function listStudents(db: Db, classId: string, includeInactive = false) {
-  const rows = await db.select(studentColumns).from(students)
+  const rows = sortByGivenName(await db.select(studentColumns).from(students)
     .innerJoin(classMemberships, eq(classMemberships.studentId, students.id))
-    .where(and(eq(classMemberships.classId, classId), includeInactive ? undefined : or(eq(students.active, true), ne(students.classId, classId))))
-    .orderBy(asc(students.fullName));
+    .where(and(eq(classMemberships.classId, classId), includeInactive ? undefined : or(eq(students.active, true), ne(students.classId, classId)))));
   return rows.map((s) => ({ ...s, former: s.classId !== classId }));
 }
 

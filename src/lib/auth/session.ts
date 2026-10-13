@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { SESSION_MAX_AGE_S, sessionAuthTime, sessionRefreshDecision } from "./session-policy";
 
 export interface SessionPayload { userId: string; ver?: number }
-/** `sat` (session-auth time, giây): lúc đăng nhập; được giữ nguyên khi gia hạn để áp trần tuyệt đối 90 ngày. */
+/** `sat` (session-auth time, giây): lúc đăng nhập; được giữ nguyên khi gia hạn để áp trần tuyệt đối 1 năm. */
 export interface VerifiedSession extends SessionPayload { exp: number; sat: number; ver: number }
 
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -11,7 +11,7 @@ const ALG = "HS256";
 const key = (secret: string) => new TextEncoder().encode(secret);
 
 /**
- * `expiresAt` mặc định = bây giờ + 30 ngày, khớp `maxAge` của cookie.
+ * `expiresAt` mặc định = bây giờ + 180 ngày, khớp `maxAge` của cookie.
  * `sat` mặc định = bây giờ (đăng nhập); khi gia hạn truyền `sat` cũ để giữ nguyên.
  */
 export async function encryptSession(
@@ -29,7 +29,7 @@ export async function encryptSession(
 }
 
 /**
- * Kiểm chữ ký + hạn + cùng tiêu chí với proxy (thời hạn tối đa 30 ngày, trần 90 ngày từ `sat`).
+ * Kiểm chữ ký + hạn + cùng tiêu chí với proxy (thời hạn tối đa 180 ngày, trần 1 năm từ `sat`).
  * Trả `exp`/`sat` để quyết định gia hạn. Token hỏng/hết hạn/quá trần → null.
  */
 export async function readSession(token: string | undefined, secret: string): Promise<VerifiedSession | null> {

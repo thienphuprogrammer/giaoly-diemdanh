@@ -1,14 +1,17 @@
 /**
  * Chính sách phiên đăng nhập (thuần, dùng được cả ở proxy lẫn DAL).
- * Phiên trượt: JWT và cookie cùng sống 30 ngày; khi request hợp lệ thấy phiên còn dưới 3 ngày thì cấp lại.
+ * Phiên trượt, giữ đăng nhập lâu: JWT và cookie cùng sống 180 ngày; khi request hợp lệ thấy phiên còn dưới 30 ngày thì
+ * cấp lại, nên dùng ít nhất mỗi vài tháng một lần là không bị đăng xuất. Đổi/đặt lại mật khẩu hoặc khoá tài khoản vẫn thu hồi phiên.
  */
 const DAY_S = 24 * 60 * 60;
 
 export const SESSION_COOKIE = "session";
-export const SESSION_MAX_AGE_S = 30 * DAY_S;
-export const SESSION_REFRESH_BELOW_S = 3 * DAY_S;
-/** Trần tuyệt đối tính từ lúc đăng nhập (`sat`): quá 90 ngày thì phải đăng nhập lại dù vẫn dùng đều. */
-export const SESSION_ABSOLUTE_MAX_S = 90 * DAY_S;
+export const SESSION_MAX_AGE_S = 180 * DAY_S;
+export const SESSION_REFRESH_BELOW_S = 30 * DAY_S;
+/** Trần tuyệt đối tính từ lúc đăng nhập (`sat`): quá 1 năm thì phải đăng nhập lại dù vẫn dùng đều. */
+export const SESSION_ABSOLUTE_MAX_S = 365 * DAY_S;
+/** Thời hạn phiên trước khi đổi chính sách: token cũ không có `sat` được suy ra `sat = exp - 30 ngày`. */
+export const LEGACY_SESSION_MAX_AGE_S = 30 * DAY_S;
 /** Cho phép đồng hồ lệch nhẹ khi so `exp` với thời hạn tối đa. */
 const CLOCK_SKEW_S = 5 * 60;
 
@@ -16,15 +19,15 @@ export type RefreshDecision = "keep" | "refresh" | "invalid";
 
 /** Thời điểm đăng nhập (giây). Token cũ chưa có `sat`: coi như `exp - 30 ngày` (chuyển đổi êm). */
 export function sessionAuthTime({ exp, sat }: { exp: number; sat?: number }): number {
-  return sat === undefined ? exp - SESSION_MAX_AGE_S : sat;
+  return sat === undefined ? exp - LEGACY_SESSION_MAX_AGE_S : sat;
 }
 
 /**
  * Quyết định cho một token ĐÃ kiểm chữ ký, theo `exp` và `sat` (giây). Proxy và DAL dùng chung (cùng một tiêu chí).
  * - `invalid`: hết hạn, thiếu/sai `exp`, `exp` xa hơn thời hạn tối đa, `sat` sai/ở tương lai,
- *   hoặc đã đăng nhập quá 90 ngày (+ lệch đồng hồ). Không bao giờ gia hạn.
- * - `keep`: còn hạn; hoặc đã quá 90 ngày kể từ đăng nhập (không cấp lại, phiên hết ở `exp` tự nhiên).
- * - `refresh`: còn dưới 3 ngày và chưa quá trần 90 ngày.
+ *   hoặc đã đăng nhập quá 1 năm (+ lệch đồng hồ). Không bao giờ gia hạn.
+ * - `keep`: còn hạn; hoặc đã quá 1 năm kể từ đăng nhập (không cấp lại, phiên hết ở `exp` tự nhiên).
+ * - `refresh`: còn dưới 30 ngày và chưa quá trần 1 năm.
  */
 export function sessionRefreshDecision(exp: number | undefined, nowS: number, sat?: number): RefreshDecision {
   if (typeof exp !== "number" || !Number.isFinite(exp)) return "invalid";
