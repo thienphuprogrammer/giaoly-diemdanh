@@ -1,6 +1,6 @@
 import { and, arrayOverlaps, asc, count, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { auditEvents, classes, grades, promotions, users, students } from "../schema";
+import { auditEvents, classes, grades, promotions, schoolYears, terms, users, students } from "../schema";
 import type { Db } from "../types";
 
 type Reader = Pick<Db, "select">;
@@ -11,39 +11,50 @@ export interface PromotionClass {
   gradeId: string;
   gradeName: string;
   nextGradeId: string | null;
+  schoolYearId: string;
+  schoolYearName: string;
+  yearStartsOn: string | null;
 }
 
 /** Lớp kèm khối và khối kế tiếp của khối đó; null khi không có. */
 export async function getPromotionClass(db: Reader, classId: string): Promise<PromotionClass | null> {
   const [row] = await db
-    .select({ id: classes.id, name: classes.name, gradeId: classes.gradeId, gradeName: grades.name, nextGradeId: grades.nextGradeId })
+    .select({ id: classes.id, name: classes.name, gradeId: classes.gradeId, gradeName: grades.name, nextGradeId: grades.nextGradeId,
+      schoolYearId: classes.schoolYearId, schoolYearName: schoolYears.name,
+      yearStartsOn: sql<string | null>`(select min(${terms.startsOn})::text from ${terms} where ${terms.schoolYearId} = ${classes.schoolYearId})`,
+    })
     .from(classes)
     .innerJoin(grades, eq(grades.id, classes.gradeId))
+    .innerJoin(schoolYears, eq(schoolYears.id, classes.schoolYearId))
     .where(eq(classes.id, classId));
   return row ?? null;
 }
 
 /** Các lớp của những khối cho trước, kèm số em đang học, theo tên lớp. */
-export function classesWithCountsOfGrades(db: Reader, gradeIds: string[]) {
+export function classesWithCountsOfGrades(db: Reader, gradeIds?: string[]) {
   return db
-    .select({ id: classes.id, name: classes.name, gradeId: classes.gradeId, gradeName: grades.name, activeCount: count(students.id) })
+    .select({ id: classes.id, name: classes.name, gradeId: classes.gradeId, gradeName: grades.name,
+      schoolYearId: classes.schoolYearId, schoolYearName: schoolYears.name, activeCount: count(students.id) })
     .from(classes)
     .innerJoin(grades, eq(grades.id, classes.gradeId))
+    .innerJoin(schoolYears, eq(schoolYears.id, classes.schoolYearId))
     .leftJoin(students, and(eq(students.classId, classes.id), eq(students.active, true)))
-    .where(inArray(classes.gradeId, gradeIds))
-    .groupBy(classes.id, grades.name)
-    .orderBy(asc(classes.name));
+    .where(gradeIds ? inArray(classes.gradeId, gradeIds) : undefined)
+    .groupBy(classes.id, grades.name, schoolYears.name)
+    .orderBy(asc(classes.name), asc(schoolYears.name));
 }
 
 const toClass = alias(classes, "to_class");
 const fromGrade = alias(grades, "from_grade");
+const fromYear = alias(schoolYears, "from_year");
+const toYear = alias(schoolYears, "to_year");
 
 /**
  * Lượt lên lớp liên quan tới khối: lớp nguồn HOẶC lớp đích thuộc khối, mới nhất trước. `fresh` = còn trong 24 giờ
  * (đồng hồ của database). `days` giới hạn thêm theo số ngày gần đây (băng báo "chuyển vào").
  */
-export function listGradePromotions(db: Reader, gradeId: string, limit: number, opts: { incomingOnly?: boolean; days?: number } = {}) {
-  const scope = opts.incomingOnly
+export function listGradePromotions(db: Reader, gradeId: string | undefined, limit: number, opts: { incomingOnly?: boolean; days?: number } = {}) {
+  const scope = !gradeId ? undefined : opts.incomingOnly
     ? and(eq(toClass.gradeId, gradeId), ne(classes.gradeId, gradeId))
     : or(eq(classes.gradeId, gradeId), eq(toClass.gradeId, gradeId));
   return db
@@ -53,6 +64,8 @@ export function listGradePromotions(db: Reader, gradeId: string, limit: number, 
       fromGradeName: fromGrade.name,
       fromClassName: classes.name,
       toClassName: toClass.name,
+      fromSchoolYearName: fromYear.name,
+      toSchoolYearName: toYear.name,
       studentIds: promotions.studentIds,
       createdAt: promotions.createdAt,
       undoneAt: promotions.undoneAt,
@@ -63,6 +76,8 @@ export function listGradePromotions(db: Reader, gradeId: string, limit: number, 
     .innerJoin(classes, eq(classes.id, promotions.fromClassId))
     .innerJoin(fromGrade, eq(fromGrade.id, classes.gradeId))
     .innerJoin(toClass, eq(toClass.id, promotions.toClassId))
+    .innerJoin(fromYear, eq(fromYear.id, classes.schoolYearId))
+    .innerJoin(toYear, eq(toYear.id, toClass.schoolYearId))
     .leftJoin(users, eq(users.id, promotions.actorId))
     .where(and(scope, opts.days ? sql`${promotions.createdAt} > now() - make_interval(days => ${opts.days})` : undefined))
     .orderBy(desc(promotions.createdAt), desc(promotions.id))
@@ -112,6 +127,7 @@ export async function getPromotion(db: Reader, id: string) {
       toClassName: toClass.name,
       studentIds: promotions.studentIds,
       removedSeats: promotions.removedSeats,
+      newMembershipStudentIds: promotions.newMembershipStudentIds,
       undoneAt: promotions.undoneAt,
       fresh: sql<boolean>`${promotions.createdAt} > now() - interval '24 hours'`,
     })

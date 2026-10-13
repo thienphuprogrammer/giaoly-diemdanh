@@ -25,11 +25,20 @@ export async function createTestDbBeforeMigration(tag: string) {
   const at = tags.indexOf(tag);
   if (at < 0) throw new Error(`Không có migration ${tag}`);
   const client = new PGlite();
-  for (const t of tags.slice(0, at)) for (const stmt of sqlOf(t)) await client.exec(stmt);
+  for (const t of tags.slice(0, at)) {
+    await client.transaction(async (tx) => {
+      for (const stmt of sqlOf(t)) await tx.exec(stmt);
+    });
+  }
   return {
     db: drizzle(client, { schema }) as unknown as Db,
     client,
-    async apply() { for (const stmt of sqlOf(tag)) await client.exec(stmt); },
+    async apply() {
+      // Chạy như migrator thật: một lỗi phải thu hồi cả thay đổi dữ liệu lẫn DDL của migration.
+      await client.transaction(async (tx) => {
+        for (const stmt of sqlOf(tag)) await tx.exec(stmt);
+      });
+    },
   };
 }
 
@@ -44,3 +53,9 @@ export const PUSH_MIGRATION = "0008_push";
 
 /** Migration: CHECK lịch học có đủ cả thứ và giờ (hoặc trống cả hai), `push_subscriptions.auth_failure_count`. */
 export const PUSH_FIX_MIGRATION = "0009_push_fixes";
+
+/** Migration: `users.password_changed_at` (đổi/đặt lại mật khẩu thu hồi các phiên đăng nhập trước đó). */
+export const PASSWORD_CHANGED_MIGRATION = "0010_password_changed_at";
+
+/** Migration: quản trị viên toàn hệ thống, lớp theo niên khóa và danh sách lớp lưu lịch sử. */
+export const ADMIN_ANNUAL_CLASSES_MIGRATION = "0011_admin_annual_classes";

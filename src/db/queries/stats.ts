@@ -1,11 +1,15 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attendance, classes, sessions, students, terms } from "../schema";
+import { attendance, classMemberships, classes, sessions, students, terms } from "../schema";
 import type { Db } from "../types";
 import { membershipOf, type Membership } from "@/lib/promotion";
 import { studentColumns } from "./students";
 
-export const listTerms = (db: Db) => db.select().from(terms).orderBy(desc(terms.startsOn));
+export async function listTerms(db: Db, schoolYearId?: string) {
+  if (schoolYearId !== undefined && !z.uuid().safeParse(schoolYearId).success) return [];
+  return db.select().from(terms)
+    .where(schoolYearId ? eq(terms.schoolYearId, schoolYearId) : undefined).orderBy(desc(terms.startsOn));
+}
 
 /** Học kỳ theo id; id không phải uuid hoặc không tồn tại => null (không để truy vấn lỗi với id giả). */
 export async function termById(db: Db, termId: string) {
@@ -13,8 +17,8 @@ export async function termById(db: Db, termId: string) {
   return (await db.select().from(terms).where(eq(terms.id, termId)))[0] ?? null;
 }
 
-export async function resolveTerm(db: Db, termId: string | undefined, today: string) {
-  const all = await listTerms(db);
+export async function resolveTerm(db: Db, termId: string | undefined, today: string, schoolYearId?: string) {
+  const all = await listTerms(db, schoolYearId);
   // Ngoài mọi học kỳ: học kỳ gần nhất ĐÃ bắt đầu (danh sách mới trước), nếu chưa có thì học kỳ sớm nhất. Không bao giờ
   // chọn một học kỳ tương lai khi đã có học kỳ đã bắt đầu (năm học tạo sẵn cho tương lai không thành "hiện tại").
   return all.find((t) => t.id === termId)
@@ -63,8 +67,22 @@ export async function termRoster(db: Db, classIds: string[], term: { id: string;
   const marked = pairs
     .filter((p) => !have.has(`${p.classId}:${p.id}`))
     .map(({ currentClassId, ...p }) => ({ ...p, ...membershipOf({ currentClassId, active: p.active }, p.classId) }));
-  return [...members, ...marked].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
+  // Memberships retain pupils who transferred before ever receiving a mark. Where marks exist, the session remains
+  // the authoritative term/class pair; this avoids adding a pupil to an earlier term merely because they visited a class later.
+  const unmarkedFormer = await db.select({ ...studentColumns, currentClassId: students.classId, classId: classMemberships.classId })
+    .from(classMemberships).innerJoin(students, eq(students.id, classMemberships.studentId))
+    .where(and(inArray(classMemberships.classId, classIds), ne(students.classId, classMemberships.classId), neverMarkedInTerm(term.id)));
+  const all = [...members, ...marked];
+  const existing = new Set(all.map((s) => `${s.classId}:${s.id}`));
+  for (const { currentClassId, ...s } of unmarkedFormer) {
+    if (!existing.has(`${s.classId}:${s.id}`)) all.push({ ...s, ...membershipOf({ currentClassId, active: s.active }, s.classId) });
+  }
+  return all.sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
 }
+
+export const neverMarkedInTerm = (termId: string) => sql`not exists (
+  select 1 from ${attendance} a join ${sessions} se on se.id = a.session_id
+  where a.student_id = "students"."id" and se.term_id = ${termId})`;
 
 /**
  * Điều kiện trên bảng `students`: em KHÔNG có dòng điểm danh nào ở buổi (học hoặc đi lễ) của một lớp khác lớp hiện tại
@@ -96,5 +114,5 @@ export async function sessionsHeld(db: Db, classIds: string[], termId: string): 
   return new Map(rows.map((r) => [r.classId, r.n]));
 }
 
-export const classesInGrade = (db: Db, gradeId: string) =>
-  db.select().from(classes).where(eq(classes.gradeId, gradeId)).orderBy(asc(classes.name));
+export const classesInGrade = (db: Db, gradeId: string, schoolYearId?: string) =>
+  db.select().from(classes).where(and(eq(classes.gradeId, gradeId), schoolYearId ? eq(classes.schoolYearId, schoolYearId) : undefined)).orderBy(asc(classes.name));

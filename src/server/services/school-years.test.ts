@@ -196,7 +196,7 @@ describe("schoolYearOverview", () => {
     expect(o?.years.map((y) => y.name)).toEqual(["2026-2027"]);
     expect(o?.years[0].terms.map((t) => t.name)).toEqual(["Học kỳ 1", "Học kỳ 2"]);
     expect(o?.defaults).toEqual(VALID);
-    expect(o?.years[0].deletable).toBe(true);
+    expect(o?.years[0].deletable).toBe(false); // The fixture classes already belong to this year, even before attendance exists.
     await db.insert(sessions).values({ classId: b.classId, termId: b.termId, heldOn: "2026-10-11" });
     expect((await schoolYearOverview(db, b.head, "2026-10-12"))?.years[0].deletable).toBe(false);
     await create(db, b.head, VALID);

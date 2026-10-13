@@ -2,6 +2,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { findSession, findTermFor, getMark, getSession, getStudentWithMark, loadBoardData, unexcusedCount, type BoardStudent } from "@/db/queries/attendance";
 import { getStudent } from "@/db/queries/students";
+import { getClassById } from "@/db/queries/classes";
 import { attendance, sessions, students, type SessionKind } from "@/db/schema";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
@@ -54,9 +55,11 @@ export async function checkOpenInput(
 export async function openCheckedSession(
   db: Db, classId: string, heldOn: string, kind: SessionKind, termOn: readonly string[],
 ): Promise<ActionResult<Session>> {
+  const cls = await getClassById(db, classId);
+  if (!cls) return fail(NOT_FOUND);
   let term: { id: string } | null = null;
   for (const day of termOn) {
-    term = await findTermFor(db, day);
+    term = await findTermFor(db, day, cls.schoolYearId);
     if (term) break;
   }
   if (!term) return fail("Ngày này không thuộc học kỳ nào");

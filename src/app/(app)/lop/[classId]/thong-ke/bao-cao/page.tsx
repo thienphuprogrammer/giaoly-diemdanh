@@ -10,6 +10,7 @@ import { DEFAULT_RULES } from "@/lib/attendance/warning";
 import { todayInVietnam } from "@/lib/dates";
 import { buildReportRows, buildReportTotals, termRangeLabel } from "@/lib/report/term-report";
 import { classTermReport } from "@/server/services/term-report";
+import { guardClass } from "@/server/guard";
 
 export const metadata = { title: "Báo cáo học kỳ" };
 
@@ -23,9 +24,11 @@ export default async function ClassReportPage({
   const { classId } = await params;
   const { termId } = await searchParams;
   const user = await requireUser();
+  const cls = await guardClass(db, user, classId, "read");
+  if (!cls) notFound();
   const today = todayInVietnam();
   const back = `/lop/${classId}/thong-ke${termId ? `?termId=${encodeURIComponent(termId)}` : ""}`;
-  const term = await resolveTerm(db, termId, today);
+  const term = await resolveTerm(db, termId, today, cls.schoolYearId);
   if (!term) {
     return <EmptyState icon={CalendarRange} title="Chưa có học kỳ nào">Khi có học kỳ, báo cáo chuyên cần của lớp sẽ in được ở đây.</EmptyState>;
   }

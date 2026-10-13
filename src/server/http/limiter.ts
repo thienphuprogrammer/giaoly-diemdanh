@@ -11,3 +11,6 @@ export const pushSubscribeLimiter = createRateLimiter({ max: 20, windowMs: 60_00
 
 /** "Gửi thử" thông báo: mỗi lần là một lượt gửi ra dịch vụ push bên ngoài. */
 export const pushTestLimiter = createRateLimiter({ max: 3, windowMs: 60_000 });
+
+/** Đổi mật khẩu: mỗi lần là một (hai) lượt bcrypt; 10/phút/người là thừa, chặn spam trước cả khi chạm khóa 5 lượt sai. */
+export const passwordChangeLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });

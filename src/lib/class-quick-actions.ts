@@ -6,7 +6,7 @@ export interface ClassQuickAction {
 }
 
 /**
- * Nút nhanh trên thẻ lớp ở trang chủ. Người có quyền ghi: điểm danh hôm nay + quét QR.
+ * Nút nhanh trên thẻ ở danh sách lớp. Người có quyền ghi: điểm danh hôm nay + quét QR.
  * Người chỉ đọc (trưởng khối không được gán lớp): xem buổi hôm nay + thống kê; không bao giờ có máy quét.
  */
 export function classQuickActions({ classId, canWrite, today }: { classId: string; canWrite: boolean; today: string }): ClassQuickAction[] {

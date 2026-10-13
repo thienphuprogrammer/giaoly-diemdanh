@@ -19,7 +19,7 @@ async function fillLogin(page: Page, email: string) {
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await fillLogin(page, email);
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 const userId = async (email: string) => {
@@ -42,7 +42,7 @@ test("mở trang sâu khi chưa đăng nhập: đăng nhập xong quay về đú
   await expect(page).toHaveURL((u) => u.pathname === "/login" && u.searchParams.get("next") === target);
   await fillLogin(page, "glv-a@e2e.vn");
   await expect(page).toHaveURL((u) => `${u.pathname}${u.search}` === target);
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeHidden();
 });
 
 for (const [label, next] of [
@@ -55,7 +55,7 @@ for (const [label, next] of [
   test(`next không an toàn (${label}) thì về trang chủ`, async ({ page }) => {
     await page.goto(`/login?next=${encodeURIComponent(next)}`);
     await fillLogin(page, "glv-a@e2e.vn");
-    await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/");
     expect(new URL(page.url()).host).toBe(new URL(test.info().project.use.baseURL ?? "http://localhost:3100").host);
   });
@@ -66,7 +66,7 @@ test("phiên trượt: cookie còn dưới 3 ngày được cấp lại 30 ngày
   const nearExpiry = await signToken(uid, nowS() + 2 * DAY_S);
   await page.context().addCookies([{ name: "session", value: nearExpiry, url: baseURL!, httpOnly: true, sameSite: "Lax" }]);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
   const renewed = await sessionCookie(page);
   expect(renewed?.value).not.toBe(nearExpiry);
   expect(renewed?.httpOnly).toBe(true);
@@ -88,6 +88,8 @@ test("phiên trượt: cookie còn dưới 3 ngày được cấp lại 30 ngày
 
 test("thẻ lớp: GLV có Điểm danh hôm nay + Quét QR; trưởng khối chỉ đọc chỉ có xem và thống kê", async ({ page }) => {
   await login(page, "head-a@e2e.vn");
+  await page.goto("/lop");
+  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
   const cardOf = (name: RegExp) => page.getByRole("listitem").filter({ has: page.getByRole("link", { name }) });
   const readOnly = cardOf(/Lớp A/);
   await expect(readOnly.getByRole("link", { name: "Xem buổi hôm nay" })).toBeVisible();
@@ -108,7 +110,7 @@ test("thẻ lớp: GLV có Điểm danh hôm nay + Quét QR; trưởng khối ch
   await readOnly.getByRole("link", { name: "Xem buổi hôm nay" }).click();
   await expect(page.getByText(/Chưa có buổi điểm danh ngày/)).toBeVisible();
 
-  await page.goto("/");
+  await page.goto("/lop");
   await cardOf(/Lớp C/).getByRole("link", { name: "Quét QR" }).click();
   await expect(page).toHaveURL(new RegExp(`/lop/${state().classC}/diem-danh/${todayInVietnam()}/quet$`));
   await expect(page.getByRole("region", { name: "Quét thẻ QR" })).toBeVisible();

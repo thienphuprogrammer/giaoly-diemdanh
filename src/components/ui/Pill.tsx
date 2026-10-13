@@ -1,7 +1,7 @@
 import { Eye, TriangleAlert, type LucideIcon } from "lucide-react";
 import { STATUS_META, type StatusKey } from "./status";
 
-const BASE = "inline-flex min-h-6 shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-display text-xs font-medium leading-tight";
+const BASE = "inline-flex min-h-6 shrink-0 items-center gap-1 rounded-[4px] border px-2 py-0.5 font-display text-xs font-medium leading-tight";
 
 const TONES = {
   neutral: "border-border bg-surface-muted text-ink-soft",

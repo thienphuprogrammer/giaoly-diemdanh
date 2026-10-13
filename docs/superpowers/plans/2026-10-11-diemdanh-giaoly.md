@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Web mobile-first để giáo lý viên điểm danh theo buổi bằng sơ đồ băng ghế, danh sách hoặc quét QR liên tục, cảnh báo khi một em vắng không phép ≥ 2 buổi/học kỳ, có thống kê và trang tổng quan cho trưởng khối. Mốc QR dùng queue + Redis để lưu nền, có tìm tên và sửa/hoàn tác từng lượt.
+**Goal:** Web mobile-first để giáo lý viên điểm danh theo buổi bằng sơ đồ băng ghế, danh sách hoặc quét QR liên tục, cảnh báo khi một em vắng không phép ≥ 2 buổi/học kỳ, có thống kê và trang tổng quan cho trưởng khối. Mốc QR gửi nền từ điện thoại và ghi idempotent trực tiếp trong transaction Postgres theo spec hiện tại; có tìm tên, sửa/hoàn tác và kiểm tra đủ dữ liệu đã lưu trước khi xác nhận cuối buổi.
 
-**Architecture:** Logic nghiệp vụ là hàm thuần trong `src/lib/*`. Truy vấn DB nằm trong `src/db/queries/*`. Thao tác ghi đi qua `src/server/services/*` (nhận `db` + `user` + input `unknown`, validate bằng zod, kiểm quyền bằng `guardClass`, trả kết quả có kiểu), test bằng PGlite cho phần DB/logic. Server Action và QR Route Handler chỉ là lớp mỏng xác thực → service; điểm danh không revalidate toàn trang sau từng lượt. QR: receipt + outbox Postgres → dispatcher → Redis queue → worker → transaction ghi attendance/event/version → truy vấn kết quả theo batch cho UI. Integration queue/worker dùng Redis thật trong môi trường test riêng.
+**Architecture:** Logic nghiệp vụ là hàm thuần trong `src/lib/*`. Truy vấn DB nằm trong `src/db/queries/*`. Thao tác ghi đi qua `src/server/services/*`, validate và kiểm quyền, test bằng PGlite và Postgres test riêng cho race. Server Action và QR Route Handler là lớp mỏng xác thực → service; không revalidate toàn trang sau từng lượt. QR ghi attendance + nhật ký scan cùng transaction, trả kết quả commit; hàng gửi tại thiết bị không chặn camera. Endpoint kết quả dùng đối chiếu timeout; kiểm tra cuối buổi đọc dữ liệu máy chủ, không dùng tổng lượt trong bộ nhớ để chứng minh đã lưu.
 
-**Tech Stack:** Next.js 16 (App Router, `proxy.ts`), TypeScript, Tailwind v4, Postgres + Drizzle ORM, session stateless bằng `jose` + cookie, `bcryptjs`, `zod` v4, `exceljs`, Vitest + PGlite, Playwright; mốc QR bổ sung Redis, queue adapter (BullMQ dự kiến), worker/dispatcher riêng và thư viện QR được kiểm tra trước khi chọn.
+**Tech Stack:** Next.js 16 (App Router, `proxy.ts`), TypeScript, Tailwind v4, Postgres + Drizzle ORM, session stateless bằng `jose` + cookie, `bcryptjs`, `zod` v4, `exceljs`, Vitest + PGlite, Playwright, decoder/generator QR theo Mốc 7 hiện tại. Redis/worker đã được loại khỏi bản spec mới; chỉ xét lại khi đo và có quyết định riêng, không coi là dependency đang có.
 
 **Spec:** `docs/superpowers/specs/2026-10-11-diemdanh-giaoly-design.md`
 
@@ -14,9 +14,10 @@
 1. Bỏ Auth.js beta, dùng session stateless `jose` + cookie `httpOnly` theo hướng dẫn trong `node_modules/next/dist/docs/01-app/02-guides/authentication.md`. Cookie chỉ chứa `userId`; thông tin người dùng và quyền được đọc lại từ DB ở mỗi request, nên đổi quyền có hiệu lực ngay.
 2. Mục `gap` trong layout có thêm `id` để làm React key.
 3. Trưởng khối xác định bằng `users.is_grade_head` + `users.grade_id` (bỏ `grades.head_id`), để GLV mới tạo chưa gán lớp vẫn thuộc khối.
-4. Cập nhật 2026-10-12: thêm **Mốc 7, Task 15–21** cho UX QR liên tục, queue + Redis, receipt/outbox bền, xử lý lỗi và hoàn tác an toàn. QR do GLV quét, không phải tự check-in. Chi tiết nghiệp vụ tại spec mục 3, 4.1–4.3, 7–11.
+4. Cập nhật 2026-10-12: **Mốc 7, Task 15–21** theo bản spec mới dùng ghi trực tiếp idempotent, thay phương án queue + Redis trước đó. QR do GLV quét, không phải tự check-in; xử lý lỗi/hoàn tác vẫn bắt buộc.
+5. Bổ sung rà soát lưu/UX: **Mốc 8, Task 22–24** và spec §4.4. Các thao tác vẫn tự lưu; xác nhận cuối buổi chỉ sau đối chiếu DB, cảnh báo kết quả chưa rõ và bảo vệ điều hướng cả QR/lẫn thủ công.
 
-**Cách tiếp tục trên code hiện có:** Mốc 1–6 giữ làm kế hoạch nền ban đầu; không chạy lại các đoạn tạo/ghi đè file hoặc suy ra tiến độ từ checkbox cũ. Đọc implementation hiện tại trước khi sửa. Mốc 7 là phần mở rộng cần triển khai và kiểm chứng; các bước dưới đây chưa được đánh dấu hoàn thành. Bản nháp UI chỉ tham khảo, lần cập nhật này không mặc định thay toàn bộ theme.
+**Cách tiếp tục trên code hiện có:** Mốc 1–6 giữ làm kế hoạch nền ban đầu; không chạy lại các đoạn tạo/ghi đè file hoặc suy ra tiến độ từ checkbox cũ. Đọc implementation hiện tại trước khi sửa; Mốc 7 đã có code đang được kiểm chứng, Mốc 8 là yêu cầu UX bổ sung chưa triển khai. Giữ thay đổi của các phiên đang làm song song, không reset/ghi đè code của người khác. Bản nháp UI chỉ tham khảo, không mặc định thay toàn bộ theme.
 
 ## Global Constraints
 
@@ -31,10 +32,9 @@
 - Không hardcode secret; `AUTH_SECRET` ≥ 32 ký tự, kiểm tra khi dùng.
 - Coverage ≥ **80%** cho `src/lib`, `src/server`, `src/db/queries`.
 - Commit theo `<type>: <description>` (feat, fix, refactor, docs, test, chore), kèm dòng attribution mà phiên làm việc yêu cầu. Chỉ `git add` đúng file của task.
-- QR: trạng thái gửi/nhận/xử lý không phải trạng thái điểm danh; không tính lượt chờ vào số đã lưu. Camera không chờ worker để đọc mã mới.
-- Receipt + outbox commit trước acknowledgment; event ID giữ nguyên khi gửi lại, DB version giữ cả sau xóa. QR, thủ công, ghi hàng loạt và undo phải cùng giao thức concurrency.
+- QR: trạng thái đang gửi/chưa xác nhận không phải trạng thái điểm danh; camera không chờ request hoàn thành. Đã lưu chỉ sau commit, event ID giữ nguyên khi gửi lại; các đường ghi/undo giữ hợp đồng chống trùng và không ghi đè sửa mới.
 - Thẻ invalid/sai lớp/bị thu hồi, em inactive, mất quyền hoặc buổi nghỉ lễ không được ghi; status/undo cũng xác thực và kiểm quyền. Không tự mở URL QR.
-- Không triển khai offline đầy đủ trong mốc này; hàng chờ tại điện thoại là trong phiên. Nơi chạy worker, mức tải/giới hạn backlog và chỉ tiêu đo được chốt ở Task 15, không coi Redis là bảo đảm tốc độ hoặc độ bền mặc định.
+- Không triển khai offline đầy đủ; hàng gửi điện thoại chỉ trong phiên. Giới hạn lượt đang gửi và mục tiêu đo theo Mốc 7; bảo vệ mọi đường rời trang, đối chiếu kết quả trước khi tuyên bố dữ liệu chưa được lưu. Không xem pending=0 trên một thiết bị là bằng chứng mọi thiết bị đã gửi xong.
 
 ## Review Focus
 
@@ -46,8 +46,9 @@ Các tình huống spec không nói rõ nhưng dễ gây lỗi cho người dùn
 4. **Em bị ẩn và GLV bị gỡ khỏi lớp** — em ẩn không xếp ghế, không điểm danh, không nằm trong thống kê nhưng lịch sử còn; GLV bị gỡ khỏi lớp mất quyền ngay dù cookie còn hạn (Task 4, 9, 12).
 5. **Công thức trong file xuất** — tên bắt đầu bằng `=`, `+`, `-`, `@` phải được ghi thành văn bản, không bao giờ thành công thức, kể cả khi sau này người dùng chuyển file sang CSV (Task 12; `safeCell` là lớp phòng thủ bổ sung vì exceljs đã ghi chuỗi dạng văn bản).
 6. **QR lỗi/nhầm** — mã không đọc được hoặc invalid không tạo điểm danh; sai lớp không lộ thông tin ngoài quyền; thẻ hợp lệ nhưng nhầm người có sửa đúng lượt; đi trễ/vắng không bị ghi đè tự động (Task 17–20).
-7. **Queue/retry/undo** — timeout sau receipt, Redis/worker restart, event trùng/khác payload, lệch thứ tự, xóa thủ công rồi replay, undo race với apply, sửa mới từ thiết bị khác (Task 16, 18, 20).
-8. **Hiệu năng và trạng thái thật** — đo camera/decoder/API/worker riêng; 30 thẻ liên tục không reload hoặc modal chặn; số đã lưu chỉ tăng sau commit; backlog/lỗi không mất sau toast (Task 15, 19–21).
+7. **Gửi nền/retry/undo** — timeout sau commit, event trùng/khác payload, lệch thứ tự, xóa thủ công rồi replay, undo race với apply, sửa mới từ thiết bị khác (Task 16, 18, 20, 22).
+8. **Hiệu năng và trạng thái thật** — đo camera/decoder/API/DB và vòng mạng riêng; 30 thẻ liên tục không reload hoặc modal chặn; số đã lưu chỉ tăng sau commit; lỗi không mất sau toast (Task 15, 19–21).
+9. **Lưu và cuối buổi** — counter authoritative em-buổi, dữ liệu còn sau mở lại, điều hướng nội bộ không làm mất lượt chưa gửi, warning-count lỗi sau ghi không đảo trạng thái sai, review bền và sửa sau review làm cần kiểm tra lại (Task 22–24).
 
 ## Cấu trúc file
 
@@ -8193,4 +8194,134 @@ git add README.md docs
 git commit -m "docs: QR operations guide, security review notes and release checklist"
 ```
 
-Sau đó dùng skill `superpowers:finishing-a-development-branch` để chọn cách tích hợp.
+Với yêu cầu lưu/UX cuối buổi bổ sung, Task 21 là cổng QR nền; hoàn tất phạm vi mới
+sau Task 24 rồi dùng skill `superpowers:finishing-a-development-branch` để tích hợp.
+
+---
+
+## Mốc 8 — Lưu rõ ràng, tiếp tục buổi dở và hoàn tất thuận tiện
+
+**Cập nhật 2026-10-12:** theo yêu cầu kiểm tra dữ liệu lưu sau điểm danh và tối ưu UX,
+thực hiện spec §4.4. Mốc này chưa triển khai. Không chạy lại QR đang có hoặc khôi phục
+Redis theo header cũ; đọc spec hiện tại và giữ các thay đổi triển khai song song.
+
+**Phát hiện từ source audit (không phải kiểm thử DB production):**
+- Ghi tay lưu status/reason/updatedBy/updatedAt; đọc lại board từ DB. Nhưng UI đếm
+  marks lạc quan chưa có chỉ báo lưu và bảo vệ rời trang đầy đủ.
+- QR commit attendance + attendance_scans cùng transaction trước response thành công.
+  Banner lúc enqueue vẫn dùng "Đã ghi"; counter saved là lượt applied trong phiên này,
+  không phải số em toàn buổi. Kết quả timeout có thể đã commit; endpoint kết quả có
+  sẵn nhưng scanner chưa dùng để đối chiếu khi hết retry.
+- Link trong review/tab/nav có thể đi vòng qua cảnh báo Xong; hàng gửi chỉ ở memory.
+- setStatus ghi DB rồi tính cảnh báo; tính cảnh báo lỗi sau commit có thể khiến UI
+  rollback dù bản ghi đã lưu. Chưa có metadata hoàn tất kiểm tra trong sessions.
+
+**Ưu tiên:** Task 22 (sự thật lưu và điều hướng) → Task 23 (review/tiếp tục buổi) →
+Task 24 (kiểm chứng); không coi đẹp giao diện là bằng chứng dữ liệu đã bền.
+
+### Task 22: Xác nhận lưu, đối chiếu kết quả chưa rõ và bảo vệ mọi đường rời
+
+**Files:**
+- Modify: `src/components/scan/{useScanSession,ScanScreen,api}.ts(x)`,
+  `src/lib/attendance/scan-queue.ts`, `src/app/(app)/lop/[classId]/diem-danh/[date]/AttendanceBoard.tsx`,
+  actions/services điểm danh, class/nav components cần nối departure guard
+- Modify/Create: tests của state/scan API/attendance và helper pending/departure dùng chung
+
+- [ ] **Step 1: Test failure thật trước** — delayed response không hiện đã lưu;
+  commit rồi response mất/5xx vẫn được đối chiếu lại; count cảnh báo lỗi sau commit
+  không bị báo thành mất ghi; pending/unknown áp dụng QR, ghi tay, ghi hàng loạt,
+  undo/retry. Không dùng chỉ một busy boolean cho nhiều lượt đồng thời.
+- [ ] **Step 2: Contract lưu** — tách commit result khỏi refresh cảnh báo; service
+  trả trạng thái đủ xác nhận hoặc UI reconcile bằng dữ liệu hiện tại. Kết quả mạng
+  chưa rõ không được tự kết luận chưa lưu hoặc rollback giả như DB chưa đổi.
+- [ ] **Step 3: Đối chiếu QR/undo** — dùng endpoint kết quả hiện có với event IDs
+  chưa rõ, kiểm actor/session và quyền; gửi lại payload/ID cũ khi cần. Response ghi
+  lại trạng thái mới phải được so với trạng thái hiện tại, không đảo sửa đã xảy ra.
+  Khi vẫn không đọc được kết quả thì giữ unknown + Kiểm tra kết quả, không xóa lượt.
+- [ ] **Step 4: Chỉ báo/counter** — "Đã đọc thẻ · Đang lưu", "Đã lưu", "Chưa xác nhận";
+  tổng em-buổi đọc roster/marks đã xác nhận từ máy chủ, không dùng applied events làm
+  tổng. Nếu giữ counter lượt trong phiên thì đặt nhãn riêng. Unknown/pending không
+  được coi là đã kiểm tra hết chỉ vì danh sách lạc quan đã có trạng thái.
+- [ ] **Step 5: Departure guard chung** — cover Xong/Dừng quét, link trong review,
+  nav dưới, tab lớp, back, đổi ngày và unload; đọc hướng dẫn Next đang cài trước khi
+  tích hợp điều hướng. Đóng camera trong trang vẫn gửi tiếp. Dialog có Ở lại,
+  Kiểm tra/Thử lại, và Vẫn rời với mô tả đúng các lượt chưa gửi/chưa rõ kết quả.
+  Không hứa browser/OS luôn cho phép chặn đóng; không cam kết RAM queue là offline bền.
+- [ ] **Step 6: Lỗi có hành động đúng** — retry tất cả lỗi hạ tầng đủ điều kiện;
+  không retry mã/thẻ/quyền invalid. Dismiss/Bỏ qua kết quả unknown phải đối chiếu DB,
+  không che dữ liệu chưa rõ hoặc ngụ ý xóa bản ghi đã lưu. Lỗi vẫn truy được ngoài toast.
+
+**Done khi:** các nhãn/counter đúng với xác nhận máy chủ, mọi đường điều hướng được
+kiểm soát phù hợp, timeout sau commit không làm người dùng ghi sai hoặc tưởng mất dữ liệu.
+
+### Task 23: Tổng kết authoritative và xác nhận đã kiểm tra xong
+
+**Files:**
+- Modify: `src/db/schema.ts`, migration `drizzle/*`, `src/db/queries/attendance.ts`,
+  services/actions điểm danh, `src/components/scan/ScanScreen.tsx`, AttendanceBoard,
+  `src/app/(app)/lop/[classId]/page.tsx`
+- Create theo cấu trúc thực tế: service/session-summary và component SessionReview, tests
+
+- [ ] **Step 1: Test invariants** — tự lưu không phụ thuộc nút hoàn tất; không nhận
+  hoàn tất khi còn em chưa ghi; no-op không tăng tổng, reopen lấy dữ liệu DB;
+  bấm đúp/timeout hoàn tất không sinh buổi mới. Client drain pending/unknown trước
+  khi gọi service, server vẫn kiểm kết quả hiện hành, không tin local counts.
+- [ ] **Step 2: Summary read** — grouped query cho lớp/ngày/học kỳ, counts 4 trạng thái,
+  chưa ghi, actor/time, timestamp đối chiếu và revision/snapshot đủ chốt. Không cộng
+  attendance_scans thành sĩ số; read-only đúng quyền và không public cache.
+- [ ] **Step 3: Review UI** — hành động "Kiểm tra & hoàn tất" dừng nhận thêm, đối chiếu
+  queue + DB; có nhóm đã lưu/chưa ghi/chưa rõ/lỗi. Click nhóm đi tới đúng em, chọn
+  trạng thái/thử lại ngay, không bắt đi vòng nhiều màn. Có Quay lại sau với dữ liệu
+  đã lưu và giới hạn chưa rõ; không bắt hoàn tất mới cho xem dữ liệu đã có.
+- [ ] **Step 4: Batch vắng có chủ đích** — xem danh sách em còn thiếu, chọn loại vắng
+  và xác nhận; transaction chỉ ghi em vẫn chưa ghi, giữ em vừa được người khác điểm
+  danh. Tự động đánh vắng lúc rời/hoàn tất/mất mạng bị cấm.
+- [ ] **Step 5: Persist review** — thêm reviewedAt/reviewedBy hoặc metadata tương đương,
+  revision/lock contract tối thiểu để check + confirm atomic; không thêm khóa buổi,
+  quy trình duyệt hoặc lưu hồ sơ dư thừa. GLV chỉ chốt lớp có quyền ghi; nghỉ lễ không
+  bị báo thiếu toàn lớp. Conflict trả tổng mới để kiểm tra, không đóng băng dữ liệu.
+- [ ] **Step 6: Sau review** — mọi thay đổi thực sự (ghi tay/hàng loạt/QR/undo/nghỉ lễ)
+  làm review cũ hết hiệu lực hoặc hiện cần kiểm tra lại; no-op không làm mất review.
+  History có Đang điểm danh/Đã kiểm tra xong/Đã sửa, cần kiểm tra lại/Nghỉ lễ;
+  reopen đúng buổi để Tiếp tục hoặc Xem tổng kết. Không tự mở buổi mới khi resume.
+- [ ] **Step 7: Xác nhận ngắn** — "Đã lưu và kiểm tra xong buổi này", ngày/lớp/counts/
+  người/thời điểm đọc từ máy chủ, Về lớp và Xem tổng kết; không yêu cầu tải Excel
+  hoặc bấm thêm Lưu. Nếu không nhận response, đọc metadata trước khi báo lỗi.
+
+**Done khi:** có kết quả cuối buổi đọc lại được từ DB và dấu kiểm tra bền; sửa sau
+đó được phép nhưng được thể hiện đúng. Roster snapshot khi chuyển/ẩn em là follow-up
+lịch sử riêng, kiểm tra và ghi giới hạn thay vì mở rộng mốc này âm thầm.
+
+### Task 24: Kiểm chứng lưu/mở lại/điều hướng và cổng UX cuối buổi
+
+**Files:**
+- Modify/Create: unit/service tests liên quan, `e2e/attendance-save.spec.ts`, QR E2E,
+  `README.md`, tài liệu kiểm thử/release checklist
+
+- [ ] **Step 1: Save-readback integration** — ghi đủ 4 trạng thái và lý do, scan/manual/
+  bulk/undo; tạo request/client DB mới và đọc lại, kiểm actor/time/log và counts;
+  metadata review còn qua reload/login từ thiết bị khác có quyền. DB test riêng,
+  không chạy scenario ghi lên production.
+  Cùng request/buổi/revision khi bấm đúp hoặc mất response trả cùng review receipt,
+  giữ reviewedAt/By; revision mới sau thay đổi cho phép re-review. Sửa riêng reason
+  cũng làm dấu kiểm tra cũ hết hiệu lực, không chỉ thay status.
+- [ ] **Step 2: E2E mạng/lưu** — request đang gửi, commit-response lost, warning-count
+  lỗi sau write, exhausted retry, unknown rồi đối chiếu thấy applied/undone; không
+  hiện thành công giả, không đếm sai và không sinh ghi trùng.
+- [ ] **Step 3: E2E mọi điều hướng** — QR và board qua nav/tab/back/review link/đổi ngày,
+  reload; khi chưa gửi/chưa rõ có guard phù hợp. Đã lưu sạch thì rời thuận tiện;
+  đóng camera trong trang vẫn gửi. Reopen không reset tổng em đã lưu về 0.
+- [ ] **Step 4: Review/race** — đủ roster mới chốt, batch vắng không ghi đè em vừa có,
+  hai GLV cùng sửa/chốt, no-op, undo sau review, nghỉ lễ; revision conflict không
+  falsely complete. Không coi queue một thiết bị trống là mọi thiết bị đã gửi xong.
+- [ ] **Step 5: UX thử thật** — GLV thực hiện đọc thẻ → xử lý một thẻ lỗi → tìm tên →
+  kiểm em chưa ghi → hoàn tất → mở lại; quan sát bước thừa và nhầm giữa Lưu/Xong/
+  Đã đọc. Mục tiêu: mỗi em không phải bấm Lưu, bình thường một lần kiểm tra cuối buổi;
+  lỗi tới đúng đối tượng trong một thao tác từ nhóm lỗi.
+- [ ] **Step 6: Cổng cuối** — checks phù hợp app/code mới + review correctness/security/
+  SQL locking, báo số đo/test thật và giới hạn. README giải thích tự lưu, dấu kiểm tra,
+  sửa sau review, dữ liệu đã lưu vs lượt chưa gửi. Hoàn tất phạm vi mới sau cổng này,
+  commit/push/deploy theo yêu cầu phiên triển khai.
+
+**Done khi:** source và trải nghiệm thực tế chứng minh dữ liệu đọc lại được, kết quả
+chưa rõ được đối chiếu, người dùng hoàn tất thuận tiện và không phải đoán đã lưu hay chưa.

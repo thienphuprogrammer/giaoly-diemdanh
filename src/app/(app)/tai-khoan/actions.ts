@@ -1,10 +1,12 @@
 "use server";
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { db } from "@/db/client";
-import { requireUser } from "@/lib/auth/dal";
+import { createSession, requireUser } from "@/lib/auth/dal";
 import { checkVapid } from "@/lib/push/vapid";
-import { pushSubscribeLimiter, pushTestLimiter } from "@/server/http/limiter";
+import { passwordChangeLimiter, pushSubscribeLimiter, pushTestLimiter } from "@/server/http/limiter";
 import type { ActionResult } from "@/server/result";
+import { changePassword, type ChangePasswordState } from "@/server/services/account";
 import { sendTestPush, subscribePush, unsubscribePush } from "@/server/services/push";
 
 /**
@@ -26,4 +28,21 @@ export async function sendTestPushAction(): Promise<ActionResult<{ sent: number 
   const user = await requireUser();
   const vapid = checkVapid(process.env);
   return sendTestPush(db, user, { limiter: pushTestLimiter, vapid: vapid.status === "ok" ? vapid.config : null });
+}
+
+/**
+ * Người dùng tự đổi mật khẩu. Thành công thì mọi phiên khác bị thu hồi (DAL so `sat` với `password_changed_at`);
+ * thiết bị này được cấp lại phiên với `sat` = mốc đổi nên vẫn đăng nhập. Không bao giờ trả lại/ghi log mật khẩu.
+ */
+export async function changePasswordAction(_prev: ChangePasswordState, formData: FormData): Promise<ChangePasswordState> {
+  const user = await requireUser();
+  const result = await changePassword(db, user, {
+    currentPassword: formData.get("currentPassword"),
+    newPassword: formData.get("newPassword"),
+    confirmPassword: formData.get("confirmPassword"),
+  }, { limiter: passwordChangeLimiter });
+  if (!result.ok) return { error: result.error, field: result.field };
+  await createSession(user.id, Math.floor(result.changedAt.getTime() / 1000), result.sessionVersion);
+  revalidatePath("/tai-khoan");
+  return { ok: true };
 }

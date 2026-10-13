@@ -70,7 +70,7 @@ describe("session", () => {
   it("migrates a token without sat to sat = exp - 30 days", async () => {
     const exp = now() + 7 * DAY;
     const legacy = await new SignJWT({ userId: "u1" }).setProtectedHeader({ alg: "HS256" }).setExpirationTime(exp).sign(new TextEncoder().encode(SECRET));
-    expect(await readSession(legacy, SECRET)).toEqual({ userId: "u1", exp, sat: exp - SESSION_MAX_AGE_S });
+    expect(await readSession(legacy, SECRET)).toEqual({ userId: "u1", exp, sat: exp - SESSION_MAX_AGE_S, ver: 0 });
   });
 
   it("refuses a token whose login is older than 90 days, in readSession and decryptSession (DAL)", async () => {
@@ -92,6 +92,20 @@ describe("session", () => {
 
   it("refuses a non-numeric sat", async () => {
     const token = await new SignJWT({ userId: "u1", sat: "x" }).setProtectedHeader({ alg: "HS256" }).setExpirationTime(now() + DAY).sign(new TextEncoder().encode(SECRET));
+    expect(await readSession(token, SECRET)).toBeNull();
+  });
+});
+
+describe("revocation epoch claims", () => {
+  it("preserves the revocation version on refresh and defaults old cookies to zero", async () => {
+    const original = await readSession(await encryptSession({ userId: "u1", ver: 7 }, SECRET), SECRET);
+    expect(original?.ver).toBe(7);
+    const refreshed = await readSession(await encryptSession({ userId: "u1", sat: original!.sat, ver: original!.ver }, SECRET), SECRET);
+    expect(refreshed?.ver).toBe(7);
+    expect((await readSession(await encryptSession({ userId: "u1" }, SECRET), SECRET))?.ver).toBe(0);
+  });
+  it.each([-1, 1.5, "1", null])("rejects malformed signed versions: %s", async (ver) => {
+    const token = await new SignJWT({ userId: "u1", ver }).setProtectedHeader({ alg: "HS256" }).setExpirationTime(Math.floor(Date.now() / 1000) + 1000).sign(new TextEncoder().encode(SECRET));
     expect(await readSession(token, SECRET)).toBeNull();
   });
 });

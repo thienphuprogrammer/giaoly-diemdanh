@@ -19,11 +19,14 @@ export default defineConfig({
   retries: 0,
   // Máy dev/CI chậm (biên dịch lần đầu của next dev) hay vượt 5s mặc định; 10s vẫn ngắn hơn cửa sổ hoàn tác 8s + thao tác.
   expect: { timeout: 10_000 },
-  reporter: [["list"]],
-  use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure" },
+  reporter: [["list"], ["html", { open: "never" }], ["junit", { outputFile: "test-results/junit.xml" }]],
+  use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
     { name: "phone-375", use: { browserName: "chromium", viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
     { name: "tablet-768", use: { browserName: "chromium", viewport: { width: 768, height: 1024 }, hasTouch: true } },
+    // Các hành trình cũ tiếp tục chạy trên điện thoại/tablet; desktop có bộ smoke riêng để tránh nhân đôi cả suite.
+    { name: "laptop-1280", testMatch: ["responsive.spec.ts", "homepage.spec.ts", "system-admin.spec.ts"], use: { browserName: "chromium", viewport: { width: 1280, height: 800 } } },
+    { name: "desktop-1440", testMatch: ["responsive.spec.ts", "homepage.spec.ts", "system-admin.spec.ts"], use: { browserName: "chromium", viewport: { width: 1440, height: 900 } } },
   ],
   webServer: {
     command: `pnpm exec next dev -p ${PORT}`,
@@ -32,6 +35,7 @@ export default defineConfig({
     timeout: 120_000,
     // NEXT_PUBLIC_E2E_SCAN_BRIDGE chỉ bật ở đây (cầu nối window.__scanFeed cho test), không bao giờ ở bản build thật.
     env: {
+      NEXT_OUTPUT_DIR: ".next-e2e",
       DATABASE_URL: url, AUTH_SECRET: "e".repeat(40), NEXT_PUBLIC_E2E_SCAN_BRIDGE: "1",
       VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:e2e@giaoxu.vn",
       // PUSH_DRY_RUN chỉ có hiệu lực ở dev/test: tác vụ nhắc việc không gửi ra dịch vụ push thật trong E2E.

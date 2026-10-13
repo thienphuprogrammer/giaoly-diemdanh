@@ -7,17 +7,18 @@
 :root {
   --page: #f8fafc;
   --surface: #ffffff;
-  --surface-muted: #f1f5f9;
-  --border: #cbd5e1;
+  --surface-muted: #f3f5f8;
+  --border: #d8dfe9;
   --border-strong: #94a3b8;
-  --ink: #0f172a;
-  --ink-soft: #475569;
+  --ink: #243247;
+  --ink-soft: #4f5f75;
   --ink-muted: #64748b;
 
-  --action: #1d4ed8;
-  --action-hover: #1e40af;
-  --action-tint: #eff6ff;
+  --action: #345b99;
+  --action-hover: #284777;
+  --action-tint: #edf2fa;
   --on-action: #ffffff;
+  --chrome: #283f6a;
 
   --st-present: #166534;
   --st-present-tint: #dcfce7;
@@ -54,6 +55,7 @@
   --color-action-hover: var(--action-hover);
   --color-action-tint: var(--action-tint);
   --color-on-action: var(--on-action);
+  --color-chrome: var(--chrome);
   --color-st-present: var(--st-present);
   --color-st-present-tint: var(--st-present-tint);
   --color-st-unexcused: var(--st-unexcused);
@@ -69,10 +71,10 @@
   --color-warn-alert-tint: var(--warn-alert-tint);
 
   --font-sans: var(--font-body-face), system-ui, sans-serif;
-  --font-display: var(--font-display-face), var(--font-body-face), system-ui, sans-serif;
+  --font-display: var(--font-body-face), system-ui, sans-serif;
 
-  --radius-control: 10px;
-  --radius-card: 14px;
+  --radius-control: 6px;
+  --radius-card: 8px;
 
   --shadow-bar: 0 -1px 0 rgb(15 23 42 / 0.04), 0 -6px 20px rgb(15 23 42 / 0.06);
   --shadow-sheet: 0 -8px 32px rgb(15 23 42 / 0.18);
@@ -181,10 +183,9 @@
     font-weight: 500;
     line-height: 1.25;
     text-align: center;
-    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
     user-select: none;
   }
-  .btn:active:not(:disabled) { transform: scale(0.98); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-lg { min-height: 3rem; padding-inline: 1.25rem; }
   .btn-sm { min-height: 2.75rem; padding-inline: 0.75rem; font-size: 0.875rem; }
@@ -202,6 +203,7 @@
   .input {
     display: block;
     width: 100%;
+    min-width: 0;
     min-height: 3rem;
     padding-inline: 0.875rem;
     border: 1px solid var(--ink-muted);
@@ -273,6 +275,15 @@
   }
 }
 
+@media (min-width: 1024px) {
+  body { font-size: 0.9375rem; }
+}
+@layer components {
+  @media (min-width: 1024px) {
+    .btn { font-size: 0.875rem; }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
@@ -289,6 +300,7 @@
 @media print {
   @page { size: A4; margin: 10mm; }
   body { background: #fff; }
+  #main-content { max-width: none; padding: 0; }
   .qr-sheet { grid-template-columns: repeat(2, 90mm); gap: 4mm; justify-content: center; }
   .qr-card { width: 90mm; height: 55mm; border: 0.3mm dashed #94a3b8; border-radius: 0; padding: 4mm; }
   .qr-img { width: 34mm; height: 34mm; }

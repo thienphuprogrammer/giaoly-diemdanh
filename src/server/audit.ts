@@ -1,7 +1,7 @@
 import { sql, type SQLWrapper } from "drizzle-orm";
 import { auditEvents } from "@/db/schema";
 import type { Db } from "@/db/types";
-import { entityOf, isAuditAction, sanitizeSummary, type AuditAction, type AuditEntity, type AuditSummary } from "@/lib/audit/events";
+import { allowsGlobalAuditScope, entityOf, isAuditAction, sanitizeSummary, type AuditAction, type AuditEntity, type AuditSummary } from "@/lib/audit/events";
 
 /**
  * Ghi nhật ký thay đổi (spec §2). Luôn gọi TRONG CÙNG transaction (hoặc cùng câu lệnh) với thay đổi, để rollback thì không
@@ -33,7 +33,7 @@ export function auditRow(event: AuditEvent): AuditRow {
   if (entityOf(event.action) !== event.entity) throw new Error("audit: action does not belong to entity");
   const classId = event.classId ?? null;
   const gradeId = event.gradeId ?? null;
-  if (classId === null && gradeId === null) throw new Error("audit: event needs a class or grade scope");
+  if (classId === null && gradeId === null && !allowsGlobalAuditScope(event.entity)) throw new Error("audit: event needs a class or grade scope");
   return {
     actorId: event.actorId, classId, gradeId, entity: event.entity, entityId: event.entityId ?? null, action: event.action,
     summary: sanitizeSummary(event.summary),

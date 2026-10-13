@@ -3,6 +3,7 @@ import { termById } from "@/db/queries/stats";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { todayInVietnam } from "@/lib/dates";
+import { z } from "zod";
 import type { ReportInput } from "@/lib/report/term-report";
 import { guardClass } from "../guard";
 import { massAttentionList, massStats } from "./mass-stats";
@@ -81,9 +82,10 @@ export interface GradeReport {
 }
 
 /** Tổng hợp khối cho trưởng khối (chỉ trưởng khối của khối đó; người khác => null). Không có SĐT trong kết quả. */
-export async function gradeReport(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<GradeReport | null> {
-  if (!user.isGradeHead || !user.gradeId) return null;
-  const [term, grade, overview] = await Promise.all([findTerm(db, termId), getGrade(db, user.gradeId), gradeOverview(db, user, termId, today)]);
+export async function gradeReport(db: Db, user: AppUser, termId: string, today: string = todayInVietnam(), selectedGradeId?: string): Promise<GradeReport | null> {
+  const gradeId = user.isAdmin ? selectedGradeId ?? user.gradeId : user.isGradeHead ? user.gradeId : null;
+  if (!gradeId || !z.uuid().safeParse(gradeId).success) return null;
+  const [term, grade, overview] = await Promise.all([findTerm(db, termId), getGrade(db, gradeId), gradeOverview(db, user, termId, today, gradeId)]);
   if (!term || !grade || !overview) return null;
   const [attention, massAttention, massByClass] = await Promise.all([
     attentionList(db, user, term.id, today),

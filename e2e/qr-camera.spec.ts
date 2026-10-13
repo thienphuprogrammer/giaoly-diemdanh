@@ -15,7 +15,7 @@ test("camera giả: camera bật được và wasm giải mã tải không lỗi
   await page.getByLabel("Email").fill(test.info().project.name === "tablet-768" ? "glv-a2@e2e.vn" : "glv-a@e2e.vn");
   await page.getByLabel("Mật khẩu").fill("e2e-password-1");
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
   await page.goto(`/lop/${classA()}/diem-danh/${today()}/quet`);
   await wasm;
   const video = page.getByLabel("Hình từ camera");

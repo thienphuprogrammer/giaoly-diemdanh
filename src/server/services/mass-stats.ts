@@ -33,8 +33,8 @@ export interface MassStats {
   totals: { recordedWeeks: number; students: number; warnings: number; countedWeeks: number; attendedWeeks: number };
 }
 
-async function pickTerm(db: Db, termId: string | undefined, today: string) {
-  if (termId === undefined) return resolveTerm(db, undefined, today);
+async function pickTerm(db: Db, termId: string | undefined, today: string, schoolYearId: string) {
+  if (termId === undefined) return resolveTerm(db, undefined, today, schoolYearId);
   return termById(db, termId);
 }
 
@@ -57,10 +57,12 @@ export async function massStats(
   const cls = await guardClass(db, user, input.classId, "read");
   if (!cls) return null;
   const today = input.today ?? todayInVietnam();
-  const [term, info, grade] = await Promise.all([
-    pickTerm(db, input.termId, today), getClassById(db, cls.id), getGrade(db, cls.gradeId),
+  const info = await getClassById(db, cls.id);
+  if (!info) return null;
+  const [term, grade] = await Promise.all([
+    pickTerm(db, input.termId, today, info.schoolYearId), getGrade(db, cls.gradeId),
   ]);
-  if (!term || !info || !grade) return null;
+  if (!term || term.schoolYearId !== info.schoolYearId || !grade) return null;
   const grid = await massGrid(db, { classIds: [cls.id], termId: term.id, includeFormer: isPastTerm(term, today) });
   const weeks = grid.weeks.get(cls.id) ?? [];
   const rows = grid.students.map((s) => statRow(weeks, s, grade.massThreshold));
@@ -94,7 +96,8 @@ export interface MassAttentionItem {
 /** Các em chạm ngưỡng vắng lễ của khối, trên mọi lớp người dùng đọc được (nhóm "Đi lễ" của trang "Cần chú ý"). */
 export async function massAttentionList(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<MassAttentionItem[]> {
   const term = await termById(db, termId);
-  const visible = await listClassesForUser(db, user);
+  if (!term) return [];
+  const visible = await listClassesForUser(db, user, term.schoolYearId);
   if (!term || visible.length === 0) return [];
   const names = new Map(visible.map((c) => [c.id, c.name]));
   const grid = await massGrid(db, { classIds: visible.map((c) => c.id), termId, includeFormer: isPastTerm(term, today) });

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S, SESSION_REFRESH_BELOW_S, sessionAuthTime, sessionRefreshDecision } from "./session-policy";
+import {
+  SESSION_ABSOLUTE_MAX_S, SESSION_MAX_AGE_S, SESSION_REFRESH_BELOW_S, passwordChangeSecond, sessionAuthTime, sessionRefreshDecision,
+  sessionRevokedByPasswordChange,
+} from "./session-policy";
 
 const NOW = 1_800_000_000; // giây
 const DAY = 24 * 60 * 60;
@@ -77,5 +80,35 @@ describe("sessionAuthTime (migration for tokens without sat)", () => {
   it("a legacy token without sat near expiry is still refreshed", () => {
     const exp = NOW + DAY;
     expect(sessionRefreshDecision(exp, NOW, sessionAuthTime({ exp }))).toBe("refresh");
+  });
+});
+
+describe("sessionRevokedByPasswordChange (đổi/đặt lại mật khẩu thu hồi phiên cũ)", () => {
+  const changedAt = new Date(NOW * 1000);
+
+  it("keeps every session when the password was never changed (legacy rows: null)", () => {
+    expect(sessionRevokedByPasswordChange(NOW - 80 * DAY, null)).toBe(false);
+    expect(sessionRevokedByPasswordChange(NOW, null)).toBe(false);
+  });
+
+  it("revokes a session logged in before the change", () => {
+    expect(sessionRevokedByPasswordChange(NOW - 1, changedAt)).toBe(true);
+    expect(sessionRevokedByPasswordChange(NOW - 30 * DAY, changedAt)).toBe(true);
+  });
+
+  it("keeps a session logged in at or after the change (same second is kept: the changing device re-issues sat = now)", () => {
+    expect(sessionRevokedByPasswordChange(NOW, changedAt)).toBe(false);
+    expect(sessionRevokedByPasswordChange(NOW + 1, changedAt)).toBe(false);
+  });
+
+  it("compares at second granularity: sub-second parts of the stored timestamp are truncated", () => {
+    const withMs = new Date(NOW * 1000 + 999);
+    expect(sessionRevokedByPasswordChange(NOW, withMs)).toBe(false);
+    expect(sessionRevokedByPasswordChange(NOW - 1, withMs)).toBe(true);
+  });
+
+  it("passwordChangeSecond truncates to whole seconds", () => {
+    expect(passwordChangeSecond(new Date(NOW * 1000 + 999))).toEqual(new Date(NOW * 1000));
+    expect(passwordChangeSecond(new Date(NOW * 1000))).toEqual(new Date(NOW * 1000));
   });
 });

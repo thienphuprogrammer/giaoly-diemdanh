@@ -23,7 +23,7 @@ export async function login(_prev: { error?: string } | undefined, formData: For
           : "Email hoặc mật khẩu không đúng",
     };
   }
-  await createSession(result.userId);
+  await createSession(result.userId, undefined, result.sessionVersion);
   // `next` từ form là dữ liệu client: chỉ nhận đường dẫn nội bộ an toàn, còn lại về trang chủ.
   redirect(safeNextPath(formData.get("next")));
 }

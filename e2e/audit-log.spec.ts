@@ -26,7 +26,7 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 const noHorizontalScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
@@ -53,7 +53,7 @@ test("sửa điểm danh rồi thấy dòng nhật ký đúng người, đúng g
   await expect(page.getByRole("button", { name: /Nguyễn An: Vắng không phép/ })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Nhật ký" }).click();
+  await page.getByRole("navigation", { name: "Điều hướng lớp" }).getByRole("link", { name: "Nhật ký" }).click();
   await expect(page).toHaveURL(new RegExp(`/lop/${state().classA}/nhat-ky$`));
   await expect(page.getByRole("heading", { name: "Nhật ký thay đổi" })).toBeVisible();
   const items = page.getByRole("listitem").filter({ hasText: "GLV A" }).filter({ hasText: "Nguyễn An" });
@@ -88,7 +88,7 @@ test("lọc theo loại và theo ngày; bộ lọc nằm trên URL", async ({ pa
   await expect(rows).toHaveCount(5); // 3 dòng hôm nay + quét thẻ (chỉ lượt đã áp dụng) + dòng cũ
   await expect(rows.filter({ hasText: "quét thẻ Nhật Ký Một (chế độ Có mặt)" })).toHaveCount(1);
 
-  await page.getByRole("link", { name: "Thiếu nhi", exact: true }).click();
+  await page.getByRole("navigation", { name: "Lọc theo loại" }).getByRole("link", { name: "Thiếu nhi", exact: true }).click();
   await expect(page).toHaveURL(/loai=thieu-nhi/);
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("thêm em Em Lọc Thiếu Nhi");
@@ -97,12 +97,12 @@ test("lọc theo loại và theo ngày; bộ lọc nằm trên URL", async ({ pa
   await expect(page).toHaveURL(/loai=quet-the/);
   await expect(rows).toHaveCount(1);
 
-  await page.getByRole("link", { name: "Sơ đồ", exact: true }).click();
+  await page.getByRole("navigation", { name: "Lọc theo loại" }).getByRole("link", { name: "Sơ đồ", exact: true }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('tạo sơ đồ "Sơ đồ Lọc"');
 
   // Lọc ngày: chỉ hôm nay, giữ loại "Thiếu nhi" khi đổi ngày.
-  await page.getByRole("link", { name: "Thiếu nhi", exact: true }).click();
+  await page.getByRole("navigation", { name: "Lọc theo loại" }).getByRole("link", { name: "Thiếu nhi", exact: true }).click();
   await expect(page).toHaveURL(/loai=thieu-nhi/);
   await page.getByLabel("Từ ngày").fill(todayInVietnam());
   await page.getByLabel("Đến ngày").fill(todayInVietnam());
@@ -122,7 +122,7 @@ test("lọc theo loại và theo ngày; bộ lọc nằm trên URL", async ({ pa
   await page.getByRole("link", { name: "Xoá lọc" }).click();
   await expect(rows).toHaveCount(5);
 
-  await page.getByRole("link", { name: "Điểm danh", exact: true }).first().click();
+  await page.getByRole("navigation", { name: "Lọc theo loại" }).getByRole("link", { name: "Điểm danh", exact: true }).click();
   await expect(rows).toHaveCount(2); // dòng "Tất cả có mặt" + lượt quét thẻ của buổi học
   await expect(rows.filter({ hasText: 'bấm "Tất cả có mặt": 2 em' })).toHaveCount(1);
   await expect(rows.filter({ hasText: "quét thẻ Nhật Ký Một" })).toHaveCount(1);
@@ -133,7 +133,7 @@ test("trang trống có lời nhắn, bộ lọc không khớp có lời nhắn 
   await login(page, "glv-n@e2e.vn");
   await page.goto(`/lop/${state().classN}/nhat-ky`);
   await expect(page.getByText("Chưa có dòng nhật ký nào")).toBeVisible();
-  await page.getByRole("link", { name: "Sơ đồ", exact: true }).click();
+  await page.getByRole("navigation", { name: "Lọc theo loại" }).getByRole("link", { name: "Sơ đồ", exact: true }).click();
   await expect(page.getByText("Không có thay đổi nào khớp bộ lọc này.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem thêm" })).toHaveCount(0);
 });

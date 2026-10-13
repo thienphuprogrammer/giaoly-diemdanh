@@ -7,11 +7,11 @@ import type { Db } from "../types";
 import { missedMassWeeks } from "./mass-stats";
 import { studentColumns } from "./students";
 
-export async function findTermFor(db: Db, date: string) {
+export async function findTermFor(db: Db, date: string, schoolYearId?: string) {
   const [row] = await db
     .select({ id: terms.id, name: terms.name })
     .from(terms)
-    .where(and(lte(terms.startsOn, date), gte(terms.endsOn, date)));
+    .where(and(lte(terms.startsOn, date), gte(terms.endsOn, date), schoolYearId ? eq(terms.schoolYearId, schoolYearId) : undefined));
   return row ?? null;
 }
 

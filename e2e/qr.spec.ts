@@ -20,7 +20,7 @@ async function login(page: Page, email = scanner()) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
@@ -203,11 +203,12 @@ test("Back khi còn lượt chưa lưu thì hỏi lại; Xong về bảng bằng
   await expect(page.getByRole("button", { name: /Nguyễn Bình: Có mặt/ })).toBeVisible(); // bảng có dữ liệu mới
   await page.goBack();
   await expect(page).not.toHaveURL(/\/quet$/); // Back không quay lại máy quét
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 });
 
 test("mở máy quét từ bảng: Xong lùi về bảng (không tạo mục trùng) có dữ liệu mới; Back tiếp về trang trước bảng", async ({ page }) => {
   await login(page, boardUser());
+  await page.goto("/lop");
   await page.getByRole("link", { name: "Điểm danh hôm nay" }).click();
   await expect(page).toHaveURL(new RegExp(`/diem-danh/${today()}$`));
   const roster = page.waitForResponse((r) => r.url().includes("/api/diem-danh/bang-tra"));
@@ -221,8 +222,9 @@ test("mở máy quét từ bảng: Xong lùi về bảng (không tạo mục tr�
   await page.getByRole("button", { name: "Xong" }).click();
   await expect(page).toHaveURL(new RegExp(`/diem-danh/${today()}$`));
   await expect(page.getByRole("button", { name: /Nguyễn Bình: Có mặt/ })).toBeVisible(); // bảng lấy dữ liệu mới
-  // Một lần Back về thẳng trang trước bảng: Xong đã lùi lại chứ không thay máy quét bằng một mục bảng thứ hai.
+  // Một lần Back về danh sách lớp: Xong đã lùi lại chứ không thay máy quét bằng một mục bảng thứ hai.
   await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/lop");
   await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
 });
 

@@ -1,8 +1,8 @@
 # Điểm danh Giáo lý
 
-Ứng dụng web (PWA) để giáo lý viên (GLV) điểm danh lớp giáo lý theo sơ đồ chỗ ngồi hoặc thẻ QR trên điện thoại, điểm danh đi lễ, hồ sơ từng em, thống kê và báo cáo học kỳ (in A4 / PDF / Excel), danh sách cần chú ý, nhật ký thay đổi, năm học mới và lên lớp, thông báo đẩy và nhắc việc tự động. Giao diện hoàn toàn bằng tiếng Việt.
+Ứng dụng web (PWA) để giáo lý viên (GLV) điểm danh lớp giáo lý theo sơ đồ chỗ ngồi hoặc thẻ QR, điểm danh đi lễ, hồ sơ từng em, thống kê và báo cáo học kỳ (in A4 / PDF / Excel), danh sách cần chú ý, nhật ký thay đổi, năm học mới và lên lớp, thông báo đẩy và nhắc việc tự động. Admin quản lý tài khoản, khối và lớp theo năm học. Giao diện bằng tiếng Việt, hỗ trợ điện thoại, tablet, laptop và PC.
 
-Mục lục nhanh: [Cài đặt](#cài-đặt-và-chạy) · [Triển khai](#triển-khai) · [Quy trình sử dụng](#quy-trình-sử-dụng) · [Hồ sơ em](#hồ-sơ-em) · [Điểm danh đi lễ](#điểm-danh-đi-lễ) · [Nhật ký thay đổi](#nhật-ký-thay-đổi) · [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp) · [Báo cáo học kỳ](#báo-cáo-học-kỳ) · [Thẻ QR](#điểm-danh-bằng-thẻ-qr) · [Thông báo đẩy và nhắc việc](#thông-báo-đẩy-web-push-và-lịch-học) · [iPhone](#dùng-trên-iphone) · [Kiểm thử](#kiểm-thử) · [Giới hạn đã biết](#giới-hạn-đã-biết)
+Mục lục nhanh: [Cài đặt](#cài-đặt-và-chạy) · [Triển khai](#triển-khai) · [Quản trị toàn hệ thống](#quản-trị-toàn-hệ-thống) · [Quy trình sử dụng](#quy-trình-sử-dụng) · [Hồ sơ em](#hồ-sơ-em) · [Điểm danh đi lễ](#điểm-danh-đi-lễ) · [Nhật ký thay đổi](#nhật-ký-thay-đổi) · [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp) · [Báo cáo học kỳ](#báo-cáo-học-kỳ) · [Thẻ QR](#điểm-danh-bằng-thẻ-qr) · [Thông báo đẩy và nhắc việc](#thông-báo-đẩy-web-push-và-lịch-học) · [iPhone](#dùng-trên-iphone) · [Kiểm thử](#kiểm-thử) · [Giới hạn đã biết](#giới-hạn-đã-biết)
 
 Công nghệ: Next.js 16 (App Router), React 19, Postgres (Drizzle ORM), Tailwind CSS 4, Vitest, Playwright.
 
@@ -30,6 +30,8 @@ Sao chép `.env.example` thành `.env.local` rồi điền giá trị (các bi�
 
 Các biến chỉ dùng cho `pnpm seed`: `SEED_EMAIL`, `SEED_PASSWORD` (tối thiểu 10 ký tự), và tùy chọn `SEED_NAME`, `SEED_GRADE`, `SEED_YEAR`, `SEED_T1_START`, `SEED_T1_END`, `SEED_T2_START`, `SEED_T2_END`.
 
+Các biến chỉ dùng cho `pnpm admin:create`: `ADMIN_EMAIL`, `ADMIN_NAME` và tùy chọn `ADMIN_PASSWORD`. Tài khoản mới sẽ yêu cầu nhập mật khẩu ẩn hai lần trên terminal nếu chưa đặt `ADMIN_PASSWORD`; tài khoản đã tồn tại giữ mật khẩu hiện có khi bỏ qua biến này. Mật khẩu cần ít nhất 10 ký tự và tối đa 72 byte UTF-8. Chỉ cấp `ADMIN_PASSWORD` qua môi trường bảo mật khi chạy không tương tác; không ghi giá trị vào mã nguồn, tài liệu hay lịch sử lệnh.
+
 ## Cài đặt và chạy
 
 ```bash
@@ -37,7 +39,19 @@ pnpm install
 pnpm db:migrate      # áp dụng migration vào DATABASE_URL (đọc .env.local)
 ```
 
-Tạo tài khoản trưởng khối đầu tiên. Nhập mật khẩu bằng `read -rs` để không lộ trong lịch sử lệnh:
+Tạo admin đầu tiên sau khi migration hoàn tất:
+
+```bash
+read -r -p "Email admin: " ADMIN_EMAIL
+read -r -p "Tên admin: " ADMIN_NAME
+export ADMIN_EMAIL ADMIN_NAME
+pnpm admin:create
+unset ADMIN_EMAIL ADMIN_NAME
+```
+
+Công cụ yêu cầu nhập và xác nhận mật khẩu ẩn khi tạo tài khoản mới. Email được so khớp không phân biệt chữ hoa/thường. Nếu email đã thuộc một tài khoản không phải admin, công cụ từ chối trừ khi chạy `pnpm admin:create --promote-existing`; khi đó tài khoản được nâng thành admin đang hoạt động, giữ mật khẩu khi không có `ADMIN_PASSWORD`. Chạy lại cho một admin đã có thì không cần cờ này. Đổi quyền hoặc mật khẩu sẽ thu hồi phiên cũ. Sau khi đăng nhập, vào **Quản trị** để tạo khối, năm học, lớp và tài khoản khối trưởng/GLV.
+
+Tùy chọn: `pnpm seed` tạo tài khoản trưởng khối và dữ liệu khởi đầu. Nhập mật khẩu bằng `read -rs` để không lộ trong lịch sử lệnh:
 
 ```bash
 read -rs SEED_PASSWORD && export SEED_PASSWORD
@@ -59,6 +73,7 @@ Triển khai lên Vercel (vùng Singapore `sin1`) với Postgres hosted cùng v�
 
 - `DATABASE_URL` chỉ cần lúc chạy (`src/db/client.ts` kết nối lười), `next build` không cần.
 - **Migration không tự chạy khi build**: sao lưu database rồi chạy `pnpm db:migrate` từ máy bạn trước khi deploy bản có migration mới. Migration chỉ đi tới (không có lệnh lùi).
+- **Chuyển sang lớp theo năm học**: migration `0011_admin_annual_classes.sql` giữ ID lớp và lịch sử hiện có. Nếu một lớp cũ có buổi thuộc nhiều năm học, migration chủ động dừng trước khi đổi dữ liệu; cần chuẩn bị ánh xạ tách lớp riêng cho trường hợp đó. Xem [quyết định kiến trúc](docs/architecture/2026-10-13-admin-annual-classes.md).
 - Danh sách kiểm phát hành Mốc 9 (kết quả chạy thật + việc của chủ dự án): [`docs/superpowers/release-checklist-moc9.md`](docs/superpowers/release-checklist-moc9.md).
 
 ### Kiểm tra CSP trên bản production (bước tay)
@@ -69,17 +84,29 @@ E2E chạy bằng `next dev`, nơi CSP cho phép `'unsafe-eval'`; CSP thật c�
 2. Mở DevTools → Console, đi qua: `/login`, trang chủ, một bảng điểm danh (chạm một em), màn **Quét QR** (camera chạy, quét một thẻ), trang Tài khoản (bấm "Bật thông báo"), một báo cáo in được.
 3. Không được có dòng "Refused to … because it violates the following Content Security Policy directive". Tab Network → tài liệu HTML phải có header `Content-Security-Policy` không chứa `'unsafe-eval'` (trừ khi build với `CSP_ALLOW_UNSAFE_EVAL=1`).
 
+## Quản trị toàn hệ thống
+
+Admin vào **Quản trị** (`/quan-tri`):
+
+- **Tài khoản**: tạo, sửa tên/email, đặt vai trò **Admin / Khối trưởng / Giáo lý viên**, chọn khối cho khối trưởng, khóa/mở lại và đặt lại mật khẩu. Tài khoản được khóa vẫn giữ phân công và lịch sử; mở lại yêu cầu đăng nhập mới. Không tự khóa/hạ quyền và không được bỏ admin đang hoạt động cuối cùng.
+- **Khối**: tạo, đổi tên, đặt ngưỡng cảnh báo đi lễ và khối kế tiếp; mở báo cáo khối theo năm.
+- **Lớp**: chọn năm học và khối khi tạo, phân công/gỡ phân công tài khoản, sửa tên/khối. Lớp cùng tên được dùng lại ở năm khác; mỗi năm có lớp, phân công, sơ đồ và buổi điểm danh riêng. Sửa lớp không đổi năm của lớp.
+- **Năm học và lên lớp** (`/quan-tri/nam-hoc`): tạo năm với hai học kỳ, đổi tên năm, chuyển thiếu nhi sang lớp đã tạo ở cùng năm hoặc năm sau, xem và hoàn tác lượt chuyển đủ điều kiện.
+- **Xóa dữ liệu**: chỉ xóa khối/lớp/năm chưa được sử dụng. Dữ liệu có tài khoản, phân công, thiếu nhi, lớp hoặc lịch sử liên quan sẽ được giữ lại; quản lý tài khoản bằng khóa/mở lại.
+
+Trang chủ, danh sách lớp, trang Khối và báo cáo có bộ chọn năm học. Khối và tài khoản dùng chung xuyên năm; muốn mở năm mới thì tạo các lớp của năm đó và phân công lại cho từng lớp.
+
 ## Quy trình sử dụng
 
 1. Trưởng khối đăng nhập, vào mục **Khối**.
-2. Tạo **lớp**, đặt **lịch học** (thứ + giờ, ở trang lớp, do GLV của lớp đặt) nếu muốn được nhắc điểm danh.
-3. Tạo **tài khoản GLV** (đặt mật khẩu tạm thời cho họ). Khi GLV quên mật khẩu, trưởng khối vào trang **Khối**, mục **Đặt lại mật khẩu**, chọn GLV rồi nhập mật khẩu tạm mới (10–72 ký tự) và gửi cho họ.
+2. Chọn **năm học**, tạo **lớp** trong năm đó, đặt **lịch học** (thứ + giờ, ở trang lớp, do người có quyền ghi lớp đặt) nếu muốn được nhắc điểm danh.
+3. Tạo **tài khoản GLV** (đặt mật khẩu tạm thời cho họ). Khi GLV quên mật khẩu, trưởng khối vào trang **Khối**, mục **Đặt lại mật khẩu**, chọn GLV rồi nhập mật khẩu tạm mới (ít nhất 10 ký tự, tối đa 72 byte UTF-8) và gửi cho họ.
 4. **Gán GLV vào lớp** (hoặc gán chính mình để điểm danh thay).
 5. GLV nhập hoặc nhập CSV danh sách thiếu nhi, tạo sơ đồ chỗ ngồi, rồi điểm danh từng buổi bằng sơ đồ, checklist hoặc **quét thẻ QR**; ghi **đi lễ** ngay trên bảng hoặc quét tại nhà thờ.
 6. Theo dõi **Cần chú ý**, **hồ sơ từng em** và **Thống kê**; cuối học kỳ in **báo cáo học kỳ**.
 7. Cuối năm, trưởng khối vào **Khối → Năm học mới và lên lớp** (mục [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp)).
 
-Quyền: GLV được phân công lớp thì **ghi** lớp đó; trưởng khối **đọc** mọi lớp của khối mình (ghi khi tự gán vào lớp). Người không có quyền mở đường dẫn của lớp sẽ thấy 404.
+Quyền: admin **đọc/ghi** mọi lớp và quản lý toàn hệ thống; GLV được phân công lớp thì **ghi** lớp đó; trưởng khối **đọc** mọi lớp của khối mình (ghi khi tự gán vào lớp). Người không có quyền mở đường dẫn của lớp sẽ thấy 404. Hồ sơ em đã chuyển khỏi lớp cũ vẫn xem được từ lớp cũ nhưng không sửa qua lớp đó.
 
 ## Hồ sơ em
 
@@ -87,7 +114,7 @@ Bấm tên em ở danh sách thiếu nhi, "Cần chú ý" hoặc thống kê đ�
 
 - Chuyên cần học kỳ (có mặt, muộn, vắng có/không phép, % chuyên cần), lịch sử từng buổi học (mới nhất trước; buổi huỷ không tính) và khối **Đi lễ** (tuần đã tính, đi lễ / vắng lễ từng tuần, cảnh báo theo ngưỡng của khối). Lịch sử theo em nên vẫn thấy các buổi ở lớp cũ sau khi lên lớp.
 - Nút liên hệ phụ huynh: **Gọi**, **Nhắn Zalo** (mở `zalo.me`), **SMS**; không có số thì hiện "Chưa có số phụ huynh". "Cần chú ý" có thêm nút **Gọi phụ huynh** cạnh từng em. Số điện thoại chỉ dùng để dựng liên kết trên máy chủ, không đưa vào props của các thành phần chạy ở trình duyệt trong danh sách.
-- GLV của lớp sửa nhanh số phụ huynh và ghi chú ngay trên hồ sơ; trưởng khối chỉ xem.
+- Người có quyền ghi lớp sửa nhanh số phụ huynh và ghi chú ngay trên hồ sơ của em đang ở lớp; em đã chuyển sang lớp khác chỉ xem tại lớp cũ.
 - **Kiểm số điện thoại chặt** (Việt Nam, 10–11 chữ số, chấp nhận `+84`/`84`/`0084`, dấu cách/chấm/gạch được bỏ khi lưu) ở **mọi** đường lưu: thêm, sửa, sửa nhanh, nhập CSV. Hệ quả cần biết:
   - Em có số **dạng cũ không hợp lệ** (lưu từ trước khi kiểm chặt) vẫn hiện số thô nhưng **không có nút liên hệ**, và **không lưu được bất kỳ sửa đổi nào của em đó cho tới khi sửa lại số** (hoặc xoá số).
   - Nhập CSV **bỏ qua các dòng có số không hợp lệ** (báo số dòng bị bỏ), các dòng khác vẫn được nhập.
@@ -112,47 +139,49 @@ Bấm tên em ở danh sách thiếu nhi, "Cần chú ý" hoặc thống kê đ�
 
 ## Nhật ký thay đổi
 
-Tab **Nhật ký** của mỗi lớp (`/lop/<lớp>/nhat-ky`) cho **mọi người đọc được lớp** (GLV của lớp, trưởng khối của khối) xem dòng thời gian: ai, lúc nào, đổi gì; lọc theo ngày và loại (Điểm danh, Đi lễ, Thiếu nhi, Sơ đồ, Buổi học, Quét thẻ), phân trang "Xem thêm".
+Tab **Nhật ký** của mỗi lớp (`/lop/<lớp>/nhat-ky`) cho **mọi người đọc được lớp** (admin, GLV của lớp, trưởng khối của khối) xem dòng thời gian: ai, lúc nào, đổi gì; lọc theo ngày và loại (Điểm danh, Đi lễ, Thiếu nhi, Sơ đồ, Buổi học, Quét thẻ), phân trang "Xem thêm".
 
 - **Có ghi** (cùng giao dịch với thay đổi, chỉ khi thật sự có thay đổi): đổi trạng thái điểm danh/đi lễ (trước → sau), "Tất cả có mặt"/"Cả lớp đi lễ" và hoàn tác, "Đánh vắng các em còn lại", huỷ/mở lại buổi học hoặc tuần đi lễ, thêm/sửa/nghỉ học/đi học lại/nhập CSV/sửa liên hệ/cấp lại mã thẻ của em, tạo/áp mẫu/lưu bố cục/kích hoạt/xoá sơ đồ, đổi lịch học, lượt lên lớp và hoàn tác (ở **cả lớp cũ và lớp mới**).
 - **Lượt quét thẻ** nằm trong nhật ký quét riêng (`attendance_scans`) và được **gộp vào cùng dòng thời gian** (lọc "Quét thẻ").
-- **Không ghi**: xếp một em vào ghế (`assignSeat`), mở buổi điểm danh, việc quản trị tài khoản (tạo GLV, đặt lại mật khẩu, gán lớp, tạo lớp). Thay đổi cấp khối (ngưỡng đi lễ, khối kế tiếp, tạo/xoá năm học) được ghi nhưng **chưa có trang xem cấp khối** (nhật ký lớp chỉ hiện dòng của lớp).
+- **Quản trị cũng được ghi**: tạo/sửa/khóa/mở lại tài khoản, đặt lại mật khẩu, gán/gỡ lớp, tạo/sửa/xóa lớp và khối, tạo/đổi tên/xóa năm học. Nhật ký lớp chỉ hiện sự kiện thuộc lớp; sự kiện cấp khối/toàn hệ thống được lưu nhưng **chưa có trang xem riêng**.
+- **Không ghi**: xếp một em vào ghế (`assignSeat`) và mở buổi điểm danh.
 - Không bao giờ ghi mã thẻ hay mật khẩu; số điện thoại chỉ lưu dạng che (`••••••567`); ghi chú tự do không được ghi.
 - **Lưu giữ 365 ngày**: dòng cũ hơn được xoá bởi phần dọn dẹp hằng ngày của tác vụ nhắc việc (`/api/cron/nhac-viec`). **Không đặt `CRON_SECRET` (hoặc không có gì gọi route) thì không có dọn dẹp**: nhật ký tăng mãi. Nhật ký quét `attendance_scans` **không bao giờ được dọn** (kể cả khi cron chạy).
 
 ## Năm học mới và lên lớp
 
-Trưởng khối vào **Khối → Năm học mới và lên lớp** (`/khoi/nam-hoc`).
+Trưởng khối vào **Khối → Năm học mới và lên lớp** (`/khoi/nam-hoc`); admin vào **Quản trị → Năm học và lên lớp** (`/quan-tri/nam-hoc`).
 
 **Năm học**
 
-- Năm học (gồm hai học kỳ) **dùng chung cho mọi khối**. App gợi ý tên và ngày từ năm trước (+1 năm). Kiểm tra: tên không trùng (không phân biệt hoa thường), học kỳ 1 kết thúc trước học kỳ 2, cả năm tối đa 400 ngày, không chồng lên học kỳ nào đã có, học kỳ 1 bắt đầu sau năm học gần nhất và trong khoảng 400 ngày trước đến 550 ngày sau hôm nay.
-- Tạo nhầm thì **xoá được khi năm đó chưa có buổi điểm danh nào**. Ghi nhật ký cấp khối.
+- Năm học (gồm hai học kỳ) **dùng chung cho mọi khối**. App gợi ý tên và ngày từ năm trước (+1 năm). Kiểm tra: tên không trùng (không phân biệt hoa thường), học kỳ 1 kết thúc trước học kỳ 2, cả năm tối đa 400 ngày, không chồng lên học kỳ nào đã có. Trưởng khối chỉ tạo năm bắt đầu sau năm gần nhất và trong khoảng 400 ngày trước đến 550 ngày sau hôm nay; admin có thể chuẩn bị các năm xa hơn, vẫn phải thỏa quy tắc ngày và không chồng học kỳ.
+- Mỗi **lớp thuộc đúng một năm học**. Tạo năm không tự sao chép lớp; tạo lớp của năm mới trước khi phân công hoặc lên lớp. Admin có thể đổi tên năm mà không đổi dữ liệu lớp/học kỳ.
+- Tạo nhầm thì **xóa được khi năm đó chưa có lớp hoặc buổi điểm danh nào**. Có ghi nhật ký.
 - Giữa hai năm học (hè), các trang thống kê mặc định hiện **học kỳ gần nhất đã bắt đầu**; năm học tạo sẵn cho tương lai không thành "hiện tại".
 
 **Lên lớp** (chuyển em sang lớp khác):
 
-- Chọn lớp nguồn, lớp đích (cùng khối, hoặc lớp của **khối kế tiếp** do trưởng khối nguồn đặt), tích các em (mặc định tất cả em đang học; em đã nghỉ ở lại lớp cũ), xác nhận. Tối đa 200 em mỗi lượt; bấm hai lần không chuyển hai lần.
+- Chọn lớp nguồn và lớp đích, có tên năm học để phân biệt các lớp cùng tên. Trưởng khối chọn lớp đích cùng khối hoặc thuộc **khối kế tiếp**; admin chọn được lớp ở mọi khối. Lớp đích phải cùng năm hoặc thuộc năm bắt đầu sau năm nguồn; không chuyển ngược về năm cũ. Tích các em (mặc định tất cả em đang học; em đã nghỉ ở lại lớp cũ), xác nhận. Tối đa 200 em mỗi lượt; bấm hai lần không chuyển hai lần.
 - Đây là **chuyển** (đổi lớp hiện tại của em), không phải sao chép: em giữ nguyên **thẻ QR**, hồ sơ và lịch sử. **Chỗ ngồi ở mọi sơ đồ của lớp cũ bị xoá** (danh sách được lưu để tham khảo) và **không được khôi phục khi hoàn tác**.
-- **Hoàn tác trong 24 giờ** (trưởng khối của khối nguồn): chỉ đưa về các em **còn ở lớp đích**; em đã bị chuyển tiếp lần nữa thì phải hoàn tác lượt mới hơn trước. Sau 24 giờ thì chuyển lại bằng một lượt lên lớp mới.
-- Điểm danh cũ (kể cả hôm nay nếu chuyển giữa buổi) ở lại lớp cũ và không sửa được cho các em đã chuyển.
+- **Hoàn tác trong 24 giờ** (admin hoặc trưởng khối của khối nguồn): chỉ đưa về các em **còn ở lớp đích**; em đã bị chuyển tiếp lần nữa thì phải hoàn tác lượt mới hơn trước. Sau 24 giờ, quy tắc không chuyển ngược năm vẫn áp dụng cho lượt chuyển mới.
+- Điểm danh cũ (kể cả hôm nay nếu chuyển giữa buổi) ở lại lớp cũ và không sửa được cho các em đã chuyển. Danh sách thành viên lớp cũ vẫn giữ em đã chuyển, kể cả em chưa từng được điểm danh; xem hồ sơ cũ ở chế độ chỉ đọc.
 
 **Thống kê học kỳ sau khi lên lớp**
 
 - **Học kỳ hiện tại**: tính theo lớp hiện tại (lớp cũ không còn em đã chuyển; lớp mới có em, chưa có dòng nào).
-- **Học kỳ đã qua** của một lớp gồm: (a) mọi em **có dòng điểm danh** (học hoặc đi lễ) ở buổi của lớp đó trong học kỳ, em đã chuyển đi được ghi "(đã lên lớp khác)", em đã nghỉ ghi "(đã nghỉ)"; cộng (b) em đang học ở lớp mà **không có dòng nào ở buổi của lớp khác** trong học kỳ đó. Vì vậy em được chuyển **vào** lớp sau học kỳ đó (đã có dòng ở lớp cũ) **không** hiện thành thành viên trống ở học kỳ cũ của lớp mới; em của lớp chưa từng được điểm danh thì vẫn ở lại. Quy tắc này dùng chung cho thống kê, thống kê đi lễ, trang Khối, báo cáo in, Excel và tổng hợp khối.
+- **Học kỳ đã qua** giữ các em có điểm danh ở lớp trong học kỳ, các em đang học chưa có điểm danh ở lớp khác trong học kỳ, và thành viên đã chuyển đi chưa có điểm danh nào trong học kỳ. Nhãn cho biết em đã chuyển hoặc đã nghỉ. Khi đã có điểm danh, lớp/học kỳ của buổi là căn cứ cho lịch sử. Quy tắc này dùng chung cho thống kê, thống kê đi lễ, trang Khối, báo cáo in, Excel và tổng hợp khối.
 - Danh sách cần hành động (trang chủ, "Cần chú ý", thông báo) **chỉ** gồm em đang học ở lớp.
 
 **Mô hình tin cậy**
 
-- Chỉ trưởng khối của khối **nguồn** chuyển em, và chỉ em đang học ở lớp của khối mình; lớp đích là lớp cùng khối hoặc lớp của **khối kế tiếp** do chính trưởng khối nguồn chọn (không có quản trị viên toàn hệ thống, không có bước đồng ý của khối đích). Đặt khối kế tiếp cần xác nhận hai bước và được ghi nhật ký.
+- Admin được chuyển em giữa mọi khối. Trưởng khối chỉ chuyển em đang học ở lớp của khối **nguồn** mình quản lý; lớp đích là lớp cùng khối hoặc thuộc **khối kế tiếp** đã chọn. Không có bước đồng ý của khối đích. Đặt khối kế tiếp cần xác nhận hai bước và được ghi nhật ký.
 - Bù lại là minh bạch: mỗi lượt chuyển ghi nhật ký ở **cả lớp cũ và lớp mới**; trưởng khối đích thấy lượt "Chuyển vào" (chỉ xem) và một băng báo 7 ngày khi khối khác chuyển em vào hoặc chọn khối mình làm khối kế tiếp. Trưởng khối nguồn **không** đọc thêm được gì của khối đích.
 
 ## Báo cáo học kỳ
 
 - **Báo cáo lớp in được**: Thống kê → **Báo cáo in được** (`/lop/<lớp>/thong-ke/bao-cao?termId=…`, cùng quyền đọc lớp). Khổ A4, đầu trang (lớp, khối, học kỳ, ngày tạo, người tạo), bảng từng em: có mặt, muộn, vắng có/không phép, % chuyên cần, đi lễ (đi/đã ghi), cảnh báo; dòng tổng; đầu bảng lặp lại mỗi trang. Bấm **In / Lưu PDF** (chọn "Lưu dưới dạng PDF" trong hộp in của trình duyệt). Không có số điện thoại hay mã thẻ.
 - **Excel lớp**: nút Excel ở trang Thống kê (như trước).
-- **Tổng hợp khối** (chỉ trưởng khối): Khối → **Báo cáo học kỳ** (`/khoi/bao-cao`): mỗi lớp số em, số buổi, % có mặt, số em cảnh báo vắng học/vắng lễ, số tuần đi lễ đã ghi; danh sách "Em đang cảnh báo (đang học ở lớp)" (không có số điện thoại); tải **Excel** (hai sheet "Tổng hợp khối" và "Cảnh báo").
+- **Tổng hợp khối**: trưởng khối vào Khối → **Báo cáo học kỳ** (`/khoi/bao-cao`); admin chọn khối từ mục Quản trị. Chọn năm và học kỳ để xem các lớp của năm đó: số em, số buổi, % có mặt, số em cảnh báo vắng học/vắng lễ, số tuần đi lễ đã ghi; danh sách "Em đang cảnh báo (đang học ở lớp)" (không có số điện thoại); tải **Excel** (hai sheet "Tổng hợp khối" và "Cảnh báo").
 - Học kỳ đã qua dùng quy tắc danh sách ở mục [Năm học mới và lên lớp](#năm-học-mới-và-lên-lớp).
 
 ## Điểm danh bằng thẻ QR
@@ -204,7 +233,7 @@ Thẻ nên quét ở khoảng cách tay, tránh bóng loáng của lớp ép pla
 
 - Đặt **app và database cùng vùng** (region). Mỗi lượt quét tốn khoảng 7 vòng truy vấn, nên độ trễ mạng giữa app và database nhân lên trực tiếp. Số đo cục bộ ở `docs/superpowers/qr-baseline.md`; số đo trên hạ tầng thật chưa có.
 - **Giới hạn tốc độ**: quét/hoàn tác 180 lượt/phút/tài khoản, tải bảng tra lớp 30 lượt/phút/tài khoản. Bộ đếm nằm **trong bộ nhớ của từng instance** (không dùng chung giữa các instance serverless), nên giới hạn thực tế có thể cao hơn khi có nhiều instance. Khi vượt, API trả 429 và máy khách tự gửi lại.
-- **Phiên đăng nhập**: trượt 30 ngày (cấp lại cookie khi còn dưới 3 ngày), **trần tuyệt đối 90 ngày** kể từ lúc đăng nhập. **Đặt lại mật khẩu không thu hồi phiên đang có** (giới hạn đã biết: cookie cũ vẫn dùng được tới khi hết hạn; tài khoản bị xóa thì bị chặn ngay vì user được đọc lại từ DB ở mỗi request). Thiếu hoặc ngắn `AUTH_SECRET` (< 32 ký tự) khiến mọi trang trừ `/login` trả lỗi 500.
+- **Phiên đăng nhập**: trượt 30 ngày (cấp lại cookie khi còn dưới 3 ngày), **trần tuyệt đối 90 ngày** kể từ lúc đăng nhập. Máy chủ kiểm tra trạng thái tài khoản và `sessionVersion` ở mỗi request: đổi vai trò/khối, khóa/mở lại hoặc đặt lại mật khẩu thu hồi mọi phiên cũ, kể cả nhiều thay đổi trong cùng một giây. Tự đổi mật khẩu ở **Tài khoản** thu hồi các phiên khác và cấp phiên mới cho thiết bị đang đổi. Thiếu hoặc ngắn `AUTH_SECRET` (< 32 ký tự) khiến mọi trang trừ `/login` trả lỗi 500.
 - Hết phiên khi đang thao tác thì được đưa về `/login?next=<trang hiện tại>` và quay lại đúng trang sau khi đăng nhập; `next` chỉ nhận đường dẫn nội bộ an toàn.
 
 ### Thông báo đẩy (Web Push) và lịch học
@@ -271,7 +300,7 @@ pnpm test:e2e
 docker rm -f diemdanh-e2e   # dọn dẹp khi xong
 ```
 
-E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
+E2E chạy các hành trình trên điện thoại 375px và tablet 768px. Laptop 1280px và PC 1440px có các bộ kiểm tra riêng cho responsive, trang chủ và quản trị hệ thống; không chạy lại toàn bộ hành trình cũ trên desktop.
 
 `pnpm test:pg` dùng cùng máy chủ Postgres đó nhưng tự tạo database riêng `<tên db E2E>_conc` (xóa và migrate lại mỗi lần chạy; tên bắt buộc chứa `e2e`). Thiếu `E2E_DATABASE_URL` thì bộ test được bỏ qua. Không bao giờ trỏ `E2E_DATABASE_URL` vào database thật, và không dán chuỗi kết nối thật vào tài liệu, log hay commit.
 
@@ -285,7 +314,7 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 
 ## Giới hạn đã biết
 
-- **Phiên đăng nhập không thu hồi được từ máy chủ.** Đăng xuất hoặc **đặt lại mật khẩu không vô hiệu hóa cookie đã cấp**: cookie vẫn dùng được tới khi hết hạn (trượt 30 ngày, **trần tuyệt đối 90 ngày**). Tài khoản bị xoá thì bị chặn ngay. Cần thêm phiên bản phiên theo từng người dùng (session version) để khắc phục.
+- **Lớp cũ trộn nhiều năm** cần ánh xạ tách dữ liệu riêng trước migration `0011`; migration chủ động dừng khi một lớp có buổi thuộc nhiều năm học.
 - **Không có chế độ ngoại tuyến thật.** Hàng chờ quét chỉ giữ lượt chưa gửi trên thiết bị tối đa 3 ngày; điểm danh chỉ được ghi khi thiết bị có mạng. **Chạm trên bảng điểm danh (và mục Đi lễ) không có hàng chờ**: cần kết nối ngay lúc bấm.
 - **Giới hạn tốc độ nằm trong bộ nhớ từng instance** (quét, bảng tra, bật/gửi thử thông báo đẩy), chưa có bộ đếm dùng chung/phân tán; nhiều instance serverless thì giới hạn thực tế cao hơn.
 - **Khóa đăng nhập theo email**, không giới hạn theo IP. Tài khoản bị khóa tạm khi sai quá 5 lần; vẫn thử tiếp thì thời gian khóa kéo dài. Kẻ tấn công biết email của một GLV có thể khóa tài khoản đó.
@@ -293,7 +322,7 @@ E2E chạy hai viewport: điện thoại 375px và máy tính bảng 768px.
 - **Nhắc việc cần bộ gọi ngoài**: Vercel Hobby chỉ cho cron mỗi ngày một lần; dùng GitHub Actions (nhớ `REMINDERS_ENABLED=true`; repo riêng tư tốn phút Actions), cron-job.org hoặc Vercel Pro. Không có `CRON_SECRET`/bộ gọi thì không nhắc và **không dọn nhật ký 365 ngày**; `attendance_scans` không bao giờ được dọn.
 - **Cảnh báo vắng lễ** không có cho em chưa từng có dòng điểm danh nào ở lớp hiện tại (không có ngày nhập học): hãy dùng "Đánh vắng các em còn lại" cuối mỗi buổi. Em vào lớp giữa kỳ chỉ được tính từ dòng đầu tiên (heuristic).
 - **Kiểm số điện thoại chặt** chặn lưu em có số dạng cũ cho tới khi sửa số; CSV bỏ dòng có số sai.
-- **Nhật ký cấp khối** (ngưỡng đi lễ, khối kế tiếp, năm học) được ghi nhưng chưa có trang xem; xếp ghế (`assignSeat`) và việc quản trị tài khoản không được ghi.
+- **Nhật ký cấp khối/toàn hệ thống** (tài khoản, khối, năm học) được ghi nhưng chưa có trang xem riêng; xếp ghế (`assignSeat`) không được ghi.
 - **Lên lớp**: chỗ ngồi cũ không khôi phục khi hoàn tác; không có bước đồng ý của khối đích (xem "Mô hình tin cậy").
 - **CSP production chỉ kiểm tay** (E2E chạy `next dev`); xem "Kiểm tra CSP trên bản production". Máy quét trên iOS ≤ 15 cần `CSP_ALLOW_UNSAFE_EVAL=1`.
 - Nút tùy chọn trên ô chỗ ngồi là một điều khiển phụ, khá nhỏ.

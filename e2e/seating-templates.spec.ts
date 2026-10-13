@@ -20,7 +20,7 @@ async function openSeating(page: Page) {
   await page.getByLabel("Email").fill("glv-t@e2e.vn");
   await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
   await page.goto(`/lop/${state().classT}/so-do`);
 }
 

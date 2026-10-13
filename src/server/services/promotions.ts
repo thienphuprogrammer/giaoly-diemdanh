@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { classesWithCountsOfGrades, findPromotionByToken, getPromotion, getPromotionClass, hasLaterPromotion, listGradePromotions, recentNextGradeEvents, type PromotionClass } from "@/db/queries/promotions";
 import { getGrade } from "@/db/queries/grades";
-import { promotions, seatAssignments, seatingPlans, students } from "@/db/schema";
+import { attendance, classMemberships, promotions, seatAssignments, seatingPlans, sessions, students } from "@/db/schema";
 import type { Db } from "@/db/types";
 import { canManageGrade, type AppUser } from "@/lib/access/can-access";
 import { describeAuditEvent } from "@/lib/audit/describe";
@@ -44,18 +44,31 @@ async function loadPair(db: Db, user: AppUser, fromClassId: string, toClassId: s
   if (!z.uuid().safeParse(fromClassId).success || !z.uuid().safeParse(toClassId).success || fromClassId === toClassId) return null;
   const [from, to] = await Promise.all([getPromotionClass(db, fromClassId), getPromotionClass(db, toClassId)]);
   if (!from || !to || !canManageGrade(user, from.gradeId)) return null;
-  const reachable = to.gradeId === from.gradeId || (from.nextGradeId !== null && to.gradeId === from.nextGradeId);
-  return reachable ? { from, to } : null;
+  const reachable = user.isAdmin || to.gradeId === from.gradeId || (from.nextGradeId !== null && to.gradeId === from.nextGradeId);
+  const forwardYear = from.schoolYearId === to.schoolYearId ||
+    (from.yearStartsOn !== null && to.yearStartsOn !== null && to.yearStartsOn > from.yearStartsOn);
+  return reachable && forwardYear ? { from, to } : null;
 }
 
 export interface PromotionTargets {
-  sources: { id: string; name: string; activeCount: number }[];
-  targets: { id: string; name: string; gradeId: string; gradeName: string; sameGrade: boolean }[];
+  sources: { id: string; name: string; activeCount: number; gradeId: string; gradeName: string; schoolYearId: string; schoolYearName: string }[];
+  targets: { id: string; name: string; gradeId: string; gradeName: string; schoolYearId: string; schoolYearName: string; sameGrade: boolean }[];
   nextGrade: { id: string; name: string } | null;
 }
 
 /** Lớp nguồn (lớp của khối mình) và lớp đích được phép (cùng khối + khối kế tiếp). null nếu không phải trưởng khối. */
-export async function promotionTargets(db: Db, user: AppUser): Promise<PromotionTargets | null> {
+export async function promotionTargets(db: Db, user: AppUser, gradeId?: string): Promise<PromotionTargets | null> {
+  if (gradeId !== undefined && !z.uuid().safeParse(gradeId).success) return null;
+  if (user.isAdmin) {
+    const grade = gradeId ? await getGrade(db, gradeId) : null;
+    if (gradeId && !grade) return null;
+    const rows = await classesWithCountsOfGrades(db);
+    return {
+      sources: rows.filter((c) => !gradeId || c.gradeId === gradeId).map((c) => ({ ...c, activeCount: Number(c.activeCount) })),
+      targets: rows.map((c) => ({ ...c, sameGrade: c.gradeId === gradeId })),
+      nextGrade: null,
+    };
+  }
   if (!user.isGradeHead || !user.gradeId) return null;
   const grade = await getGrade(db, user.gradeId);
   if (!grade) return null;
@@ -63,17 +76,17 @@ export async function promotionTargets(db: Db, user: AppUser): Promise<Promotion
   const rows = await classesWithCountsOfGrades(db, next ? [grade.id, next.id] : [grade.id]);
   const own = rows.filter((c) => c.gradeId === grade.id);
   return {
-    sources: own.map((c) => ({ id: c.id, name: c.name, activeCount: Number(c.activeCount) })),
+    sources: own.map((c) => ({ id: c.id, name: c.name, activeCount: Number(c.activeCount), gradeId: c.gradeId, gradeName: c.gradeName, schoolYearId: c.schoolYearId, schoolYearName: c.schoolYearName })),
     targets: [...own, ...rows.filter((c) => c.gradeId !== grade.id)].map((c) => ({
-      id: c.id, name: c.name, gradeId: c.gradeId, gradeName: c.gradeName, sameGrade: c.gradeId === grade.id,
+      id: c.id, name: c.name, gradeId: c.gradeId, gradeName: c.gradeName, schoolYearId: c.schoolYearId, schoolYearName: c.schoolYearName, sameGrade: c.gradeId === grade.id,
     })),
     nextGrade: next ? { id: next.id, name: next.name } : null,
   };
 }
 
 export interface PromotionPreview {
-  from: { id: string; name: string };
-  to: { id: string; name: string; gradeName: string };
+  from: { id: string; name: string; schoolYearId: string; schoolYearName: string };
+  to: { id: string; name: string; gradeName: string; schoolYearId: string; schoolYearName: string };
   /** Em đang học ở lớp nguồn (em đã nghỉ không có ở đây, ở lại lớp cũ); mặc định chọn tất cả. */
   students: { id: string; fullName: string; saintName: string | null; selected: boolean }[];
 }
@@ -88,8 +101,8 @@ export async function previewPromotion(db: Db, user: AppUser, input: unknown): P
     .where(and(eq(students.classId, pair.from.id), eq(students.active, true)))
     .orderBy(asc(students.fullName));
   return ok({
-    from: { id: pair.from.id, name: pair.from.name },
-    to: { id: pair.to.id, name: pair.to.name, gradeName: pair.to.gradeName },
+    from: { id: pair.from.id, name: pair.from.name, schoolYearId: pair.from.schoolYearId, schoolYearName: pair.from.schoolYearName },
+    to: { id: pair.to.id, name: pair.to.name, gradeName: pair.to.gradeName, schoolYearId: pair.to.schoolYearId, schoolYearName: pair.to.schoolYearName },
     students: [...rows].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi")).map((s) => ({ ...s, selected: true })),
   });
 }
@@ -138,13 +151,17 @@ async function movePromotion(tx: Tx, user: AppUser, pair: Pair, ids: string[], c
     return previous ?? ok({ promotionId: null, moved: 0, skipped: inTarget.length, seatsRemoved: 0 });
   }
 
+  const priorMemberships = await tx.select({ studentId: classMemberships.studentId }).from(classMemberships)
+    .where(and(eq(classMemberships.classId, pair.to.id), inArray(classMemberships.studentId, movable.map((s) => s.id))));
+  const previouslyJoined = new Set(priorMemberships.map((m) => m.studentId));
   const moved = await tx.update(students).set({ classId: pair.to.id })
     .where(and(inArray(students.id, movable.map((s) => s.id)), eq(students.classId, pair.from.id), eq(students.active, true)))
     .returning({ id: students.id });
   const movedIds = moved.map((s) => s.id);
   const removedSeats = await clearSeats(tx, pair.from.id, movedIds);
   const [promo] = await tx.insert(promotions).values({
-    actorId: user.id, fromClassId: pair.from.id, toClassId: pair.to.id, studentIds: movedIds, removedSeats, clientToken: clientToken ?? null,
+    actorId: user.id, fromClassId: pair.from.id, toClassId: pair.to.id, studentIds: movedIds, removedSeats,
+    newMembershipStudentIds: movedIds.filter((id) => !previouslyJoined.has(id)), clientToken: clientToken ?? null,
   }).returning({ id: promotions.id });
   const names = { fromClass: redactText(pair.from.name), toClass: redactText(pair.to.name) };
   const base = { actorId: user.id, entity: "promotion" as const, entityId: promo.id, action: "promotion.apply" as const };
@@ -209,6 +226,15 @@ export async function undoPromotion(db: Db, user: AppUser, input: unknown): Prom
       .where(and(inArray(students.id, ids), eq(students.classId, promo.toClassId)))
       .returning({ id: students.id });
     await clearSeats(tx, promo.toClassId, back.map((s) => s.id));
+    const newMembers = new Set(promo.newMembershipStudentIds ?? []);
+    const removeMemberships = back.filter((s) => newMembers.has(s.id)).map((s) => s.id);
+    if (removeMemberships.length > 0) {
+      await tx.delete(classMemberships).where(and(
+        eq(classMemberships.classId, promo.toClassId), inArray(classMemberships.studentId, removeMemberships),
+        sql`not exists (select 1 from ${attendance} a join ${sessions} se on se.id = a.session_id
+          where a.student_id = ${classMemberships.studentId} and se.class_id = ${promo.toClassId})`,
+      ));
+    }
     const result = { restored: back.length, notRestored: ids.length - back.length };
     const base = { actorId: user.id, entity: "promotion" as const, entityId: promo.id, action: "promotion.undo" as const };
     const summary = { fromClass: redactText(promo.fromClassName), toClass: redactText(promo.toClassName), ...result };
@@ -222,6 +248,8 @@ export interface PromotionItem {
   id: string;
   fromClassName: string;
   toClassName: string;
+  fromSchoolYearName: string;
+  toSchoolYearName: string;
   count: number;
   createdAt: Date;
   actorName: string | null;
@@ -235,13 +263,15 @@ export interface PromotionItem {
  * 20 lượt lên lớp gần nhất liên quan tới khối: lớp nguồn hoặc lớp đích thuộc khối (lượt từ khối khác chuyển vào hiện ra
  * để trưởng khối đích biết, nhưng chỉ đọc). null nếu không phải trưởng khối.
  */
-export async function listPromotions(db: Db, user: AppUser): Promise<PromotionItem[] | null> {
-  if (!user.isGradeHead || !user.gradeId) return null;
-  const rows = await listGradePromotions(db, user.gradeId, 20);
+export async function listPromotions(db: Db, user: AppUser, selectedGradeId?: string): Promise<PromotionItem[] | null> {
+  if (!user.isAdmin && (!user.isGradeHead || !user.gradeId)) return null;
+  const gradeId = user.isAdmin ? selectedGradeId : user.gradeId!;
+  if (gradeId !== undefined && !z.uuid().safeParse(gradeId).success) return null;
+  const rows = await listGradePromotions(db, gradeId, 20);
   return rows.map((r) => {
-    const incoming = r.fromGradeId !== user.gradeId;
+    const incoming = !user.isAdmin && r.fromGradeId !== user.gradeId;
     return {
-      id: r.id, fromClassName: r.fromClassName, toClassName: r.toClassName, count: r.studentIds.length,
+      id: r.id, fromClassName: r.fromClassName, toClassName: r.toClassName, fromSchoolYearName: r.fromSchoolYearName, toSchoolYearName: r.toSchoolYearName, count: r.studentIds.length,
       createdAt: r.createdAt, actorName: r.actorName, undone: r.undoneAt !== null, incoming,
       canUndo: !incoming && r.undoneAt === null && Boolean(r.fresh),
     };

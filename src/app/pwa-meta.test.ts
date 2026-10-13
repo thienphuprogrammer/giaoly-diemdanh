@@ -77,7 +77,7 @@ describe("manifest", () => {
   });
 
   it("lối tắt trỏ tới trang trong app", () => {
-    expect(m.shortcuts?.map((s) => [s.name, s.url])).toEqual([["Lớp của tôi", "/"], ["Cần chú ý", "/can-chu-y"]]);
+    expect(m.shortcuts?.map((s) => [s.name, s.url])).toEqual([["Lớp của tôi", "/lop"], ["Cần chú ý", "/can-chu-y"]]);
     expect(m.categories).toEqual(["education", "productivity"]);
   });
 });

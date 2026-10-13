@@ -51,7 +51,7 @@ async function main() {
     if (existing) await sql`delete from sessions where id = ${existing.id} and note = ${OWNER_NOTE}`;
     const [session] = await sql`insert into sessions (class_id, term_id, held_on, note) values (${cls.id}, ${term.id}, ${HELD_ON}, ${OWNER_NOTE}) returning id`;
     createdSessionId = session.id;
-    const appUser = { id: user.id, email: user.email, name: user.name, isGradeHead: user.is_grade_head, gradeId: user.grade_id };
+    const appUser = { id: user.id, email: user.email, name: user.name, isAdmin: user.is_admin === true, sessionVersion: Number(user.session_version ?? 0), isGradeHead: user.is_grade_head, gradeId: user.grade_id };
 
     const rtt: number[] = [];
     for (let i = 0; i < 50; i++) { const t = performance.now(); await sql`select 1`; rtt.push(performance.now() - t); }

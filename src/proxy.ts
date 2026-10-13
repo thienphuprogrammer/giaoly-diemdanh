@@ -43,7 +43,7 @@ export async function proxy(request: NextRequest) {
   const res = NextResponse.next({ request: { headers } });
   if (decision === "refresh" && session) {
     // Giữ nguyên `sat` (lúc đăng nhập) để trần 90 ngày không bị đẩy lùi.
-    res.cookies.set(SESSION_COOKIE, await encryptSession({ userId: session.userId, sat: session.sat }, secret), sessionCookieOptions());
+    res.cookies.set(SESSION_COOKIE, await encryptSession({ userId: session.userId, sat: session.sat, ver: session.ver }, secret), sessionCookieOptions());
   }
   return res;
 }

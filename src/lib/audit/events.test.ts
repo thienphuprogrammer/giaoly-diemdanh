@@ -12,7 +12,7 @@ describe("audit action table", () => {
   it("maps every action to one of the allowed entities, with the action prefix matching its entity", () => {
     const prefix: Record<string, string> = {
       attendance: "attendance", student: "student", seating_plan: "seating", session: "session", grade_settings: "grade",
-      school_year: "school_year", promotion: "promotion", class: "class",
+      school_year: "school_year", promotion: "promotion", class: "class", account: "account", grade: "grade",
     };
     for (const [action, entity] of Object.entries(AUDIT_ACTIONS)) {
       expect(AUDIT_ENTITIES).toContain(entity);

@@ -11,7 +11,7 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
@@ -48,7 +48,7 @@ test("báo cáo lớp: tiêu đề, học kỳ, cột, nút In, không tràn nga
   await expect(sheet.locator("tfoot")).toContainText("90%");
   await expect(sheet.locator("tfoot")).toContainText("95/120");
   await expect(page.getByRole("button", { name: "In / Lưu PDF" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Thống kê" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Điều hướng lớp" }).getByRole("link", { name: "Thống kê" })).toBeVisible();
   // Điện thoại: bảng cuộn ngang trong khung riêng, trang không tràn.
   expect(await noOverflow(page)).toBe(true);
   expect(await page.locator(".report-scroll").first().evaluate((el) => getComputedStyle(el).overflowX)).toBe("auto");

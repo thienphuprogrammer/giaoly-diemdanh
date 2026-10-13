@@ -26,12 +26,13 @@ async function login(page: Page, email: string, password = LOGIN_PW) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(password);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 test("điểm danh bằng sơ đồ, thấy cảnh báo và danh sách Cần chú ý", async ({ page }) => {
   await login(page, "glv-a@e2e.vn");
-  // Một chạm từ thẻ lớp ở trang chủ.
+  await page.goto("/lop");
+  // Một chạm từ thẻ lớp ở danh sách lớp.
   const card = page.getByRole("listitem").filter({ has: page.getByRole("link", { name: /Lớp A/ }) });
   await card.getByRole("link", { name: "Điểm danh hôm nay" }).click();
   await expect(page).toHaveURL(new RegExp(`/lop/${state().classA}/diem-danh/${todayInVietnam()}$`));
@@ -205,7 +206,7 @@ test("Back của trình duyệt khi bảng còn lần lưu chưa xong thì hỏi
   await page.unroute(isBoard);
   // Đã lưu xong: Back đi tiếp qua mục lịch sử chặn, về trang trước thật.
   await page.evaluate(() => history.back());
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 });
 
 test("đã lưu xong rồi chuyển tab lớp: Back hai lần về trang trước bảng, không có lần Back chết", async ({ page }) => {
@@ -213,13 +214,13 @@ test("đã lưu xong rồi chuyển tab lớp: Back hai lần về trang trướ
   const boardUrl = page.url();
   await page.getByRole("button", { name: /Nguyễn An: chưa điểm danh/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "Đã lưu ✓" })).toBeVisible();
-  await page.getByRole("tab", { name: "Thống kê" }).click();
+  await page.getByRole("navigation", { name: "Điều hướng lớp" }).getByRole("link", { name: "Thống kê" }).click();
   await expect(page).toHaveURL(/\/thong-ke$/);
   await page.goBack();
   await expect(page).toHaveURL(boardUrl);
   await expect(page.getByRole("button", { name: /Nguyễn An: Có mặt/ })).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 });
 
 test("báo mất mạng trên bảng điểm danh", async ({ page, context }) => {
@@ -320,6 +321,7 @@ test("trưởng khối đặt lại mật khẩu GLV rồi GLV đăng nhập b�
   const newPw = `moi-${Date.now()}-e2e`;
   await login(page, "head-a@e2e.vn");
   await page.goto("/khoi");
+  await page.locator("summary").filter({ hasText: "Thao tác nhạy cảm" }).click();
   const form = page.locator("form", { has: page.getByRole("heading", { name: "Đặt lại mật khẩu" }) });
   await form.getByLabel("Giáo lý viên").selectOption({ label: "GLV Reset" });
   await form.getByLabel("Mật khẩu mới (10–72 ký tự)").fill(newPw);
