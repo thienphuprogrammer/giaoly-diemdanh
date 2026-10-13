@@ -10,5 +10,5 @@ export async function getAccessClass(db: Db, classId: string): Promise<AccessCla
     .select({ userId: classCatechists.userId })
     .from(classCatechists)
     .where(eq(classCatechists.classId, classId));
-  return { id: cls.id, gradeId: cls.gradeId, catechistIds: rows.map((r) => r.userId) };
+  return { id: cls.id, gradeId: cls.gradeId, schoolYearId: cls.schoolYearId, catechistIds: rows.map((r) => r.userId) };
 }

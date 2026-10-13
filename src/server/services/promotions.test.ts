@@ -60,8 +60,8 @@ describe("promotionTargets / previewPromotion", () => {
     const r = await previewPromotion(db, b.head, { fromClassId: b.classId, toClassId: cls2.id });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.data.from).toEqual({ id: b.classId, name: "Lớp A" });
-    expect(r.data.to).toEqual({ id: cls2.id, name: "Lớp A2", gradeName: "Khối 1" });
+    expect(r.data.from).toMatchObject({ id: b.classId, name: "Lớp A", schoolYearId: b.term.schoolYearId, schoolYearName: "2026-2027" });
+    expect(r.data.to).toMatchObject({ id: cls2.id, name: "Lớp A2", gradeName: "Khối 1", schoolYearId: b.term.schoolYearId, schoolYearName: "2026-2027" });
     expect(r.data.students.map((s) => [s.fullName, s.selected])).toEqual([["An", true], ["Bình", true], ["Chi", true]]);
     expect(JSON.stringify(r.data)).not.toMatch(/qrToken|parentPhone/);
   });
@@ -312,8 +312,10 @@ describe("after a promotion: history, stats and scanning", () => {
     const p = await getStudentProfile(db, glv2, { classId: cls2.id, studentId: an.id, today: "2026-10-12" });
     expect(p?.records.map((r) => r.heldOn)).toEqual(["2026-10-04", "2026-09-27", "2026-09-20"]);
     expect(p?.summary.unexcused).toBe(3);
-    // Hồ sơ theo đường dẫn lớp cũ không còn mở được (em không thuộc lớp đó nữa).
-    expect(await getStudentProfile(db, b.glv, { classId: b.classId, studentId: an.id, today: "2026-10-12" })).toBeNull();
+    // Annual membership keeps the old class profile readable, with no write access after transfer.
+    const former = await getStudentProfile(db, b.glv, { classId: b.classId, studentId: an.id, today: "2026-10-12" });
+    expect(former).toMatchObject({ former: true, canWrite: false });
+    expect(former?.records.map((r) => r.heldOn)).toEqual(["2026-10-04", "2026-09-27", "2026-09-20"]);
   });
 
   it("the same card is refused in the old class's session and works in the new class's session", async () => {

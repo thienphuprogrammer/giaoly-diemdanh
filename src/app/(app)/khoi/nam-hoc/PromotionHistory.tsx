@@ -6,7 +6,7 @@ import { Notice } from "@/components/ui/Notice";
 import type { ActionResult } from "@/server/result";
 import type { PromotionItem } from "@/server/services/promotions";
 
-const WHEN = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+const WHEN = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 
 interface Props {
   items: PromotionItem[];
@@ -55,6 +55,7 @@ export function PromotionHistory({ items, undo }: Props) {
               <div className="flex items-start justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block break-words font-medium">{p.fromClassName} → {p.toClassName}</span>
+                  <span className="block text-sm text-ink-soft">Năm học {p.fromSchoolYearName} → {p.toSchoolYearName}</span>
                   <span className="block text-sm text-ink-soft">
                     <span className="tabular-nums">{p.count}</span> em · {WHEN.format(new Date(p.createdAt))}{p.actorName ? ` · ${p.actorName}` : ""}
                   </span>

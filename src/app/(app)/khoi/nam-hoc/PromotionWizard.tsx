@@ -15,6 +15,7 @@ const MAX = MAX_PROMOTION;
 
 interface Props {
   options: PromotionTargets;
+  canManageAll?: boolean;
   preview: (input: { fromClassId: string; toClassId: string }) => Promise<ActionResult<PromotionPreview>>;
   apply: (input: { fromClassId: string; toClassId: string; studentIds: string[]; clientToken: string }) => Promise<ActionResult<PromotionResult>>;
   undo: (input: { promotionId: string }) => Promise<ActionResult<{ restored: number; notRestored: number }>>;
@@ -23,7 +24,7 @@ interface Props {
 type Done = { result: PromotionResult; preview: PromotionPreview; undone?: { restored: number; notRestored: number } };
 
 /** Lên lớp: chọn lớp nguồn → lớp đích → tích em (mặc định tất cả) → xác nhận → kết quả kèm nút hoàn tác. */
-export function PromotionWizard({ options, preview, apply, undo }: Props) {
+export function PromotionWizard({ options, preview, apply, undo, canManageAll = false }: Props) {
   const router = useRouter();
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
@@ -92,11 +93,11 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
       <div className="card grid gap-3 p-4">
         {undone ? (
           <Notice tone="success" role="status">
-            Đã trả {undone.restored} em về {p.from.name}.{undone.notRestored > 0 && ` ${undone.notRestored} em không trả được vì đã chuyển sang lớp khác.`} Chỗ ngồi cũ không được khôi phục.
+            Đã trả {undone.restored} em về {p.from.name} ({p.from.schoolYearName}).{undone.notRestored > 0 && ` ${undone.notRestored} em không trả được vì đã chuyển sang lớp khác.`} Chỗ ngồi cũ không được khôi phục.
           </Notice>
         ) : (
           <Notice tone="success" role="status">
-            {result.moved > 0 ? `Đã chuyển ${result.moved} em từ ${p.from.name} sang ${p.to.name}.` : `Các em đã ở ${p.to.name}, không chuyển thêm.`}
+            {result.moved > 0 ? `Đã chuyển ${result.moved} em từ ${p.from.name} (${p.from.schoolYearName}) sang ${p.to.name} (${p.to.schoolYearName}).` : `Các em đã ở ${p.to.name} (${p.to.schoolYearName}), không chuyển thêm.`}
             {result.seatsRemoved > 0 && ` Đã xoá ${result.seatsRemoved} chỗ ngồi ở lớp cũ.`}
           </Notice>
         )}
@@ -118,6 +119,7 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
       <div className="card grid gap-3 p-4">
         <div>
           <h3 className="text-lg font-semibold">{list.from.name} → {list.to.name}</h3>
+          <p className="text-sm text-ink-soft">Năm học {list.from.schoolYearName} → {list.to.schoolYearName}</p>
           <p className="text-sm text-ink-soft">{list.to.gradeName} · Đã chọn <span className="tabular-nums">{count}/{list.students.length}</span> em</p>
         </div>
         {list.students.length === 0 ? (
@@ -148,7 +150,7 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
         </div>
         {token && (
           <Sheet label="Xác nhận lên lớp" onClose={() => setToken(null)}>
-            <h2 className="font-display text-lg font-semibold">Chuyển {count} em từ {list.from.name} sang {list.to.name}?</h2>
+            <h2 className="font-display text-lg font-semibold">Chuyển {count} em từ {list.from.name} ({list.from.schoolYearName}) sang {list.to.name} ({list.to.schoolYearName})?</h2>
             <p className="text-ink-soft">{CONSEQUENCES}</p>
             <p className="text-sm text-ink-soft">Từ giờ các em điểm danh ở {list.to.name}; quét thẻ ở buổi của {list.from.name} sẽ báo “Thẻ không dùng được cho lớp này”.</p>
             <p className="text-sm text-ink-soft">{PROMOTION_HISTORY_NOTE}</p>
@@ -177,15 +179,15 @@ export function PromotionWizard({ options, preview, apply, undo }: Props) {
       <Field label="Lớp hiện tại">
         <select value={fromId} onChange={(e) => { setFromId(e.target.value); setToId(""); }} className="input">
           <option value="">Chọn lớp</option>
-          {options.sources.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.activeCount} em)</option>)}
+          {options.sources.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.gradeName} · {c.schoolYearName} ({c.activeCount} em)</option>)}
         </select>
       </Field>
-      <Field label="Lên lớp" hint={options.nextGrade ? `Gồm các lớp trong khối và ${options.nextGrade.name}.` : "Chỉ các lớp trong khối (chưa chọn khối kế tiếp)."}>
+      <Field label="Lên lớp" hint={canManageAll ? "Chọn lớp cùng năm hoặc năm sau trong bất kỳ khối nào." : options.nextGrade ? `Gồm các lớp trong khối và ${options.nextGrade.name}.` : "Chỉ các lớp trong khối (chưa chọn khối kế tiếp)."}>
         <select value={toId} onChange={(e) => setToId(e.target.value)} disabled={!fromId} className="input">
           <option value="">Chọn lớp đích</option>
           {[...new Set(targets.map((t) => t.gradeName))].map((g) => (
             <optgroup key={g} label={g}>
-              {targets.filter((t) => t.gradeName === g).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {targets.filter((t) => t.gradeName === g).map((t) => <option key={t.id} value={t.id}>{t.name} · {t.schoolYearName}</option>)}
             </optgroup>
           ))}
         </select>

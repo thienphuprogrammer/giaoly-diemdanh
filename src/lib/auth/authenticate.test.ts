@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { loginAttempts, users } from "@/db/schema";
 import { createTestDb } from "@/test/db";
@@ -20,7 +21,7 @@ describe("authenticate", () => {
   it("accepts correct credentials, ignoring email case and spaces", async () => {
     const { db, user } = await setup();
     const r = await authenticate(db, { email: "  GLV@x.vn ", password: GOOD_PW }, now);
-    expect(r).toEqual({ ok: true, userId: user.id });
+    expect(r).toEqual({ ok: true, userId: user.id, sessionVersion: user.sessionVersion });
   });
 
   it("rejects a wrong password and records the attempt", async () => {
@@ -32,6 +33,30 @@ describe("authenticate", () => {
   it("rejects an unknown email the same way", async () => {
     const { db } = await setup();
     expect(await authenticate(db, { email: "ghost@x.vn", password: "x" }, now)).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("rejects an inactive account even with the right password and retains its failed attempt", async () => {
+    const { db, user } = await setup();
+    await db.update(users).set({ isActive: false }).where(eq(users.id, user.id));
+    expect(await authenticate(db, { email: user.email, password: GOOD_PW }, now)).toEqual({ ok: false, reason: "invalid" });
+    expect(await db.select().from(loginAttempts)).toHaveLength(1);
+  });
+
+  it("applies the same attempt limit to an inactive account", async () => {
+    const { db, user } = await setup();
+    await db.update(users).set({ isActive: false }).where(eq(users.id, user.id));
+    for (let i = 0; i < 5; i++) {
+      expect(await authenticate(db, { email: user.email, password: GOOD_PW }, now)).toEqual({ ok: false, reason: "invalid" });
+    }
+    expect(await authenticate(db, { email: user.email, password: GOOD_PW }, now)).toEqual({ ok: false, reason: "locked" });
+  });
+
+  it("accepts active admins and clears their failed attempts", async () => {
+    const { db, user } = await setup();
+    await db.update(users).set({ isAdmin: true }).where(eq(users.id, user.id));
+    await authenticate(db, { email: user.email, password: "wrong" }, now);
+    expect(await authenticate(db, { email: user.email, password: GOOD_PW }, now)).toEqual({ ok: true, userId: user.id, sessionVersion: user.sessionVersion });
+    expect(await db.select().from(loginAttempts)).toHaveLength(0);
   });
 
   it("locks after 5 failures even with the right password", async () => {

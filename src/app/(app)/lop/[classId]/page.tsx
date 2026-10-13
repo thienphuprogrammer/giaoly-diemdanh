@@ -24,32 +24,34 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
   const sunday = massSundayFor(today); // hôm nay nếu là Chúa nhật, không thì Chúa nhật vừa qua
   const [sessions, schedule] = await Promise.all([listSessions(db, classId), getClassSchedule(db, user, classId)]);
   return (
-    <section className="flex flex-col gap-6">
-      {perms.canWrite && (
-        <div className="card flex flex-col gap-4 p-4">
-          {/* prefetch={false}: mở buổi tạo bản ghi, không được chạy khi chỉ prefetch */}
-          <Link prefetch={false} href={`/lop/${classId}/diem-danh/${today}`}
-            className="btn btn-primary min-h-14 w-full text-lg">
-            <ClipboardCheck aria-hidden size={22} />
-            Điểm danh hôm nay
-          </Link>
-          <p className="-mt-2 text-center text-sm text-ink-soft">{dateLabel(today)}</p>
-          {/* Đi lễ "cách 2": quét thẻ tại nhà thờ cho thánh lễ Chúa nhật (mở buổi đi lễ khi vào màn quét). */}
-          <Link prefetch={false} href={`/lop/${classId}/di-le/${sunday}/quet`} className="btn btn-secondary btn-lg w-full">
-            <Church aria-hidden size={20} />
-            Điểm danh đi lễ
-          </Link>
-          <p className="-mt-2 text-center text-sm text-ink-soft">Quét thẻ tại nhà thờ · {dateLabel(sunday)}</p>
-          <div className="border-t border-border pt-4">
-            <OpenDate classId={classId} today={today} />
+    <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,23rem)_minmax(0,1fr)]">
+      <div className="flex min-w-0 flex-col gap-4">
+        {perms.canWrite && (
+          <div className="card flex flex-col gap-4 p-4">
+            {/* prefetch={false}: mở buổi tạo bản ghi, không được chạy khi chỉ prefetch */}
+            <Link prefetch={false} href={`/lop/${classId}/diem-danh/${today}`}
+              className="btn btn-primary min-h-14 w-full text-lg lg:min-h-11 lg:text-base">
+              <ClipboardCheck aria-hidden size={22} />
+              Điểm danh hôm nay
+            </Link>
+            <p className="-mt-2 text-center text-sm text-ink-soft">{dateLabel(today)}</p>
+            {/* Đi lễ "cách 2": quét thẻ tại nhà thờ cho thánh lễ Chúa nhật (mở buổi đi lễ khi vào màn quét). */}
+            <Link prefetch={false} href={`/lop/${classId}/di-le/${sunday}/quet`} className="btn btn-secondary btn-lg w-full lg:min-h-11">
+              <Church aria-hidden size={20} />
+              Điểm danh đi lễ
+            </Link>
+            <p className="-mt-2 text-center text-sm text-ink-soft">Quét thẻ tại nhà thờ · {dateLabel(sunday)}</p>
+            <div className="border-t border-border pt-4">
+              <OpenDate classId={classId} today={today} />
+            </div>
           </div>
-        </div>
-      )}
-      {schedule && (
-        <ScheduleForm classId={classId} meetsOn={schedule.meetsOn} meetsAt={schedule.meetsAt} label={schedule.label}
-          canEdit={schedule.canEdit} action={setClassScheduleAction} />
-      )}
-      <div className="flex flex-col gap-3">
+        )}
+        {schedule && (
+          <ScheduleForm classId={classId} meetsOn={schedule.meetsOn} meetsAt={schedule.meetsAt} label={schedule.label}
+            canEdit={schedule.canEdit} action={setClassScheduleAction} />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col gap-3">
         <h2 className="text-lg font-semibold">Các buổi gần đây</h2>
         {sessions.length === 0 ? (
           <EmptyState icon={CalendarDays} title="Chưa có buổi nào">
@@ -60,8 +62,8 @@ export default async function ClassHomePage({ params }: { params: Promise<{ clas
             {sessions.map((s) => (
               <li key={s.id}>
                 <Link prefetch={false} href={`/lop/${classId}/diem-danh/${s.heldOn}`}
-                  className="flex min-h-16 items-center gap-3 px-4 py-3 outline-offset-[-3px] transition-colors hover:bg-surface-muted">
-                  <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  className="flex min-h-16 items-center gap-3 px-4 py-3 outline-offset-[-3px] transition-colors hover:bg-surface-muted lg:min-h-14 lg:py-2">
+                  <span className="flex min-w-0 flex-1 flex-col gap-1.5 2xl:flex-row 2xl:items-center 2xl:justify-between">
                     <span className="font-display font-medium text-ink">{dateLabel(s.heldOn)}</span>
                     <span className="flex flex-wrap items-center gap-1.5">
                       {s.cancelled ? <Pill>Nghỉ lễ</Pill> : (

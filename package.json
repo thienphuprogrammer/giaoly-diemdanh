@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
+    "admin:create": "node --env-file-if-exists=.env.local --import tsx scripts/create-admin.ts",
     "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
     "qr:wasm": "node scripts/copy-qr-wasm.mjs",
     "bench:baseline": "node --import tsx scripts/bench-baseline.ts",

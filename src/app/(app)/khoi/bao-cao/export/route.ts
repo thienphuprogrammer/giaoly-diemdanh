@@ -13,8 +13,9 @@ export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
   const today = todayInVietnam();
-  const term = await resolveTerm(db, new URL(request.url).searchParams.get("termId") ?? undefined, today);
-  const report = term ? await gradeReport(db, user, term.id, today) : null;
+  const query = new URL(request.url).searchParams;
+  const term = await resolveTerm(db, query.get("termId") ?? undefined, today, query.get("schoolYearId") ?? undefined);
+  const report = term ? await gradeReport(db, user, term.id, today, query.get("gradeId") ?? undefined) : null;
   if (!report) return new Response("Not found", { status: 404 });
   const buffer = await buildGradeWorkbook(report);
   const filename = exportFilename(report.gradeName, report.term.name, "tong-hop-khoi");

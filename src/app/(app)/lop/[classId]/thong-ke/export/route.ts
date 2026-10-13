@@ -6,6 +6,7 @@ import { buildStatsWorkbook } from "@/lib/export/excel";
 import { exportFilename } from "@/lib/export/filename";
 import { massStats } from "@/server/services/mass-stats";
 import { classStats } from "@/server/services/stats";
+import { guardClass } from "@/server/guard";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -13,7 +14,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ clas
   const { classId } = await params;
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  const term = await resolveTerm(db, new URL(request.url).searchParams.get("termId") ?? undefined, todayInVietnam());
+  const cls = await guardClass(db, user, classId, "read");
+  if (!cls) return new Response("Not found", { status: 404 });
+  const term = await resolveTerm(db, new URL(request.url).searchParams.get("termId") ?? undefined, todayInVietnam(), cls.schoolYearId);
   const stats = term ? await classStats(db, user, classId, term.id) : null;
   if (!stats) return new Response("Not found", { status: 404 });
   // Sheet "Đi lễ" riêng (spec §1b); cùng quyền đọc lớp nên luôn có khi `classStats` có.

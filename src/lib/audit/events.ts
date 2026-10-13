@@ -4,7 +4,7 @@
  * hay SĐT đầy đủ (chỉ dạng đã che của `maskPhone`).
  */
 
-export const AUDIT_ENTITIES = ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion", "class"] as const;
+export const AUDIT_ENTITIES = ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion", "class", "account", "grade"] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
 /** Mỗi hành động thuộc đúng một loại đối tượng; `recordAudit` từ chối cặp sai. */
@@ -31,14 +31,33 @@ export const AUDIT_ACTIONS = {
   "grade.next_grade": "grade_settings",
   "school_year.create": "school_year",
   "school_year.delete": "school_year",
+  "school_year.rename": "school_year",
   "promotion.apply": "promotion",
   "promotion.undo": "promotion",
   "class.schedule": "class",
+  "class.create": "class",
+  "class.update": "class",
+  "class.delete": "class",
+  "account.create": "account",
+  "account.update": "account",
+  "account.activate": "account",
+  "account.deactivate": "account",
+  "account.reset_credentials": "account",
+  "account.change_password": "account",
+  "account.assign": "account",
+  "account.unassign": "account",
+  "grade.create": "grade",
+  "grade.update": "grade",
+  "grade.delete": "grade",
 } as const satisfies Record<string, AuditEntity>;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 
 export const isAuditAction = (name: string): name is AuditAction => Object.hasOwn(AUDIT_ACTIONS, name);
 export const entityOf = (action: AuditAction): AuditEntity => AUDIT_ACTIONS[action];
+
+/** Only these audited global operations may omit both a class and a grade scope. */
+export const allowsGlobalAuditScope = (entity: AuditEntity): boolean =>
+  entity === "account" || entity === "grade" || entity === "school_year";
 
 export type AuditPrimitive = string | number | boolean | null;
 export type AuditValue = AuditPrimitive | AuditPrimitive[] | { [key: string]: AuditPrimitive | AuditPrimitive[] };

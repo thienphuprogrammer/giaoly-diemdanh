@@ -188,9 +188,24 @@ function what(action: string, s: Bag): string {
     case "grade.next_grade": return describeNextGrade(s);
     case "school_year.create": return describeSchoolYear(s);
     case "school_year.delete": return str(s.yearName) ? `xoá năm học ${str(s.yearName)}` : "xoá một năm học";
+    case "school_year.rename": return `đổi tên năm học ${str(s.beforeName) ?? "được chọn"} thành ${str(s.yearName) ?? "tên mới"}`;
     case "promotion.apply": return describePromotion(s);
     case "promotion.undo": return describePromotionUndo(s);
     case "class.schedule": return describeSchedule(s);
+    case "class.create": return `tạo lớp ${str(s.className) ?? "mới"}${str(s.yearName) ? ` (${str(s.yearName)})` : ""}`;
+    case "class.update": return `sửa thông tin lớp ${str(s.className) ?? "được chọn"}`;
+    case "class.delete": return `xoá lớp ${str(s.className) ?? "chưa sử dụng"}`;
+    case "account.create": return `tạo tài khoản ${str(s.accountName) ?? "mới"}`;
+    case "account.update": return `sửa tài khoản ${str(s.accountName) ?? "được chọn"}`;
+    case "account.activate": return `mở khoá tài khoản ${str(s.accountName) ?? "được chọn"}`;
+    case "account.deactivate": return `khoá tài khoản ${str(s.accountName) ?? "được chọn"}`;
+    case "account.reset_credentials": return `đặt lại mật khẩu của ${str(s.accountName) ?? "tài khoản được chọn"}`;
+    case "account.change_password": return "tự đổi mật khẩu đăng nhập";
+    case "account.assign": return `phân công ${str(s.accountName) ?? "giáo lý viên"} vào lớp ${str(s.className) ?? "được chọn"}`;
+    case "account.unassign": return `bỏ phân công ${str(s.accountName) ?? "giáo lý viên"} khỏi lớp ${str(s.className) ?? "được chọn"}`;
+    case "grade.create": return `tạo khối ${str(s.gradeName) ?? "mới"}`;
+    case "grade.update": return `sửa khối ${str(s.gradeName) ?? "được chọn"}`;
+    case "grade.delete": return `xoá khối ${str(s.gradeName) ?? "chưa sử dụng"}`;
     default: return /^[a-z_]{1,32}\.[a-z_]{1,32}$/.test(action) ? `thực hiện một thay đổi (${action})` : "thực hiện một thay đổi";
   }
 }

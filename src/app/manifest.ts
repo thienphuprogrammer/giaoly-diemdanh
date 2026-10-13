@@ -22,7 +22,7 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     // Android/Chrome: nhấn giữ icon. iOS bỏ qua.
     shortcuts: [
-      { name: "Lớp của tôi", url: "/", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }] },
+      { name: "Lớp của tôi", url: "/lop", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Cần chú ý", url: "/can-chu-y", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }] },
     ],
   };

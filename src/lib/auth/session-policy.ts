@@ -39,6 +39,22 @@ export function sessionRefreshDecision(exp: number | undefined, nowS: number, sa
   return remaining < SESSION_REFRESH_BELOW_S ? "refresh" : "keep";
 }
 
+/** Mốc đổi mật khẩu làm tròn xuống giây: cùng độ phân giải với `sat` (giây) của phiên. */
+export function passwordChangeSecond(at: Date): Date {
+  return new Date(Math.floor(at.getTime() / 1000) * 1000);
+}
+
+/**
+ * Phiên đã bị thu hồi vì đổi/đặt lại mật khẩu: `sat` (lúc đăng nhập, giây) TRƯỚC mốc `password_changed_at` (cắt về giây).
+ * Cùng giây thì vẫn hợp lệ: thiết bị vừa đổi mật khẩu được cấp lại phiên với `sat` = bây giờ (≥ mốc đổi).
+ * Hệ quả biết trước: phiên đăng nhập ở thiết bị khác trong ĐÚNG giây đổi mật khẩu cũng được giữ.
+ * `null` (chưa đổi lần nào, kể cả dữ liệu trước khi có cột) không thu hồi gì. Chỉ DAL gọi (cần dữ liệu DB); proxy không gọi.
+ */
+export function sessionRevokedByPasswordChange(sat: number, passwordChangedAt: Date | null): boolean {
+  if (!passwordChangedAt) return false;
+  return sat < Math.floor(passwordChangedAt.getTime() / 1000);
+}
+
 export interface SessionCookieOptions {
   httpOnly: true;
   secure: boolean;

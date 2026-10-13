@@ -5,6 +5,9 @@ import { ReportToolbar } from "@/components/report/ReportToolbar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { db } from "@/db/client";
 import { listTerms, resolveTerm } from "@/db/queries/stats";
+import { termById } from "@/db/queries/stats";
+import { SchoolYearFilter } from "@/components/nav/SchoolYearFilter";
+import { listSchoolYearsForUser, resolveSchoolYearForUser } from "@/server/services/school-years";
 import { requireUser } from "@/lib/auth/dal";
 import { shortDate } from "@/lib/date-label";
 import { todayInVietnam } from "@/lib/dates";
@@ -13,23 +16,28 @@ import { gradeReport } from "@/server/services/term-report";
 
 export const metadata = { title: "Báo cáo khối" };
 
-export default async function GradeReportPage({ searchParams }: { searchParams: Promise<{ termId?: string }> }) {
-  const { termId } = await searchParams;
+export default async function GradeReportPage({ searchParams }: { searchParams: Promise<{ termId?: string; schoolYearId?: string; gradeId?: string }> }) {
+  const { termId, schoolYearId, gradeId: requestedGradeId } = await searchParams;
   const user = await requireUser();
-  if (!user.isGradeHead || !user.gradeId) notFound(); // chỉ trưởng khối; GLV thường nhận 404
+  const gradeId = user.isAdmin ? requestedGradeId : user.isGradeHead ? user.gradeId : null;
+  if (!gradeId) notFound();
   const today = todayInVietnam();
-  const term = await resolveTerm(db, termId, today);
+  const explicitTerm = termId ? await termById(db, termId) : null;
+  const year = await resolveSchoolYearForUser(db, user, schoolYearId ?? explicitTerm?.schoolYearId, today);
+  const years = await listSchoolYearsForUser(db, user);
+  const term = year ? await resolveTerm(db, termId, today, year.id) : null;
   if (!term) {
     return <EmptyState icon={CalendarRange} title="Chưa có học kỳ nào">Khi có học kỳ, báo cáo tổng hợp của khối sẽ in được ở đây.</EmptyState>;
   }
-  const [report, terms] = await Promise.all([gradeReport(db, user, term.id, today), listTerms(db)]);
+  const [report, terms] = await Promise.all([gradeReport(db, user, term.id, today, gradeId), listTerms(db, term.schoolYearId)]);
   if (!report) notFound();
   return (
     <div className="flex flex-col gap-4">
-      <ReportToolbar backHref="/khoi" backLabel="Khối" hint="Chọn “Lưu dưới dạng PDF” trong hộp thoại in để lưu file. Khổ giấy A4 dọc." />
+      <ReportToolbar backHref={user.isAdmin ? `/quan-tri?section=grades&schoolYearId=${term.schoolYearId}` : `/khoi?schoolYearId=${term.schoolYearId}`} backLabel={user.isAdmin ? "Quản trị" : "Khối"} hint="Chọn “Lưu dưới dạng PDF” trong hộp thoại in để lưu file. Khổ giấy A4 dọc." />
+      <div className="print:hidden"><SchoolYearFilter years={years} selectedSchoolYearId={term.schoolYearId} action="/khoi/bao-cao" preserveFields={user.isAdmin ? { gradeId } : {}} /></div>
       <div className="flex flex-wrap items-center gap-3 print:hidden">
-        <TermTabs terms={terms} currentId={term.id} />
-        <a href={`/khoi/bao-cao/export?termId=${term.id}`} className="btn btn-secondary">
+        <TermTabs terms={terms} currentId={term.id} preserveParams={{ schoolYearId: term.schoolYearId, ...(user.isAdmin ? { gradeId } : {}) }} />
+        <a href={`/khoi/bao-cao/export?termId=${term.id}${user.isAdmin ? `&gradeId=${gradeId}` : ""}`} className="btn btn-secondary">
           <Download aria-hidden size={20} />Xuất Excel
         </a>
       </div>

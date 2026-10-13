@@ -84,7 +84,7 @@ describe("proxy: sliding session", () => {
   });
 
   it("re-issues a 30-day httpOnly lax cookie when under 3 days remain, keeping sat", async () => {
-    const token = await encryptSession({ userId: "u1", sat: nowS() - 50 * DAY }, SIGNING_KEY, nowS() + 2 * DAY);
+    const token = await encryptSession({ userId: "u1", sat: nowS() - 50 * DAY, ver: 7 }, SIGNING_KEY, nowS() + 2 * DAY);
     const original = await readSession(token, SIGNING_KEY);
     const res = await proxy(req("/lop/abc", { token }));
     expect(location(res)).toBeNull();
@@ -94,6 +94,7 @@ describe("proxy: sliding session", () => {
     expect(cookie?.sameSite).toBe("lax");
     expect(cookie?.path).toBe("/");
     const renewed = await readSession(cookie?.value, SIGNING_KEY);
+    expect(renewed?.ver).toBe(7);
     expect(renewed?.userId).toBe("u1");
     expect(renewed?.sat).toBe(original!.sat); // thời điểm đăng nhập giữ nguyên qua các lần gia hạn
     expect(renewed!.exp - nowS()).toBeGreaterThan(SESSION_MAX_AGE_S - 5);

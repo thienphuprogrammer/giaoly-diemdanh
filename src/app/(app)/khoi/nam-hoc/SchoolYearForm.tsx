@@ -13,12 +13,12 @@ interface Props {
 
 function TermFields({ n, term }: { n: 1 | 2; term: SchoolYearDraft["term1"] }) {
   return (
-    <fieldset className="grid gap-3 rounded-control border border-border p-3">
+    <fieldset className="grid min-w-0 gap-3 rounded-control border border-border p-3">
       <legend className="px-1 text-sm font-semibold">Học kỳ {n}</legend>
       <Field label="Tên học kỳ">
         <input name={`term${n}Name`} defaultValue={term.name} required maxLength={40} className="input" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Bắt đầu">
           <input name={`term${n}Start`} type="date" defaultValue={term.startsOn} required className="input" />
         </Field>
@@ -34,7 +34,7 @@ function TermFields({ n, term }: { n: 1 | 2; term: SchoolYearDraft["term1"] }) {
 export function SchoolYearForm({ defaults, action }: Props) {
   const [state, run, pending] = useActionState(action, undefined);
   return (
-    <form action={run} className="card grid gap-4 p-4">
+    <form action={run} className="card grid min-w-0 gap-4 p-4">
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-action-tint text-action">
           <CalendarPlus aria-hidden size={20} />

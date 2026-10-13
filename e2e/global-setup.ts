@@ -6,6 +6,7 @@ import * as s from "../src/db/schema";
 import { hashPassword } from "../src/lib/auth/password";
 import { massSundayFor } from "../src/lib/attendance/mass-week";
 import { todayInVietnam } from "../src/lib/dates";
+import { bootstrapAdmin } from "../src/server/services/system-admin-bootstrap";
 
 const EDIT_NAME = "Trần Sửa";
 const E2E_PW = "e2e-password-1";
@@ -27,6 +28,8 @@ export default async function globalSetup() {
   await migrate(db, { migrationsFolder: "./drizzle" });
 
   const hash = await hashPassword(E2E_PW);
+  const admin = await bootstrapAdmin(db, { email: "admin@giaoly.local", name: "Quản trị hệ thống", password: E2E_PW });
+  if (!admin.ok) throw new Error("Không tạo được admin mẫu E2E");
   const [gradeA] = await db.insert(s.grades).values({ name: "Khối E2E A" }).returning();
   const [gradeB] = await db.insert(s.grades).values({ name: "Khối E2E B" }).returning();
   const [year] = await db.insert(s.schoolYears).values({ name: "E2E" }).returning();
@@ -171,9 +174,15 @@ export default async function globalSetup() {
   const [past] = await db.insert(s.sessions).values({ classId: classA.id, termId: term.id, heldOn: dayOffset(-7) }).returning();
   await db.insert(s.attendance).values({ sessionId: past.id, studentId: kids[0].id, status: "absent_unexcused" });
 
+  const [nextYear] = await db.insert(s.schoolYears).values({ name: "Năm kế tiếp E2E" }).returning();
+  const [nextTerm] = await db.insert(s.terms).values({ schoolYearId: nextYear.id, name: "Học kỳ kế tiếp", startsOn: dayOffset(180), endsOn: dayOffset(300) }).returning();
+  const [nextClassA] = await db.insert(s.classes).values({ gradeId: gradeA.id, schoolYearId: nextYear.id, name: "Lớp A" }).returning();
+  await db.insert(s.classCatechists).values({ classId: nextClassA.id, userId: glvA.id });
+
   writeFileSync("e2e/.state.json", JSON.stringify({ classA: classA.id, classB: classB.id, classC: classC.id, classQ: classQ.id, classT: classT.id, classP: classP.id, classN: classN.id, glvN: glvN.id, kidWithPhone: kidWithPhone.id, kidNoPhone: kidNoPhone.id,
     gradeC: gradeC.id, classM: classM.id, kidMassWarn: kidMassWarn.id, kidMassOne: kidMassOne.id,
     gradeE: gradeE.id, classR: classR.id,
-    gradeD: gradeD.id, classD1: classD1.id, classD2: classD2.id, planD: planD.id, classL: classL.id }));
+    gradeD: gradeD.id, classD1: classD1.id, classD2: classD2.id, planD: planD.id, classL: classL.id,
+    admin: admin.data.id, gradeA: gradeA.id, year: year.id, nextYear: nextYear.id, nextTerm: nextTerm.id, nextClassA: nextClassA.id }));
   await sql.end();
 }

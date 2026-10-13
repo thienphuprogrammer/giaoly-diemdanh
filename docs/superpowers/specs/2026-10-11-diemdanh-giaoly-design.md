@@ -199,6 +199,98 @@ Màu, chữ và biểu tượng cùng diễn đạt trạng thái; âm/rung ch�
   không bị xóa. **Chọn đúng em** là một lượt quét/chọn mới, tách khỏi kết quả hoàn tác em cũ
   (hiển thị riêng từng kết quả).
 
+### 4.4. Bổ sung UX lưu và kiểm tra cuối buổi (2026-10-12)
+
+Phần này là yêu cầu bổ sung cần triển khai theo Mốc 8 của plan, không mô tả tính năng
+đã có. Điểm danh hiện tại đã lưu từng thao tác; không tạo một nút "Lưu tất cả" khiến
+người dùng tưởng dữ liệu chỉ được lưu cuối buổi. Quy tắc áp dụng chung cho sơ đồ,
+danh sách, QR, tìm tên, ghi hàng loạt, hoàn tác và gửi lại.
+
+**Dữ liệu phải có thể đọc lại từ máy chủ:** lớp/ngày/học kỳ/buổi nghỉ lễ; từng em với
+trạng thái/lý do/người cập nhật/thời gian cập nhật; nhật ký QR/chọn tên/hoàn tác và ID
+để đối chiếu gửi lại. Tiến độ và tổng kết được tính từ điểm danh hiện hành trong DB,
+không suy ra từ số lượt quét trong bộ nhớ. Kết quả đã lưu còn khi mở lại buổi hoặc
+đăng nhập từ thiết bị có quyền; lượt chưa tới máy chủ không có bảo đảm đó.
+
+#### Lưu tự động và kết quả chưa rõ
+
+- Phản hồi tại thiết bị: **Đã đọc thẻ · Đang lưu**, **Đang lưu thay đổi**,
+  **Đã lưu**, **Chưa xác nhận được kết quả** hoặc **Cần xử lý**. Không ghi "Đã ghi"
+  hoặc "Đã lưu" trước khi API xác nhận commit. Âm/rung đọc mã không chứng minh đã lưu.
+- Có thể cập nhật lạc quan để thao tác nhanh, nhưng phải có chỉ báo pending/unknown
+  riêng. Số em **đã lưu** chỉ tính dữ liệu máy chủ xác nhận; số lượt đang gửi được
+  hiển thị riêng. Quét trùng/no-op không tăng số em; mở lại scanner không đưa tổng
+  buổi về 0. Nếu cần đếm lượt, ghi rõ **Lượt quét trong lần này**.
+- Timeout/5xx có thể xảy ra sau commit. Tra endpoint kết quả theo event ID trước
+  khi coi lượt là chưa lưu; nếu chưa rõ thì vẫn dùng **Chưa xác nhận**, không tự kết
+  luận dữ liệu đã mất. Gửi lại QR/undo bằng cùng event ID/payload, không tạo lượt mới.
+- Ghi tay thành công nhưng tính cảnh báo sau đó lỗi không được coi là ghi thất bại.
+  Tách kết quả commit khỏi phần tính cảnh báo; refresh dữ liệu phụ sau hoặc đối chiếu
+  lại trạng thái hiện hành. Mọi mutation cần kết quả đủ để xác nhận từng thao tác;
+  retry không đảo trạng thái hoặc ghi đè chỉnh sửa mới.
+- Dừng camera/tìm tên/chuyển chế độ ngay trong màn hiện tại giữ việc gửi nền. Rời
+  trang bằng Xong, link trong tổng kết, tab lớp, điều hướng dưới, quay lại, đổi ngày
+  hoặc đóng/reload đều phải qua cơ chế bảo vệ phù hợp. Không chỉ dựa vào beforeunload
+  cho điều hướng Next.js. Không chặn rời trang khi đã lưu và không còn vấn đề cần giải quyết.
+- Có lỗi thì giữ tên và hành động tại đúng lượt: **Thử lại**, **Kiểm tra kết quả**,
+  **Sửa trạng thái**. Không có nút "Bỏ qua" khiến kết quả chưa rõ biến thành đã xử lý:
+  trước khi bỏ, đối chiếu máy chủ và nói rõ chỉ bỏ yêu cầu ở thiết bị, không xóa điểm
+  danh đã lưu. Rời khi chưa rõ phải nói **Có lượt chưa xác nhận**, không khẳng định
+  tất cả lượt đó chưa được máy chủ lưu.
+
+#### Luồng kết thúc tiện cho GLV
+
+1. **Xong** trong scanner đổi nhãn thành **Dừng quét** hoặc **Về bảng điểm danh**:
+   chỉ kết thúc việc dùng camera, không đồng nghĩa cả lớp đã kiểm tra xong.
+2. Một hành động chính **Kiểm tra & hoàn tất** trên board (dùng được từ QR) dừng
+   nhận thêm mã, chờ/đối chiếu các lượt hiện tại rồi đọc tổng kết mới từ máy chủ.
+3. Màn kiểm tra có bốn nhóm: **đã lưu**, **em chưa điểm danh**, **lượt đang lưu/chưa rõ**,
+   **cần xử lý**. Chạm nhóm chưa ghi/lỗi để tới đúng em; tìm tên, sửa và thử lại ngay
+   tại đây, không chỉ liệt kê tên rồi buộc người dùng quay qua nhiều màn.
+4. Có thể đánh vắng nhóm em chưa ghi bằng thao tác rõ **Đánh vắng các em còn lại**:
+   xem tên, chọn vắng không phép/có phép và xác nhận phạm vi. Chỉ ghi em thực sự vẫn
+   chưa có trạng thái trên máy chủ; giữ các em vừa được người khác ghi/quét. Không
+   tự điền vắng khi đóng scanner, hết giờ, mất mạng hoặc bấm hoàn tất.
+5. Không có pending/unknown/lỗi cần xử lý và đủ trạng thái cho roster được kiểm tra
+   thì cho **Hoàn tất kiểm tra**. Khi còn vấn đề, nút chính đưa tới việc cần làm;
+   **Quay lại sau** vẫn cho rời với giải thích dữ liệu nào đã lưu, phần nào chưa rõ.
+   "Quay lại sau" không đánh dấu buổi đã hoàn tất hoặc hứa giữ lượt chỉ ở thiết bị.
+6. Máy chủ kiểm quyền và điều kiện trong transaction, chốt snapshot/revision hợp lệ
+   để lưu người/thời điểm kiểm tra (ví dụ `sessions.reviewed_at`, `reviewed_by`). Kết
+   quả đọc lại từ DB có ngày/lớp, có mặt, đi muộn, vắng có phép/không phép, số chưa ghi,
+   thời điểm đối chiếu và người kiểm tra. Bấm đúp/gửi lại không tạo một buổi khác.
+   Cùng request/buổi/revision đã xác nhận trả lại cùng review receipt, giữ nguyên
+   người/thời điểm; mất response không tạo xác nhận mới. Chỉ re-review revision mới
+   sau thay đổi mới được cập nhật receipt.
+7. Màn xác nhận ngắn **Đã lưu và kiểm tra xong buổi này**, nút **Về lớp** và tùy chọn
+   **Xem tổng kết**. Không bắt tải Excel hoặc bấm thêm một nút Lưu. Nếu mất response
+   hoàn tất, tra metadata và tổng kết trước khi báo chưa hoàn tất.
+
+Ví dụ nội dung khi tất cả đã được đối chiếu:
+
+```
+Thêm sức 1 · Buổi 12/10
+Đã lưu 32/32 em
+27 có mặt · 2 đi muộn · 1 vắng có phép · 2 vắng không phép
+Không còn lượt đang gửi hoặc cần xử lý trên thiết bị này
+Đã đối chiếu máy chủ lúc 09:45
+[Hoàn tất kiểm tra]
+```
+
+**Mở lại và sửa sau kiểm tra:** lịch sử lớp hiện **Đang điểm danh / Đã kiểm tra xong /
+Đã sửa, cần kiểm tra lại / Nghỉ lễ** theo dữ liệu bền. Mở buổi dở bằng **Tiếp tục điểm
+danh**, ưu tiên nhóm chưa ghi. Sửa sau xác nhận vẫn được theo quyền hiện hành; mọi
+đường ghi thành công thay đổi trạng thái, lý do, xóa/hoàn tác, ghi hàng loạt hoặc
+đánh dấu/bỏ nghỉ lễ phải vô hiệu xác nhận cũ hoặc đánh dấu cần
+kiểm tra lại, không khóa buổi hoặc âm thầm giữ nhãn đã hoàn tất. Kiểm tra lại rồi mới
+cập nhật thời điểm/người xác nhận. Báo xung đột nếu dữ liệu đổi từ thiết bị khác trong
+lúc chốt; không hứa biết các lượt chưa gửi từ thiết bị khác hoặc dữ liệu đã bị khóa.
+
+Theo dõi revision/snapshot để chống race là invariant; field và lock order cụ thể do
+Task 23 chốt, tránh thêm workflow duyệt nhiều bước. Lịch sử roster đổi khi em chuyển/
+ẩn là vấn đề riêng: cần kiểm tra và đề xuất snapshot roster nếu sản phẩm cần tổng
+lịch sử bất biến; chưa mặc định mở rộng sang lưu toàn bộ hồ sơ hoặc ảnh thẻ.
+
 ## 5. Màn hình và điều hướng
 
 Thanh dưới cùng: **Lớp của tôi · Cần chú ý · Khối** (chỉ trưởng khối) **· Tài khoản**.
@@ -211,6 +303,7 @@ Thanh dưới cùng: **Lớp của tôi · Cần chú ý · Khối** (chỉ trư
 | Quét QR | Camera liên tục, **công tắc Có mặt/Đi muộn**, tên lớn, số đã lưu/đang gửi/cần xử lý, lượt gần đây với Hoàn tác, Tìm bằng tên |
 | In thẻ QR | Trang trong tab Thiếu nhi (GLV có quyền ghi): lưới thẻ A4 (tên, tên thánh, lớp, QR), in/lưu PDF bất cứ lúc nào; "Cấp lại mã" cho từng em có xác nhận |
 | Kiểm tra cuối buổi | Em chưa điểm danh và lượt cần xử lý tách riêng |
+| Kiểm tra & hoàn tất (bổ sung §4.4) | Đối chiếu tổng kết từ DB, xử lý ngay em/lượt còn thiếu, xác nhận người và thời điểm kiểm tra; mở lại tiếp tục hoặc xem tổng kết |
 | Thiếu nhi | Thêm/sửa, import CSV (xem trước, lỗi theo dòng), ẩn em |
 | Sơ đồ | Editor hàng/băng/ghế, gán em, nhiều sơ đồ, chọn sơ đồ đang dùng |
 | Thống kê | Theo học kỳ, bảng từng em, huy hiệu, xuất Excel |
@@ -326,6 +419,8 @@ Mỗi mốc chạy được độc lập và qua code-reviewer (mốc 1 thêm se
    giải mã/sinh QR) → migration `qr_token` + `last_event_id` + `attendance_scans` → in thẻ
    và cấp lại mã → API quét/hoàn tác/bảng tra (một transaction) → scanner + công tắc chế độ +
    tìm tên + tổng kết → kiểm thử, đo và vận hành.
+8. Lưu và hoàn tất buổi: đối chiếu kết quả chưa rõ → bảo vệ điều hướng mọi chế độ →
+   tổng kết authoritative + xác nhận kiểm tra bền → kiểm thử mở lại/lỗi/race.
 
 ## 11. Quyết định mốc QR (2026-10-12)
 

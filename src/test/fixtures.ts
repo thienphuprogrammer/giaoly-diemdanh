@@ -17,16 +17,16 @@ export async function seedBasics(db: Db) {
   const glv = await mk("glv@x.vn", { gradeId: grade.id });
   const otherGlv = await mk("other@x.vn", { gradeId: otherGrade.id });
 
-  const [cls] = await db.insert(classes).values({ gradeId: grade.id, name: "Lớp A" }).returning();
-  const [otherCls] = await db.insert(classes).values({ gradeId: otherGrade.id, name: "Lớp B" }).returning();
+  const [cls] = await db.insert(classes).values({ gradeId: grade.id, schoolYearId: year.id, name: "Lớp A" }).returning();
+  const [otherCls] = await db.insert(classes).values({ gradeId: otherGrade.id, schoolYearId: year.id, name: "Lớp B" }).returning();
   await db.insert(classCatechists).values([
     { classId: cls.id, userId: glv.id },
     { classId: otherCls.id, userId: otherGlv.id },
   ]);
 
   return {
-    grade, otherGrade, term, head, glv, otherGlv, cls, otherCls,
-    gradeId: grade.id, otherGradeId: otherGrade.id, termId: term.id,
+    grade, otherGrade, year, term, head, glv, otherGlv, cls, otherCls,
+    gradeId: grade.id, otherGradeId: otherGrade.id, yearId: year.id, termId: term.id,
     classId: cls.id, otherClassId: otherCls.id,
   };
 }

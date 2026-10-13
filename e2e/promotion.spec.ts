@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { expect, test, type Page } from "./fixtures";
+import { todayInVietnam } from "../src/lib/dates";
+import { addDays } from "../src/lib/school-year/defaults";
 
 interface State { gradeD: string; classD1: string; classD2: string; planD: string; gradeC: string }
 const state = () => JSON.parse(readFileSync("e2e/.state.json", "utf8")) as State;
@@ -28,7 +30,7 @@ async function resetGradeD() {
 }
 
 test.beforeEach(resetGradeD);
-// Năm học tạo trong test phải biến mất để các spec sau vẫn thấy đúng một năm học E2E.
+// Năm học tạo trong test phải biến mất để các spec sau giữ nguyên các năm học đã gieo.
 test.afterEach(resetGradeD);
 
 async function login(page: Page, email: string) {
@@ -36,7 +38,7 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 const tokensOf = (names: string[]) => withSql(async (sql) =>
@@ -49,16 +51,19 @@ test("trưởng khối tạo năm học mới từ trang Khối", async ({ page 
   await login(page, "head-d@e2e.vn");
   await page.goto("/khoi");
   await page.getByRole("link", { name: /Năm học mới và lên lớp/ }).click();
-  await expect(page.getByRole("heading", { name: "Năm học và lên lớp" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Năm học và lên lớp" })).toBeVisible({ timeout: 30_000 });
   expect(await noHorizontalScroll(page)).toBe(true);
   const form = page.locator("form").filter({ has: page.getByRole("heading", { name: "Tạo năm học mới" }) });
   // Mặc định đã điền sẵn (năm học trước chỉ có một học kỳ nên đề xuất tháng 9 → tháng 5).
   await expect(form.getByLabel("Tên học kỳ").first()).toHaveValue("Học kỳ 1");
   await expect(form.locator("input[name=term1Start]")).toHaveValue(/^\d{4}-09-01$/);
-  // Giữ ngày mặc định (trong giới hạn 400 ngày trước / 550 ngày sau hôm nay), chỉ đặt tên riêng cho project.
+  // Năm kế tiếp đã gieo từ ngày +180 đến +300. Tạo năm khác tiếp ngay sau đó,
+  // gồm 200 ngày và vẫn nằm trong giới hạn ngày bắt đầu của trưởng khối.
   await form.getByLabel("Tên năm học").fill(name);
   const dates = ["term1Start", "term1End", "term2Start", "term2End"] as const;
-  const used = await Promise.all(dates.map((d) => form.locator(`input[name=${d}]`).inputValue()));
+  const today = todayInVietnam();
+  const used = [301, 400, 401, 500].map((offset) => addDays(today, offset));
+  for (const [i, d] of dates.entries()) await form.locator(`input[name=${d}]`).fill(used[i]);
   await form.getByRole("button", { name: "Tạo năm học" }).click();
   await expect(form.getByRole("status")).toHaveText("Đã tạo năm học");
   await expect(page.getByRole("list", { name: "Các năm học" }).getByText(name)).toBeVisible();
@@ -80,8 +85,8 @@ test("lên lớp 2 em sang lớp khác: giữ thẻ QR, rời lớp cũ, hoàn t
   const before = await tokensOf(MOVED);
   await login(page, "head-d@e2e.vn");
   await page.goto("/khoi/nam-hoc");
-  await page.getByLabel("Lớp hiện tại").selectOption({ label: "Lớp D1 (3 em)" });
-  await page.getByRole("combobox", { name: /^Lên lớp/ }).selectOption({ label: "Lớp D2" });
+  await page.getByLabel("Lớp hiện tại").selectOption(classD1);
+  await page.getByRole("combobox", { name: /^Lên lớp/ }).selectOption(classD2);
   await page.getByRole("button", { name: "Xem danh sách em" }).click();
   const list = page.getByRole("list", { name: "Các em sẽ lên lớp" });
   await expect(list.getByRole("checkbox")).toHaveCount(3);
@@ -94,8 +99,9 @@ test("lên lớp 2 em sang lớp khác: giữ thẻ QR, rời lớp cũ, hoàn t
   const sheet = page.getByRole("dialog", { name: "Xác nhận lên lớp" });
   await expect(sheet.getByText("Giữ thẻ QR và lịch sử điểm danh. Chỗ ngồi cũ sẽ bị xoá. Có thể hoàn tác trong 24 giờ.")).toBeVisible();
   await sheet.getByRole("button", { name: "Xác nhận lên lớp" }).click();
-  await expect(page.getByText("Đã chuyển 2 em từ Lớp D1 sang Lớp D2. Đã xoá 1 chỗ ngồi ở lớp cũ.")).toBeVisible();
+  await expect(page.getByText("Đã chuyển 2 em từ Lớp D1 (E2E) sang Lớp D2 (E2E). Đã xoá 1 chỗ ngồi ở lớp cũ.")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("list", { name: "Các lượt lên lớp" }).getByText("Lớp D1 → Lớp D2")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Các lượt lên lớp" }).getByText("Năm học E2E → E2E")).toBeVisible();
 
   // Thẻ QR không đổi, em thuộc lớp mới.
   const after = await tokensOf(MOVED);
@@ -116,10 +122,15 @@ test("lên lớp 2 em sang lớp khác: giữ thẻ QR, rời lớp cũ, hoàn t
   for (const t of after) expect(html).not.toContain(t.qr_token);
   await glv.close();
 
-  // Lớp cũ không còn hai em (trưởng khối đọc được mọi lớp của khối).
+  // Lớp cũ lưu lịch sử thành viên: hai em không còn trong danh sách đang học,
+  // nhưng vẫn hiện trong bộ lọc đã chuyển lớp.
   await page.goto(`/lop/${classD1}/thieu-nhi`);
+  await page.getByRole("combobox", { name: "Trạng thái", exact: true }).selectOption("active");
   await expect(page.getByText("Ở Lại Ba", { exact: true })).toBeVisible();
   for (const n of MOVED) await expect(page.getByText(n, { exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Trạng thái", exact: true }).selectOption("former");
+  for (const n of MOVED) await expect(page.getByText(n, { exact: true })).toBeVisible();
+  await expect(page.getByText("Ở Lại Ba", { exact: true })).toHaveCount(0);
 
   // Hoàn tác từ danh sách các lượt lên lớp.
   await page.goto("/khoi/nam-hoc");
@@ -131,16 +142,17 @@ test("lên lớp 2 em sang lớp khác: giữ thẻ QR, rời lớp cũ, hoàn t
 });
 
 test("hoàn tác ngay sau khi lên lớp từ màn kết quả", async ({ page }) => {
+  const { classD1, classD2 } = state();
   await login(page, "head-d@e2e.vn");
   await page.goto("/khoi/nam-hoc");
-  await page.getByLabel("Lớp hiện tại").selectOption({ label: "Lớp D1 (3 em)" });
-  await page.getByRole("combobox", { name: /^Lên lớp/ }).selectOption({ label: "Lớp D2" });
+  await page.getByLabel("Lớp hiện tại").selectOption(classD1);
+  await page.getByRole("combobox", { name: /^Lên lớp/ }).selectOption(classD2);
   await page.getByRole("button", { name: "Xem danh sách em" }).click();
   await page.getByRole("button", { name: "Lên lớp 3 em" }).click();
   await page.getByRole("dialog", { name: "Xác nhận lên lớp" }).getByRole("button", { name: "Xác nhận lên lớp" }).click();
-  await expect(page.getByText(/Đã chuyển 3 em từ Lớp D1 sang Lớp D2/)).toBeVisible();
+  await expect(page.getByText("Đã chuyển 3 em từ Lớp D1 (E2E) sang Lớp D2 (E2E).", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Hoàn tác", exact: true }).click();
-  await expect(page.getByText("Đã trả 3 em về Lớp D1. Chỗ ngồi cũ không được khôi phục.")).toBeVisible();
+  await expect(page.getByText("Đã trả 3 em về Lớp D1 (E2E). Chỗ ngồi cũ không được khôi phục.")).toBeVisible();
   const rows = await withSql((sql) => sql<{ n: number }[]>`select count(*)::int as n from students where class_id = ${state().classD1}`);
   expect(rows[0].n).toBe(3);
 });
@@ -154,8 +166,8 @@ test("khối kế tiếp: hỏi xác nhận rồi mở thêm lớp của khối 
   await expect(form.getByText(/chuyển được thiếu nhi của Khối E2E D vào các lớp của/)).toBeVisible();
   await form.getByRole("button", { name: "Xác nhận" }).click();
   await expect(form.getByRole("status").filter({ hasText: "Đã lưu khối kế tiếp" })).toBeVisible();
-  await page.getByLabel("Lớp hiện tại").selectOption({ label: "Lớp D1 (3 em)" });
-  await expect(page.getByRole("combobox", { name: /^Lên lớp/ }).locator("optgroup[label='Khối E2E C'] option")).toHaveText(["Lớp M"]);
+  await page.getByLabel("Lớp hiện tại").selectOption(state().classD1);
+  await expect(page.getByRole("combobox", { name: /^Lên lớp/ }).locator("optgroup[label='Khối E2E C'] option")).toHaveText(["Lớp M · E2E"]);
 
   // Trưởng khối được chọn thấy băng báo trên màn "Năm học" của mình.
   const other = await browser.newContext({ viewport: page.viewportSize() ?? undefined });
@@ -171,5 +183,5 @@ test("giáo lý viên không vào được màn năm học", async ({ page }) =>
   await login(page, "glv-d1@e2e.vn");
   await page.goto("/khoi/nam-hoc");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 });

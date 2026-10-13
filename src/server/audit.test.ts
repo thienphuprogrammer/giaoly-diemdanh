@@ -30,6 +30,18 @@ describe("auditRow", () => {
     expect(() => auditRow({ actorId: "u", classId: "c", entity: "student", action: "student.qr_rotate", summary: { qr_token: "x" } }))
       .toThrow(AuditSummaryError);
   });
+
+  it("only permits documented global entities without a class or grade scope", () => {
+    for (const event of [
+      { entity: "account", action: "account.create" },
+      { entity: "grade", action: "grade.create" },
+      { entity: "school_year", action: "school_year.rename" },
+    ] as const) {
+      expect(auditRow({ actorId: "u", ...event, summary: {} })).toMatchObject({ classId: null, gradeId: null });
+    }
+    expect(() => auditRow({ actorId: "u", entity: "class", action: "class.create", summary: {} })).toThrow(/class or grade/);
+    expect(() => auditRow({ actorId: "u", entity: "grade_settings", action: "grade.mass_threshold", summary: {} })).toThrow(/class or grade/);
+  });
 });
 
 describe("recordAudit", () => {

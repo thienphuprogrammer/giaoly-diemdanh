@@ -3,7 +3,8 @@ import { getAccessClass } from "@/db/queries/access";
 import { massGrid } from "@/db/queries/mass-stats";
 import { resolveTerm } from "@/db/queries/stats";
 import { studentTermRecords } from "@/db/queries/student-profile";
-import { getStudent } from "@/db/queries/students";
+import { getStudent, wasStudentInClass } from "@/db/queries/students";
+import { getClassById } from "@/db/queries/classes";
 import type { Db } from "@/db/types";
 import { canAccess, type AppUser } from "@/lib/access/can-access";
 import { isMassWarning, tallyMass } from "@/lib/attendance/mass-tally";
@@ -14,6 +15,7 @@ export type ProfileStudent = NonNullable<Awaited<ReturnType<typeof getStudent>>>
 export interface StudentProfile {
   student: ProfileStudent;
   canWrite: boolean;
+  former: boolean;
   term: { id: string; name: string } | null;
   summary: StudentSummary;
   /** (có mặt + muộn) / số buổi đã điểm danh; null khi chưa có buổi nào. */
@@ -33,8 +35,8 @@ export interface StudentMass {
   weeks: { sessionId: string; heldOn: string; attended: boolean }[];
 }
 
-async function studentMass(db: Db, classId: string, studentId: string, termId: string): Promise<StudentMass | null> {
-  const grid = await massGrid(db, { classIds: [classId], termId, studentId });
+async function studentMass(db: Db, classId: string, studentId: string, termId: string, former: boolean): Promise<StudentMass | null> {
+  const grid = await massGrid(db, { classIds: [classId], termId, studentId, includeFormer: former });
   const me = grid.students[0];
   if (!me) return null;
   const all = grid.weeks.get(classId) ?? [];
@@ -56,15 +58,19 @@ export async function getStudentProfile(
   const { classId, studentId, today } = input;
   if (!z.uuid().safeParse(classId).success || !z.uuid().safeParse(studentId).success) return null;
   const [cls, student] = await Promise.all([getAccessClass(db, classId), getStudent(db, studentId)]);
-  if (!cls || !student || student.classId !== classId || !canAccess(user, cls, "read")) return null;
-  const term = await resolveTerm(db, undefined, today);
+  if (!cls || !student || !canAccess(user, cls, "read")) return null;
+  const former = student.classId !== classId;
+  if (former && !(await wasStudentInClass(db, studentId, classId))) return null;
+  const info = await getClassById(db, classId);
+  if (!info) return null;
+  const term = await resolveTerm(db, undefined, today, info.schoolYearId);
   const [records, mass] = term
-    ? await Promise.all([studentTermRecords(db, studentId, term.id), studentMass(db, classId, studentId, term.id)])
+    ? await Promise.all([studentTermRecords(db, studentId, term.id, former ? classId : undefined), studentMass(db, classId, studentId, term.id, former)])
     : [[], null];
   const summary = summarize(records);
   return {
     student,
-    canWrite: canAccess(user, cls, "write"),
+    canWrite: !former && canAccess(user, cls, "write"), former,
     term: term ? { id: term.id, name: term.name } : null,
     summary,
     rate: summary.marked === 0 ? null : (summary.present + summary.late) / summary.marked,

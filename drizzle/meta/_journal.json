@@ -71,6 +71,20 @@
       "when": 1791797593623,
       "tag": "0009_push_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791809655429,
+      "tag": "0010_password_changed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791861105186,
+      "tag": "0011_admin_annual_classes",
+      "breakpoints": true
     }
   ]
 }

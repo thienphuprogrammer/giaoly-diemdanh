@@ -1,9 +1,9 @@
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { tallyMass, type MassWeek } from "@/lib/attendance/mass-tally";
 import { membershipOf } from "@/lib/promotion";
-import { attendance, classes, grades, sessions, students } from "../schema";
+import { attendance, classMemberships, classes, grades, sessions, students } from "../schema";
 import type { Db } from "../types";
-import { notMarkedElsewhereIn } from "./stats";
+import { neverMarkedInTerm, notMarkedElsewhereIn } from "./stats";
 
 type Reader = Pick<Db, "select" | "selectDistinct">;
 
@@ -93,7 +93,19 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
       .innerJoin(grades, eq(grades.id, classes.gradeId))
       .where(studentId ? eq(students.id, studentId) : undefined)
     : Promise.resolve([]);
-  const [rows, roster, formerRows] = await Promise.all([
+  const unmarkedFormerQuery = includeFormer
+    ? db.select({
+      id: students.id, classId: classMemberships.classId, currentClassId: students.classId, active: students.active,
+      fullName: students.fullName, saintName: students.saintName,
+      parentPhone: students.parentPhone, firstSeen: first.firstSeen, threshold: grades.massThreshold,
+    }).from(classMemberships)
+      .innerJoin(students, eq(students.id, classMemberships.studentId))
+      .leftJoin(first, and(eq(first.studentId, students.id), eq(first.classId, classMemberships.classId)))
+      .innerJoin(classes, eq(classes.id, classMemberships.classId))
+      .innerJoin(grades, eq(grades.id, classes.gradeId))
+      .where(and(inArray(classMemberships.classId, classIds), ne(students.classId, classMemberships.classId), neverMarkedInTerm(termId), studentId ? eq(students.id, studentId) : undefined))
+    : Promise.resolve([]);
+  const [rows, roster, formerRows, unmarkedFormerRows] = await Promise.all([
     db.select({ classId: sessions.classId, sessionId: sessions.id, heldOn: sessions.heldOn, studentId: attendance.studentId, status: attendance.status })
       .from(attendance)
       .innerJoin(sessions, eq(sessions.id, attendance.sessionId))
@@ -122,6 +134,7 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
       ))
       .orderBy(asc(students.fullName)),
     formerQuery,
+    unmarkedFormerQuery,
   ]);
 
   const weeks = new Map<string, MassWeek[]>();
@@ -137,7 +150,7 @@ export async function massGrid(db: Reader, { classIds, termId, excludeSessionId,
   }
   return {
     weeks,
-    students: mergeRoster(roster, formerRows)
+    students: mergeRoster(mergeRoster(roster, formerRows), unmarkedFormerRows)
       .map(({ currentClassId, active, ...s }) => ({
         ...s, ...membershipOf({ currentClassId, active }, s.classId), attended: attendedBy.get(s.id) ?? new Set<string>(),
       })),

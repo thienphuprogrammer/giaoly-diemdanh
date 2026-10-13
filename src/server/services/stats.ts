@@ -1,11 +1,12 @@
 import { getClassById, listClassesForUser } from "@/db/queries/classes";
-import { classesInGrade, sessionsHeld, termById, termRecords, termRoster, type RosterEntry } from "@/db/queries/stats";
+import { classesInGrade, resolveTerm, sessionsHeld, termById, termRecords, termRoster, type RosterEntry } from "@/db/queries/stats";
 import type { Db } from "@/db/types";
 import type { AppUser } from "@/lib/access/can-access";
 import { summarize, type StudentSummary } from "@/lib/attendance/summary";
 import { todayInVietnam } from "@/lib/dates";
 import { isActionable } from "@/lib/promotion";
 import type { AttendanceStatus } from "@/lib/attendance/warning";
+import { z } from "zod";
 import { guardClass } from "../guard";
 
 export interface StatRow {
@@ -37,11 +38,12 @@ export function buildRows(roster: RosterEntry[], records: { classId: string; stu
   }));
 }
 
-export async function classStats(db: Db, user: AppUser, classId: string, termId: string, today: string = todayInVietnam()) {
+export async function classStats(db: Db, user: AppUser, classId: string, termId?: string, today: string = todayInVietnam()) {
   if (!(await guardClass(db, user, classId, "read"))) return null;
-  const term = await termById(db, termId);
   const cls = await getClassById(db, classId);
-  if (!term || !cls) return null;
+  if (!cls) return null;
+  const term = termId === undefined ? await resolveTerm(db, undefined, today, cls.schoolYearId) : await termById(db, termId);
+  if (!term || term.schoolYearId !== cls.schoolYearId) return null;
   const [roster, records] = await Promise.all([termRoster(db, [classId], term, today), termRecords(db, [classId], term.id)]);
   return { term: { id: term.id, name: term.name }, className: cls.name, rows: buildRows(roster, records) };
 }
@@ -60,7 +62,7 @@ export interface AttentionItem {
 export async function attentionList(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<AttentionItem[]> {
   const term = await termById(db, termId);
   if (!term) return [];
-  const visible = await listClassesForUser(db, user);
+  const visible = await listClassesForUser(db, user, term.schoolYearId);
   const ids = visible.map((c) => c.id);
   const names = new Map(visible.map((c) => [c.id, c.name]));
   const [roster, records] = await Promise.all([termRoster(db, ids, term, today), termRecords(db, ids, term.id)]);
@@ -88,12 +90,13 @@ export interface GradeRow {
   warningCount: number;
 }
 
-export async function gradeOverview(db: Db, user: AppUser, termId: string, today: string = todayInVietnam()): Promise<GradeRow[] | null> {
-  if (!user.isGradeHead || !user.gradeId) return null;
+export async function gradeOverview(db: Db, user: AppUser, termId: string, today: string = todayInVietnam(), selectedGradeId?: string): Promise<GradeRow[] | null> {
+  const gradeId = user.isAdmin ? selectedGradeId ?? user.gradeId : user.isGradeHead ? user.gradeId : null;
+  if (!gradeId || !z.uuid().safeParse(gradeId).success) return null;
   const term = await termById(db, termId);
-  const classList = await classesInGrade(db, user.gradeId);
+  if (!term) return [];
+  const classList = await classesInGrade(db, gradeId, term.schoolYearId);
   const ids = classList.map((c) => c.id);
-  if (!term) return classList.map((c) => ({ classId: c.id, className: c.name, studentCount: 0, sessions: 0, presentRate: null, warningCount: 0 }));
   const [roster, records, held] = await Promise.all([termRoster(db, ids, term, today), termRecords(db, ids, term.id), sessionsHeld(db, ids, term.id)]);
   const rows = buildRows(roster, records);
   return classList.map((c) => {

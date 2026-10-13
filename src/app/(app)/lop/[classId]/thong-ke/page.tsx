@@ -11,6 +11,7 @@ import { requireUser } from "@/lib/auth/dal";
 import { todayInVietnam } from "@/lib/dates";
 import { membershipNote } from "@/lib/promotion";
 import { classStats, type StatRow } from "@/server/services/stats";
+import { guardClass } from "@/server/guard";
 
 const ROW = "grid grid-cols-4 items-center gap-x-2 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_repeat(4,4.5rem)_8rem]";
 const COLUMNS = [
@@ -55,11 +56,13 @@ export default async function StatsPage({
   const { classId } = await params;
   const { termId } = await searchParams;
   const user = await requireUser();
-  const term = await resolveTerm(db, termId, todayInVietnam());
+  const cls = await guardClass(db, user, classId, "read");
+  if (!cls) notFound();
+  const term = await resolveTerm(db, termId, todayInVietnam(), cls.schoolYearId);
   if (!term) return <EmptyState icon={CalendarRange} title="Chưa có học kỳ nào">Khi có học kỳ, số liệu chuyên cần của lớp sẽ hiện ở đây.</EmptyState>;
   const stats = await classStats(db, user, classId, term.id);
   if (!stats) notFound();
-  const terms = await listTerms(db);
+  const terms = await listTerms(db, cls.schoolYearId);
   const warnings = stats.rows.filter((r) => r.summary.warning.level === "warning").length;
   return (
     <section className="flex flex-col gap-4">

@@ -63,6 +63,21 @@ const CASES: [AuditAction, Record<string, unknown>, string][] = [
   ["class.schedule", { className: "Lớp A", before: "Chủ nhật 08:00", after: "Thứ bảy 17:30" }, "GLV An đổi lịch học của Lớp A: Chủ nhật 08:00 → Thứ bảy 17:30"],
   ["class.schedule", { className: "Lớp A", before: "Chủ nhật 08:00", after: null }, "GLV An xoá lịch học của Lớp A (trước đó: Chủ nhật 08:00)"],
   ["class.schedule", {}, "GLV An đổi lịch học"],
+  ["class.create", { className: "1A", yearName: "2026-2027" }, "GLV An tạo lớp 1A (2026-2027)"],
+  ["class.update", { className: "1A" }, "GLV An sửa thông tin lớp 1A"],
+  ["class.delete", { className: "1A" }, "GLV An xoá lớp 1A"],
+  ["account.create", { accountName: "Cô Lan" }, "GLV An tạo tài khoản Cô Lan"],
+  ["account.update", { accountName: "Cô Lan" }, "GLV An sửa tài khoản Cô Lan"],
+  ["account.activate", { accountName: "Cô Lan" }, "GLV An mở khoá tài khoản Cô Lan"],
+  ["account.deactivate", { accountName: "Cô Lan" }, "GLV An khoá tài khoản Cô Lan"],
+  ["account.reset_credentials", { accountName: "Cô Lan" }, "GLV An đặt lại mật khẩu của Cô Lan"],
+  ["account.change_password", { accountName: "Cô Lan" }, "GLV An tự đổi mật khẩu đăng nhập"],
+  ["account.assign", { accountName: "Cô Lan", className: "1A" }, "GLV An phân công Cô Lan vào lớp 1A"],
+  ["account.unassign", { accountName: "Cô Lan", className: "1A" }, "GLV An bỏ phân công Cô Lan khỏi lớp 1A"],
+  ["grade.create", { gradeName: "Khối 1" }, "GLV An tạo khối Khối 1"],
+  ["grade.update", { gradeName: "Khối 1" }, "GLV An sửa khối Khối 1"],
+  ["grade.delete", { gradeName: "Khối 1" }, "GLV An xoá khối Khối 1"],
+  ["school_year.rename", { beforeName: "Năm cũ", yearName: "2026-2027" }, "GLV An đổi tên năm học Năm cũ thành 2026-2027"],
 ];
 
 describe("describeAuditEvent", () => {

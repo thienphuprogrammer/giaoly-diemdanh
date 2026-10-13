@@ -23,7 +23,7 @@ async function login(page: Page) {
   await page.getByLabel("Email").fill(massUser());
   await page.getByLabel("Mật khẩu").fill(LOGIN_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("heading", { name: "Lớp của tôi" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trang chủ" })).toBeVisible();
 }
 
 const tokenOf = async (name: string) => { const db = sql(); try { return (await db`select qr_token from students where full_name = ${name}`)[0].qr_token as string; } finally { await db.end(); } };

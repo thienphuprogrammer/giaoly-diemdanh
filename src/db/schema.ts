@@ -33,8 +33,19 @@ export const users = pgTable("users", {
   gradeId: uuid("grade_id").references(() => grades.id, { onDelete: "set null" }),
   /** Trưởng khối xem được mọi lớp trong khối `gradeId`. */
   isGradeHead: boolean("is_grade_head").notNull().default(false),
+  /** Quản trị viên quản lý tài khoản, khối và lớp trên toàn hệ thống. */
+  isAdmin: boolean("is_admin").notNull().default(false),
+  /** Tài khoản bị khóa không thể đăng nhập hoặc sử dụng phiên cũ. */
+  isActive: boolean("is_active").notNull().default(true),
+  /** Tăng mỗi lần thu hồi phiên: so khớp chính xác ngay cả khi khóa/mở tài khoản trong cùng một giây. */
+  sessionVersion: integer("session_version").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+  /**
+   * Lúc đổi/đặt lại mật khẩu gần nhất (làm tròn xuống giây). Phiên có `sat` (lúc đăng nhập) trước mốc này bị DAL từ chối.
+   * NULL: chưa đổi lần nào (phiên cũ vẫn hợp lệ).
+   */
+  passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+}, (t) => [check("users_session_version_nonnegative", sql`${t.sessionVersion} >= 0`)]);
 
 export const loginAttempts = pgTable("login_attempts", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -60,6 +71,8 @@ export const classes = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     gradeId: uuid("grade_id").notNull().references(() => grades.id, { onDelete: "cascade" }),
+    /** Mỗi lớp thuộc một niên khóa; lớp cùng tên ở năm khác có ID riêng để giữ lịch sử. */
+    schoolYearId: uuid("school_year_id").notNull().references(() => schoolYears.id, { onDelete: "restrict" }).default(sql`default_school_year_id()`),
     name: text("name").notNull(),
     /** Thứ trong tuần lớp học (0 = Chủ nhật … 6 = Thứ bảy); null = chưa đặt lịch (không nhắc). */
     meetsOn: smallint("meets_on"),
@@ -67,7 +80,8 @@ export const classes = pgTable(
     meetsAt: time("meets_at"),
   },
   (t) => [
-    uniqueIndex("classes_grade_name_uq").on(t.gradeId, t.name),
+    uniqueIndex("classes_grade_year_name_uq").on(t.gradeId, t.schoolYearId, t.name),
+    index("classes_school_year_idx").on(t.schoolYearId),
     check("classes_meets_on_range", sql`${t.meetsOn} between 0 and 6`),
     check("classes_schedule_both_or_neither", sql`(${t.meetsOn} is null) = (${t.meetsAt} is null)`),
   ],
@@ -94,6 +108,19 @@ export const students = pgTable("students", {
   /** Mã trên thẻ QR: 32 hex do cơ sở dữ liệu sinh, không đoán được, duy nhất. */
   qrToken: text("qr_token").notNull().unique().default(sql`replace(gen_random_uuid()::text, '-', '')`),
 });
+
+/** Danh sách lớp đã từng tham gia; trigger giữ cả lớp cũ khi chuyển lớp, kể cả em chưa được điểm danh. */
+export const classMemberships = pgTable(
+  "class_memberships",
+  {
+    classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.classId, t.studentId] }),
+    index("class_memberships_student_idx").on(t.studentId),
+  ],
+);
 
 export const seatingPlans = pgTable(
   "seating_plans",
@@ -177,7 +204,7 @@ export const attendanceScans = pgTable(
   (t) => [index("attendance_scans_session_idx").on(t.sessionId, t.receivedAt)],
 );
 
-export const auditEntity = pgEnum("audit_entity", ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion", "class"]);
+export const auditEntity = pgEnum("audit_entity", ["attendance", "student", "seating_plan", "session", "grade_settings", "school_year", "promotion", "class", "account", "grade"]);
 
 /**
  * Nhật ký thay đổi (spec §2): một dòng cho mỗi thao tác thủ công THẬT SỰ đổi dữ liệu, ghi trong cùng transaction với
@@ -202,7 +229,7 @@ export const auditEvents = pgTable(
     index("audit_events_class_at_idx").on(t.classId, t.at.desc(), t.id.desc()),
     index("audit_events_grade_at_idx").on(t.gradeId, t.at.desc(), t.id.desc()),
     index("audit_events_at_idx").on(t.at),
-    check("audit_events_scope", sql`${t.classId} is not null or ${t.gradeId} is not null`),
+    check("audit_events_scope", sql`${t.classId} is not null or ${t.gradeId} is not null or ${t.entity}::text in ('account', 'grade', 'school_year')`),
     check("audit_events_summary_object", sql`jsonb_typeof(${t.summary}) = 'object'`),
     check("audit_events_action_format", sql`${t.action} ~ '^[a-z_]+\\.[a-z_]+$'`),
   ],
@@ -221,6 +248,8 @@ export const promotions = pgTable(
     fromClassId: uuid("from_class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
     toClassId: uuid("to_class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
     studentIds: uuid("student_ids").array().notNull(),
+    /** Các thành viên mới của lớp đích do lượt lên lớp tạo, dùng khi hoàn tác; NULL = lượt cũ chưa theo dõi. */
+    newMembershipStudentIds: uuid("new_membership_student_ids").array(),
     removedSeats: jsonb("removed_seats").$type<{ planId: string; benchId: string; seatIndex: number; studentId: string }[]>().notNull().default(sql`'[]'::jsonb`),
     clientToken: uuid("client_token"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
