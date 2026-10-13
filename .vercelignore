@@ -1,0 +1,12 @@
+# Local build output, caches and test artefacts: Vercel builds from source.
+.next
+.next-*
+.worktrees
+.codegraph
+coverage
+playwright-report
+test-results
+tsconfig.tsbuildinfo
+.env
+.env.local
+.env.*.local
