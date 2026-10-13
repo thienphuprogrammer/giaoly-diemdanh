@@ -99,7 +99,8 @@ test("đổi mật khẩu rồi đăng xuất: mật khẩu cũ không còn dùn
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(OLD_PW);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Email hoặc mật khẩu không đúng");
+  // Scope to the login form: Next's route announcer is also role="alert" (outside the form).
+  await expect(page.locator("form").getByRole("alert")).toHaveText("Email hoặc mật khẩu không đúng");
   await login(page, email, NEW_PW);
 });
 
@@ -132,7 +133,10 @@ test("thẻ Đổi mật khẩu: không cuộn ngang, ô nhập ≥16px và vùn
   await expect(form).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  for (const input of await form.locator("input[name]").all()) {
+  // React adds hidden `$ACTION_*` inputs to server-action forms; only the visible fields are touch targets.
+  const fields = form.locator('input[name]:not([type="hidden"])');
+  await expect(fields).toHaveCount(3);
+  for (const input of await fields.all()) {
     const box = await input.boundingBox();
     expect(box!.height).toBeGreaterThanOrEqual(44);
     expect(await input.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
